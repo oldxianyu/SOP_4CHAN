@@ -247,7 +247,22 @@
         max-width: 150px;
         margin-inline-end: 0;
         white-space: normal;
+        padding: 5px 9px;
+        font-size: 14px;
         line-height: 1.55;
+      }
+
+      .work-tag.ant-tag,
+      .people-tag.ant-tag {
+        padding: 5px 10px;
+        border-radius: 999px;
+        font-size: 14px;
+        font-weight: 800;
+        line-height: 1.35;
+      }
+
+      .people-tag.ant-tag {
+        margin-inline-end: 0;
       }
 
       .notes-block ul {
@@ -556,7 +571,7 @@
         const columns = [
           { title: "序号", dataIndex: "index", width: 64, fixed: "left", align: "center", render: (value) => h(Text, { strong: true }, value) },
           { title: "项目", dataIndex: "project", width: 140, fixed: "left", render: (value) => h(Text, { strong: true, className: "project-name" }, value) },
-          { title: "工作属性", dataIndex: "property", width: 112, render: (value, row) => h(Tag, { color: row.propertyColor }, value) },
+          { title: "工作属性", dataIndex: "property", width: 112, render: (value, row) => h(Tag, { color: row.propertyColor, className: "work-tag" }, value) },
           { title: "对接内容", dataIndex: "content", width: 190 },
           {
             title: "处理事务",
@@ -570,7 +585,7 @@
             title: "连锁配合人员（建议）",
             dataIndex: "people",
             width: 180,
-            render: (people) => h(Space, { wrap: true }, people.map((person) => h(Tag, { color: "blue", key: person }, person))),
+            render: (people) => h(Space, { wrap: true, size: [6, 6] }, people.map((person) => h(Tag, { color: "blue", className: "people-tag", key: person }, person))),
           },
         ];
 
