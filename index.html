@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>四季蝉 - 业务对接工作目录</title>
+  <style>
+    :root {
+      --bg: #f6f7f3;
+      --paper: #ffffff;
+      --ink: #1f2a24;
+      --muted: #657066;
+      --line: #dce2d9;
+      --soft: #eef3ec;
+      --accent: #27735c;
+      --accent-dark: #185641;
+      --warn: #9a6b1d;
+      --blue: #315f8c;
+      --shadow: 0 18px 46px rgba(31, 42, 36, 0.1);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        linear-gradient(180deg, rgba(39, 115, 92, 0.08), transparent 320px),
+        var(--bg);
+      font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", Arial, sans-serif;
+      line-height: 1.55;
+    }
+
+    .page {
+      width: min(1480px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 34px 0 44px;
+    }
+
+    .masthead {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 24px;
+      align-items: end;
+      margin-bottom: 22px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(28px, 4vw, 48px);
+      letter-spacing: 0;
+      line-height: 1.1;
+      color: var(--accent-dark);
+    }
+
+    .subtitle {
+      margin: 12px 0 0;
+      font-size: 16px;
+      color: var(--muted);
+    }
+
+    .owner {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.74);
+      color: var(--accent-dark);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .owner span {
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .metric {
+      padding: 16px 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.84);
+    }
+
+    .metric strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 26px;
+      line-height: 1;
+      color: var(--accent-dark);
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .table-shell {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--paper);
+      box-shadow: var(--shadow);
+    }
+
+    .table-scroll {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      min-width: 1240px;
+      border-collapse: separate;
+      border-spacing: 0;
+    }
+
+    caption {
+      padding: 16px 18px;
+      text-align: left;
+      font-weight: 700;
+      color: var(--accent-dark);
+      background: #fbfcfa;
+      border-bottom: 1px solid var(--line);
+    }
+
+    th,
+    td {
+      padding: 14px 13px;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      font-size: 14px;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: var(--soft);
+      color: #314138;
+      font-size: 13px;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    th:last-child,
+    td:last-child {
+      border-right: 0;
+    }
+
+    tbody tr:nth-child(even) td {
+      background: #fbfcfa;
+    }
+
+    tbody tr:hover td {
+      background: #f0f6f0;
+    }
+
+    .index {
+      width: 52px;
+      text-align: center;
+      color: var(--accent-dark);
+      font-weight: 800;
+    }
+
+    .project {
+      min-width: 132px;
+      font-weight: 800;
+      color: var(--accent-dark);
+    }
+
+    .date {
+      min-width: 116px;
+      color: var(--muted);
+    }
+
+    .status-cell {
+      min-width: 92px;
+      text-align: center;
+    }
+
+    .todo {
+      display: inline-flex;
+      gap: 7px;
+      align-items: center;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .box {
+      width: 16px;
+      height: 16px;
+      display: inline-block;
+      border: 2px solid #9ba79d;
+      border-radius: 3px;
+      background: #fff;
+    }
+
+    .tag-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 25px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: #eaf2ef;
+      color: var(--accent-dark);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .tag.blue {
+      background: #e9f0f7;
+      color: var(--blue);
+    }
+
+    .tag.warn {
+      background: #f6efe1;
+      color: var(--warn);
+    }
+
+    .stack {
+      display: grid;
+      gap: 8px;
+    }
+
+    .doc {
+      padding: 8px 10px;
+      border-left: 3px solid var(--accent);
+      background: #f5f8f3;
+      border-radius: 0 6px 6px 0;
+      font-weight: 650;
+    }
+
+    .doc a {
+      color: var(--accent-dark);
+      text-decoration: none;
+    }
+
+    .doc a:hover,
+    .doc a:focus {
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    .materials {
+      min-width: 220px;
+    }
+
+    .material-link {
+      display: block;
+      padding: 9px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fbfcfa;
+      color: var(--accent-dark);
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .material-link + .material-link {
+      margin-top: 8px;
+    }
+
+    .material-link:hover,
+    .material-link:focus {
+      border-color: rgba(39, 115, 92, 0.45);
+      background: #f0f6f0;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    .notes {
+      min-width: 330px;
+      color: #39473f;
+    }
+
+    .notes p {
+      margin: 0 0 8px;
+    }
+
+    .notes ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .notes li + li {
+      margin-top: 6px;
+    }
+
+    .empty {
+      color: #9aa49b;
+    }
+
+    .footer-note {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 860px) {
+      .page {
+        width: min(100% - 24px, 1480px);
+        padding-top: 24px;
+      }
+
+      .masthead {
+        grid-template-columns: 1fr;
+        align-items: start;
+      }
+
+      .owner {
+        width: 100%;
+        justify-content: space-between;
+        white-space: normal;
+      }
+
+      .summary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 520px) {
+      .summary {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+
+      .page {
+        width: 100%;
+        padding: 0;
+      }
+
+      .table-shell {
+        box-shadow: none;
+      }
+
+      th {
+        position: static;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="masthead">
+      <div>
+        <h1>四季蝉业务对接工作目录</h1>
+        <p class="subtitle">海典指导，连锁配合。用于汇总开户、基础资料、工业信息、活动商品、培训及测试上线事项。</p>
+      </div>
+      <div class="owner">对接模式 <span>海典指导 / 连锁配合</span></div>
+    </header>
+
+    <section class="summary" aria-label="工作概览">
+      <div class="metric">
+        <strong>7</strong>
+        <span>总事项</span>
+      </div>
+      <div class="metric">
+        <strong>5</strong>
+        <span>一次性工作</span>
+      </div>
+      <div class="metric">
+        <strong>1</strong>
+        <span>每月更新</span>
+      </div>
+      <div class="metric">
+        <strong>1</strong>
+        <span>及时更新</span>
+      </div>
+    </section>
+
+    <section class="table-shell">
+      <div class="table-scroll">
+        <table>
+          <caption>业务对接事项清单</caption>
+          <thead>
+            <tr>
+              <th>序号</th>
+              <th>项目</th>
+              <th>工作属性</th>
+              <th>对接内容</th>
+              <th>处理事务</th>
+              <th>注意事项</th>
+              <th>材料下载</th>
+              <th>连锁配合人员（建议）</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="index">1</td>
+              <td class="project">汇付账户开通</td>
+              <td><span class="tag warn">一次性</span></td>
+              <td>填写两份协议，用于申请开通汇付账户。</td>
+              <td>
+                <div class="stack">
+                  <div class="doc">《汇付-斗拱平台综合支付协议》</div>
+                  <div class="doc">《药店与店员激励协议》</div>
+                </div>
+              </td>
+              <td class="notes">
+                <p><strong>斗拱平台协议：</strong></p>
+                <ul>
+                  <li>02斗拱平台协议：打印两份。</li>
+                  <li>第三页合同日期：<span data-date-range>2026年6月5日 - 2027年6月4日</span>。</li>
+                  <li>盖章、签字，日期手写为<span data-current-date>2026年6月5日</span>。</li>
+                  <li>额外侧面加盖骑缝章，最后扫描成A4大小的PDF文件。</li>
+                </ul>
+                <p><strong>药店与店员激励协议：</strong></p>
+                <ul>
+                  <li>03药店与店员激励协议：打印一份。</li>
+                  <li>签字、盖章，乙方按手印，日期手写为<span data-current-date>2026年6月5日</span>。</li>
+                  <li>最后扫描成A4大小的PDF文件。</li>
+                </ul>
+                <p>按文档说明操作。法人和联系人身份证可以直接上传身份证原件；如使用复印件，需要盖公章。</p>
+              </td>
+              <td class="materials">
+                <a class="material-link" href="协议文件/02%20斗拱平台综合支付服务协议（四季蝉）20260113.docx" download>下载：斗拱平台综合支付服务协议</a>
+                <a class="material-link" href="协议文件/03%20药店与店员激励协议.doc" download>下载：药店与店员激励协议</a>
+              </td>
+              <td>
+                <div class="tag-list">
+                  <span class="tag blue">财务</span>
+                  <span class="tag blue">信息</span>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td class="index">2</td>
+              <td class="project">基础信息维护</td>
+              <td><span class="tag warn">一次性</span></td>
+              <td>维护员工信息、门店信息。</td>
+              <td>Excel表格维护至新零售后台。</td>
+              <td class="empty">暂无</td>
+              <td class="materials">
+                <a class="material-link" href="协议文件/门店地址批量更新模板.xlsx" download>下载：门店地址批量更新模板</a>
+                <a class="material-link" href="协议文件/员工账号批量更新模板.xlsx" download>下载：员工账号批量更新模板</a>
+              </td>
+              <td><span class="tag blue">信息</span></td>
+            </tr>
+            <tr>
+              <td class="index">3</td>
+              <td class="project">工业信息收集</td>
+              <td><span class="tag">及时更新</span></td>
+              <td>收集厂家信息，开通厂家账号，用于充值及建活动。</td>
+              <td>按模板填写《四季蝉供应商信息收集表》。</td>
+              <td class="empty">暂无</td>
+              <td class="materials">
+                <a class="material-link" href="协议文件/四季蝉厂家%26品种政策收集表.xlsx" download>下载：四季蝉厂家&amp;品种政策收集表</a>
+              </td>
+              <td>
+                <div class="tag-list">
+                  <span class="tag blue">运营</span>
+                  <span class="tag blue">采购</span>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td class="index">4</td>
+              <td class="project">活动商品创建</td>
+              <td><span class="tag">每月更新</span></td>
+              <td>确认活动品种和活动政策。</td>
+              <td>按模板填写《品种政策收集模板表》。</td>
+              <td class="empty">暂无</td>
+              <td class="empty">暂无</td>
+              <td>
+                <div class="tag-list">
+                  <span class="tag blue">运营</span>
+                  <span class="tag blue">采购</span>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td class="index">5</td>
+              <td class="project">操作培训</td>
+              <td><span class="tag warn">一次性</span></td>
+              <td>连锁培训。</td>
+              <td>参与在线会议。</td>
+              <td class="empty">暂无</td>
+              <td class="empty">暂无</td>
+              <td>
+                <div class="tag-list">
+                  <span class="tag blue">运营</span>
+                  <span class="tag blue">采购</span>
+                  <span class="tag blue">财务</span>
+                  <span class="tag blue">信息</span>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td class="index">6</td>
+              <td class="project">订单测试</td>
+              <td><span class="tag warn">一次性</span></td>
+              <td>完成正向、逆向订单的奖励生成收回测试。</td>
+              <td>零售测试。</td>
+              <td class="empty">暂无</td>
+              <td class="empty">暂无</td>
+              <td><span class="tag blue">信息</span></td>
+            </tr>
+            <tr>
+              <td class="index">7</td>
+              <td class="project">店员培训上线</td>
+              <td><span class="tag warn">一次性</span></td>
+              <td>
+                员工手机端培训：登录、认证；如何确认销售与奖励获得情况。
+              </td>
+              <td>发送视频操作说明，可给店员集中线上培训。</td>
+              <td class="empty">暂无</td>
+              <td class="empty">暂无</td>
+              <td><span class="tag blue">店员</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <p class="footer-note">提示：浏览器打印时会自动切换为简洁打印样式。</p>
+  </main>
+  <script>
+    (function () {
+      function formatChineseDate(date) {
+        return date.getFullYear() + "年" + (date.getMonth() + 1) + "月" + date.getDate() + "日";
+      }
+
+      var today = new Date();
+      var endDate = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate());
+      endDate.setDate(endDate.getDate() - 1);
+      var todayText = formatChineseDate(today);
+      var rangeText = todayText + " - " + formatChineseDate(endDate);
+
+      document.querySelectorAll("[data-current-date]").forEach(function (node) {
+        node.textContent = todayText;
+      });
+      document.querySelectorAll("[data-date-range]").forEach(function (node) {
+        node.textContent = rangeText;
+      });
+    })();
+  </script>
+</body>
+</html>
