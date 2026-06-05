@@ -79,6 +79,200 @@
       font-weight: 500;
     }
 
+    .tabs {
+      display: inline-flex;
+      gap: 6px;
+      padding: 5px;
+      margin-bottom: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.8);
+    }
+
+    .tab-button {
+      min-width: 120px;
+      padding: 10px 16px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .tab-button:hover,
+    .tab-button:focus {
+      color: var(--accent-dark);
+      background: #eef5ef;
+      outline: none;
+    }
+
+    .tab-button.is-active {
+      color: #fff;
+      background: var(--accent);
+      box-shadow: 0 8px 18px rgba(39, 115, 92, 0.18);
+    }
+
+    .tab-panel {
+      display: none;
+    }
+
+    .tab-panel.is-active {
+      display: block;
+    }
+
+    .home-hero {
+      position: relative;
+      min-height: 700px;
+      padding: 34px 30px 30px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background:
+        radial-gradient(circle at 50% 42%, rgba(44, 173, 218, 0.16), transparent 34%),
+        linear-gradient(180deg, #ffffff 0%, #f8fbfb 100%);
+      box-shadow: var(--shadow);
+    }
+
+    .orbit-stage {
+      position: relative;
+      height: 300px;
+      margin: 0 auto;
+    }
+
+    .orbit {
+      position: absolute;
+      left: 50%;
+      top: 54%;
+      width: min(920px, 72vw);
+      height: 190px;
+      border: 3px dashed rgba(33, 170, 218, 0.28);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    .orbit.outer {
+      width: min(1120px, 86vw);
+      height: 270px;
+      opacity: 0.7;
+      transform: translate(-50%, -50%) rotate(8deg);
+    }
+
+    .atom-line {
+      position: absolute;
+      left: 50%;
+      top: 40%;
+      width: 500px;
+      height: 130px;
+      border: 3px solid rgba(33, 170, 218, 0.3);
+      border-radius: 50%;
+      transform: translate(-50%, -50%) rotate(20deg);
+    }
+
+    .atom-line.second {
+      transform: translate(-50%, -50%) rotate(-20deg);
+    }
+
+    .core {
+      position: absolute;
+      left: 50%;
+      top: 42%;
+      display: grid;
+      place-items: center;
+      width: 230px;
+      height: 230px;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      background: linear-gradient(160deg, #72cff0 0%, #0ca4da 74%);
+      color: #fff;
+      font-size: 36px;
+      font-weight: 900;
+      line-height: 1.22;
+      text-align: center;
+      box-shadow: 0 30px 48px rgba(21, 117, 154, 0.24);
+    }
+
+    .dot {
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #1aa6d8;
+      box-shadow: 0 0 0 4px rgba(26, 166, 216, 0.1);
+    }
+
+    .dot.one { left: 18%; top: 52%; }
+    .dot.two { left: 24%; top: 70%; }
+    .dot.three { left: 40%; top: 86%; }
+    .dot.four { left: 58%; top: 86%; }
+    .dot.five { left: 78%; top: 70%; }
+    .dot.six { left: 82%; top: 52%; }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: 1.15fr 1fr 1fr 1.15fr;
+      gap: 22px;
+      align-items: start;
+      margin-top: -38px;
+    }
+
+    .feature {
+      min-width: 0;
+    }
+
+    .feature.left {
+      margin-top: -142px;
+    }
+
+    .feature.right {
+      margin-top: -142px;
+    }
+
+    .feature-label {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 190px;
+      min-height: 52px;
+      padding: 8px 22px;
+      border-radius: 999px;
+      background: linear-gradient(180deg, #4cc7ea 0%, #1186c4 100%);
+      color: #fff;
+      font-size: 27px;
+      font-weight: 900;
+      box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.38), 0 10px 20px rgba(19, 133, 195, 0.16);
+    }
+
+    .feature-label.dark {
+      background: linear-gradient(180deg, #5ab6e4 0%, #1d75b6 100%);
+    }
+
+    .feature-copy {
+      margin-top: 22px;
+      color: #17221d;
+      font-size: 23px;
+      line-height: 1.58;
+    }
+
+    .feature-copy p {
+      margin: 0 0 8px;
+    }
+
+    .feature-copy ul {
+      margin: 0;
+      padding-left: 28px;
+    }
+
+    .feature-copy li + li {
+      margin-top: 7px;
+    }
+
+    .red {
+      color: #e60012;
+      font-weight: 900;
+    }
+
     .summary {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -336,8 +530,56 @@
         white-space: normal;
       }
 
+      .tabs {
+        display: flex;
+      }
+
+      .tab-button {
+        flex: 1;
+      }
+
       .summary {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .home-hero {
+        min-height: auto;
+        padding: 24px 18px;
+      }
+
+      .orbit-stage {
+        height: 250px;
+      }
+
+      .core {
+        width: 180px;
+        height: 180px;
+        font-size: 29px;
+      }
+
+      .atom-line {
+        width: 330px;
+        height: 90px;
+      }
+
+      .feature-grid {
+        grid-template-columns: 1fr;
+        margin-top: 6px;
+      }
+
+      .feature.left,
+      .feature.right {
+        margin-top: 0;
+      }
+
+      .feature-label {
+        min-width: 0;
+        width: 100%;
+        font-size: 22px;
+      }
+
+      .feature-copy {
+        font-size: 18px;
       }
     }
 
@@ -371,12 +613,93 @@
   <main class="page">
     <header class="masthead">
       <div>
-        <h1>四季蝉业务对接工作目录</h1>
-        <p class="subtitle">海典指导，连锁配合。用于汇总开户、基础资料、工业信息、活动商品、培训及测试上线事项。</p>
+        <h1>四季蝉业务对接SOP</h1>
+        <p class="subtitle">围绕重点品动销加速，沉淀客户对接材料、行事历与上线协同事项。</p>
       </div>
       <div class="owner">对接模式 <span>海典指导 / 连锁配合</span></div>
     </header>
 
+    <nav class="tabs" aria-label="页面页签">
+      <button class="tab-button is-active" type="button" data-tab-target="home-panel" aria-selected="true">首页</button>
+      <button class="tab-button" type="button" data-tab-target="calendar-panel" aria-selected="false">对接行事历</button>
+    </nav>
+
+    <section class="tab-panel is-active" id="home-panel">
+      <div class="home-hero" aria-label="重点品动销加速业务图">
+        <div class="orbit-stage">
+          <div class="orbit outer"></div>
+          <div class="orbit"></div>
+          <div class="atom-line"></div>
+          <div class="atom-line second"></div>
+          <div class="core">重点品<br>动销加速</div>
+          <span class="dot one"></span>
+          <span class="dot two"></span>
+          <span class="dot three"></span>
+          <span class="dot four"></span>
+          <span class="dot five"></span>
+          <span class="dot six"></span>
+        </div>
+
+        <div class="feature-grid">
+          <article class="feature left">
+            <div class="feature-label">大数据选品</div>
+            <div class="feature-copy">
+              <p><span class="red">“大数据”</span></p>
+              <p><span class="red">替代“经验判断”</span></p>
+              <p>定位核心重点品</p>
+            </div>
+          </article>
+
+          <article class="feature">
+            <div class="feature-label dark">目标管理</div>
+            <div class="feature-copy">
+              <ul>
+                <li><span class="red">可视化</span> 实时跟踪</li>
+                <li>目标与激励强挂钩</li>
+              </ul>
+            </div>
+          </article>
+
+          <article class="feature">
+            <div class="feature-label">培训管理</div>
+            <div class="feature-copy">
+              <ul>
+                <li><span class="red">知识“可变现”</span></li>
+                <li>学习“游戏化”</li>
+                <li>被动变主动</li>
+              </ul>
+            </div>
+          </article>
+
+          <article class="feature right">
+            <div class="feature-label dark">赋能供应商</div>
+            <div class="feature-copy">
+              <p><span class="red">数据同频 赋能供应商</span></p>
+              <p>赢取更多资源支持</p>
+            </div>
+          </article>
+
+          <article class="feature">
+            <div class="feature-label dark">数字化绩效</div>
+            <div class="feature-copy">
+              <p><span class="red">多样化激励</span></p>
+              <p>激发员工积极性</p>
+              <p>提升疗程、关联销售</p>
+            </div>
+          </article>
+
+          <article class="feature">
+            <div class="feature-label">AI智能运营</div>
+            <div class="feature-copy">
+              <p><span class="red">私人助理</span> 自动跟踪过程管理工作</p>
+              <p>如目标达成情况、库存、动销学习任务等</p>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="calendar-panel">
     <section class="summary" aria-label="工作概览">
       <div class="metric">
         <strong>7</strong>
@@ -541,6 +864,7 @@
     </section>
 
     <p class="footer-note">提示：浏览器打印时会自动切换为简洁打印样式。</p>
+    </section>
   </main>
   <script>
     (function () {
@@ -559,6 +883,25 @@
       });
       document.querySelectorAll("[data-date-range]").forEach(function (node) {
         node.textContent = rangeText;
+      });
+
+      var tabButtons = document.querySelectorAll("[data-tab-target]");
+      var tabPanels = document.querySelectorAll(".tab-panel");
+
+      tabButtons.forEach(function (button) {
+        button.addEventListener("click", function () {
+          var targetId = button.getAttribute("data-tab-target");
+
+          tabButtons.forEach(function (item) {
+            var isActive = item === button;
+            item.classList.toggle("is-active", isActive);
+            item.setAttribute("aria-selected", String(isActive));
+          });
+
+          tabPanels.forEach(function (panel) {
+            panel.classList.toggle("is-active", panel.id === targetId);
+          });
+        });
       });
     })();
   </script>
