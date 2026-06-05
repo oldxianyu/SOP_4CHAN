@@ -288,6 +288,80 @@
         line-height: 1.45;
       }
 
+      .incentive-shell {
+        animation: pageIn 320ms ease both;
+      }
+
+      .incentive-hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 340px;
+        gap: 18px;
+        align-items: stretch;
+        margin-bottom: 16px;
+      }
+
+      .incentive-hero .ant-card {
+        height: 100%;
+        border: 1px solid #d5e9f4;
+        box-shadow: 0 14px 36px rgba(31, 42, 36, 0.08);
+      }
+
+      .incentive-title.ant-typography {
+        margin: 0 0 12px;
+        color: #105d86;
+        font-size: clamp(30px, 4vw, 52px);
+        line-height: 1.1;
+      }
+
+      .incentive-lede.ant-typography {
+        max-width: 900px;
+        color: #46554b;
+        font-size: 17px;
+        line-height: 1.75;
+      }
+
+      .mode-card {
+        height: 100%;
+        border: 1px solid #d5e9f4;
+        background: #f8fcff;
+      }
+
+      .play-card {
+        height: 100%;
+        border: 1px solid #dce7ee;
+      }
+
+      .play-card .ant-card-head-title {
+        color: #105d86;
+        font-weight: 900;
+      }
+
+      .play-card .ant-typography {
+        margin-bottom: 0;
+      }
+
+      .play-meta {
+        margin-top: 12px;
+      }
+
+      .position-card {
+        height: 100%;
+        border: 1px solid #d5e9f4;
+        background: #fbfdff;
+      }
+
+      .position-card strong {
+        display: block;
+        margin-bottom: 8px;
+        color: #105d86;
+      }
+
+      .incentive-table .ant-table-thead > tr > th {
+        background: #eaf6fc !important;
+        color: #24536b;
+        font-weight: 900;
+      }
+
       @keyframes pageIn {
         from {
           opacity: 0;
@@ -313,6 +387,10 @@
         .hero-panel {
           grid-template-columns: 1fr;
           padding: 28px 20px;
+        }
+
+        .incentive-hero {
+          grid-template-columns: 1fr;
         }
 
         .section-title-row .ant-typography {
@@ -538,6 +616,175 @@
         );
       }
 
+      const incentiveModes = [
+        {
+          title: "按固定金额",
+          text: "卖出指定品种后按固定金额给奖励，适合店员容易理解、需要快速启动的活动。",
+        },
+        {
+          title: "按百分比%",
+          text: "按销售额或成交区间计算奖励，可配合最低成交价、不同价格区间、不同奖励规则。",
+        },
+      ];
+
+      const incentiveTypes = [
+        {
+          type: "1、单品激励",
+          plays: [
+            ["无阶梯", "卖出一盒给固定奖励", "黄金单品、动销爆破"],
+            ["有阶梯 ★★★", "按活动周期或单个订单设置阶梯奖励，如第1-20件、21-30件不同奖励", "季节热卖品、短期冲量"],
+            ["批号奖励 ★", "指定批号或排除批号设置激励", "效期品种、库存挤压品种"],
+          ],
+        },
+        {
+          type: "2、疗程激励",
+          plays: [["多件一单激励 ★★", "一次性卖出多件设置不同激励，如3件奖励5元、5件奖励10元", "慢病、长期用药品种动销"]],
+        },
+        {
+          type: "3、关联销售激励",
+          plays: [
+            ["固定品种关联 ★★★", "A+2B+3C 等固定组合奖励", "降低一单一品率，提高店员专业度"],
+            ["高频带低频/系列", "（A/B/C）+（D/E/F）+（X/Y/Z）任意组合", "病种搭配、系列化销售"],
+            ["任意品种关联", "多个品种中任意3种奖励5元，任意5种奖励10元，可加阶梯", "关联销售、客单提升"],
+          ],
+        },
+        {
+          type: "4、目标达成奖励",
+          plays: [
+            ["店员目标", "设置未达成、已达成、超额达成不同激励，支持销量或销售额目标", "内部目标PK、冲销量拿返利"],
+            ["门店目标", "按门店目标完成情况设置奖励", "门店团队目标管理"],
+            ["片区目标", "按片区目标完成情况设置奖励", "区域协同与片区PK"],
+          ],
+        },
+        {
+          type: "5、销售排名奖励",
+          plays: [
+            ["每日早鸟奖励 ★★", "设置排名激励，如某品种前3名额外奖励50、30、20元", "提高店员荣誉感"],
+            ["周排名奖励", "按周统计排名并发放奖励", "持续拉动销售节奏"],
+            ["月度排名奖励", "按月统计排名并发放奖励", "长期目标牵引"],
+            ["单品排名奖励", "围绕单一品种设置排名奖励", "重点品爆破"],
+          ],
+        },
+        {
+          type: "6、晒单打赏激励",
+          plays: [["店员晒单，厂家打赏 ★★★", "晒单内容连锁全员可见，厂家手机端额外打赏", "提高员工品种关注度"]],
+        },
+        {
+          type: "7、学习考试激励",
+          plays: [["领取固定/随机金额奖励", "课程学习完或考试及格后发放；可设置总预算、随机2-5元或固定5元", "提高员工学习主动性"]],
+        },
+      ];
+
+      const positionMappings = [
+        ["月度战略品", "目标管理"],
+        ["重点爆破品", "阶梯奖励"],
+        ["慢病消耗品", "疗程奖励"],
+        ["病种搭配品", "关联奖励"],
+        ["新进推广品", "晒单打赏"],
+        ["批号效期品", "批号激励"],
+      ];
+
+      function IncentivePage() {
+        const flatRows = incentiveTypes.flatMap((group) =>
+          group.plays.map(([play, rule, effect], index) => ({
+            key: `${group.type}-${play}`,
+            type: index === 0 ? group.type : "",
+            play,
+            rule,
+            effect,
+          })),
+        );
+
+        const columns = [
+          { title: "七种类型", dataIndex: "type", width: 170, render: (value) => (value ? h(Text, { strong: true, className: "project-name" }, value) : "") },
+          { title: "玩法", dataIndex: "play", width: 220, render: (value) => h(Tag, { color: "blue", className: "work-tag" }, value) },
+          { title: "规则说明", dataIndex: "rule", width: 430 },
+          { title: "适用作用", dataIndex: "effect", width: 260 },
+        ];
+
+        return h(
+          "div",
+          { className: "incentive-shell" },
+          h(
+            "section",
+            { className: "incentive-hero" },
+            h(
+              Card,
+              { bordered: false },
+              h(Tag, { color: "blue", className: "hero-platform-tag" }, "激励玩法总结"),
+              h(Title, { className: "incentive-title" }, "两大模式、七种类型、二十种玩法"),
+              h(
+                Paragraph,
+                { className: "incentive-lede" },
+                "四季蝉支持固定金额或百分比奖励，并可围绕单品、疗程、关联销售、目标达成、销售排名、晒单打赏、学习考试等场景配置激励，让重点品动销从“政策设计”落到“店员行为”。",
+              ),
+              h(Button, { href: "协议文件/华东大区四季蝉SOP_启动会.xlsx", download: true, type: "primary" }, "下载：华东大区四季蝉SOP_启动会"),
+            ),
+            h(
+              Row,
+              { gutter: [12, 12] },
+              incentiveModes.map((item) =>
+                h(
+                  Col,
+                  { span: 24, key: item.title },
+                  h(Card, { className: "mode-card", bordered: false }, h(Title, { level: 4 }, item.title), h(Paragraph, null, item.text)),
+                ),
+              ),
+            ),
+          ),
+          h(
+            Row,
+            { gutter: [16, 16] },
+            incentiveTypes.map((group) =>
+              h(
+                Col,
+                { xs: 24, md: 12, xl: 8, key: group.type },
+                h(
+                  Card,
+                  { className: "play-card", title: group.type },
+                  group.plays.map(([play, rule, effect]) =>
+                    h(
+                      "div",
+                      { className: "play-meta", key: play },
+                      h(Tag, { color: "blue", className: "work-tag" }, play),
+                      h(Paragraph, null, rule),
+                      h(Text, { type: "secondary" }, effect),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          h(
+            Card,
+            { className: "section-card", bordered: false },
+            h(
+              "div",
+              { className: "section-title-row" },
+              h(Title, { level: 2 }, "月度品种定位分级"),
+              h(Paragraph, null, "把品种定位和激励玩法对应起来，便于活动设计时快速选规则。"),
+            ),
+            h(
+              Row,
+              { gutter: [12, 12] },
+              positionMappings.map(([product, method]) =>
+                h(
+                  Col,
+                  { xs: 24, md: 12, xl: 8, key: product },
+                  h(Card, { className: "position-card", bordered: false }, h("strong", null, product), h(Tag, { color: "cyan", className: "work-tag" }, method)),
+                ),
+              ),
+            ),
+          ),
+          h(
+            Card,
+            { className: "section-card incentive-table", bordered: false },
+            h(Title, { level: 2 }, "玩法明细表"),
+            h(Table, { columns, dataSource: flatRows, pagination: false, scroll: { x: 1080 } }),
+          ),
+        );
+      }
+
       function CalendarPage({ dates }) {
         const rows = [
           {
@@ -633,6 +880,7 @@
               items: [
                 { key: "home", label: "首页", children: h(HomePage, { onOpenCalendar: () => setActiveKey("calendar") }) },
                 { key: "calendar", label: "对接行事历", children: h(CalendarPage, { dates }) },
+                { key: "incentive", label: "激励玩法", children: h(IncentivePage) },
               ],
             }),
           ),
