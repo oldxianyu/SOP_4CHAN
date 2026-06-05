@@ -422,6 +422,103 @@
         font-weight: 900;
       }
 
+      .selection-shell {
+        animation: pageIn 320ms ease both;
+      }
+
+      .selection-hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 330px;
+        gap: 18px;
+        margin-bottom: 16px;
+      }
+
+      .selection-hero .ant-card,
+      .selection-level-card,
+      .selection-source-card {
+        border: 1px solid rgba(42, 75, 255, 0.14);
+        background: rgba(255, 255, 255, 0.9);
+        box-shadow: 0 14px 34px rgba(24, 52, 126, 0.07);
+      }
+
+      .selection-title.ant-typography {
+        margin: 0 0 12px;
+        color: #1f3f95;
+        font-size: clamp(30px, 4vw, 52px);
+        line-height: 1.1;
+      }
+
+      .selection-level-card {
+        height: 100%;
+        overflow: hidden;
+      }
+
+      .level-card-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: flex-start;
+        margin-bottom: 14px;
+      }
+
+      .level-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 44px;
+        height: 44px;
+        border-radius: 14px;
+        color: #ffffff;
+        background: linear-gradient(135deg, #2a4bff, #1f3f95);
+        font-size: 22px;
+        font-weight: 900;
+      }
+
+      .level-stars {
+        color: #ff7438;
+        font-size: 18px;
+        font-weight: 900;
+        letter-spacing: 2px;
+      }
+
+      .level-meta-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .level-meta {
+        min-height: 74px;
+        padding: 12px;
+        border-radius: 8px;
+        background: #f6f8ff;
+      }
+
+      .level-meta label {
+        display: block;
+        margin-bottom: 6px;
+        color: #64748b;
+        font-size: 13px;
+      }
+
+      .selection-source-card {
+        height: 100%;
+      }
+
+      .source-index {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 34px;
+        height: 34px;
+        margin-bottom: 12px;
+        border-radius: 11px;
+        color: #1f3f95;
+        background: #eef2ff;
+        font-weight: 900;
+      }
+
       @keyframes pageIn {
         from {
           opacity: 0;
@@ -454,6 +551,10 @@
         }
 
         .incentive-hero {
+          grid-template-columns: 1fr;
+        }
+
+        .selection-hero {
           grid-template-columns: 1fr;
         }
 
@@ -748,6 +849,129 @@
         ["批号效期品", "批号激励"],
       ];
 
+      const selectionLevels = [
+        {
+          level: "A",
+          name: "当月核心战略品",
+          stars: "★★★★★",
+          count: "10-15个",
+          position: ["连锁主推品", "厂家战略品"],
+          play: ["目标/排名", "单品阶梯/疗程"],
+          purpose: ["爆量", "标杆"],
+          incentive: "及时激励（双向奔赴）",
+        },
+        {
+          level: "B",
+          name: "阶段性重点品",
+          stars: "★★★",
+          count: "15-80个",
+          position: ["品类报告", "AAA重点品", "通用名热卖榜"],
+          play: ["单品", "疗程", "关联"],
+          purpose: ["用20%品带动80%销售额"],
+          incentive: "及时激励",
+        },
+        {
+          level: "C",
+          name: "常规代金品",
+          stars: "★★",
+          count: "不限",
+          position: ["近效期", "新品", "库存积压", "厂家普通挂金品", "常规提成品种"],
+          play: ["单品等基础玩法"],
+          purpose: ["常规带动"],
+          incentive: "及时/延时激励",
+        },
+      ];
+
+      const selectionSources = [
+        "当季热卖品：季节性需求较高、热销期短的品种。",
+        "厂家战略品、返利品种：用于冲击高销售，拿到返利。",
+        "通用名热卖榜：关注企业排名低于省份的品种。",
+        "重点3A品种：来自随心看重点品种经营报告中的3A品种。",
+        "近效期品种：近90天近效期品种，用随心看近效期催销。",
+        "新品突破：连锁新品，需要培训并做新品突破。",
+        "组合关联品种：按照病种梳理，设计关联销售组合。",
+        "门店活动组合品种：如买二赠一，既能激励顾客，也可对店员双向激励。",
+      ];
+
+      function SelectionPage() {
+        return h(
+          "div",
+          { className: "selection-shell" },
+          h(
+            "section",
+            { className: "selection-hero" },
+            h(
+              Card,
+              { bordered: false },
+              h(Tag, { color: "blue", className: "hero-platform-tag" }, "选品思路总结"),
+              h(Title, { className: "selection-title" }, "重点品种要突出，主次要分明"),
+              h(
+                Paragraph,
+                { className: "incentive-lede" },
+                "选品不是把所有厂家政策都塞进活动里，而是先把品种分层：当月核心战略品负责爆量和标杆，阶段性重点品负责结构带动，常规代金品负责日常覆盖。分级越清楚，培训、激励和复盘越容易落地。",
+              ),
+            ),
+            h(
+              Card,
+              { bordered: false },
+              h(Title, { level: 4 }, "选品判断"),
+              h(Paragraph, null, "优先选择能形成清晰任务、清晰卖点、清晰奖励感知的品种。"),
+              h(Space, { wrap: true, size: [8, 8] }, h(Tag, { color: "blue" }, "重点突出"), h(Tag, { color: "orange" }, "主次分明"), h(Tag, { color: "purple" }, "动销可追踪")),
+            ),
+          ),
+          h(
+            Row,
+            { gutter: [16, 16] },
+            selectionLevels.map((item) =>
+              h(
+                Col,
+                { xs: 24, lg: 8, key: item.level },
+                h(
+                  Card,
+                  { className: "selection-level-card", bordered: false },
+                  h(
+                    "div",
+                    { className: "level-card-top" },
+                    h("div", null, h("span", { className: "level-badge" }, item.level), h(Title, { level: 3 }, item.name)),
+                    h("span", { className: "level-stars" }, item.stars),
+                  ),
+                  h(Text, { type: "secondary" }, `建议数量：${item.count}`),
+                  h(
+                    "div",
+                    { className: "level-meta-grid" },
+                    h("div", { className: "level-meta" }, h("label", null, "选品定位"), h(Space, { wrap: true, size: [6, 6] }, item.position.map((tag) => h(Tag, { key: tag, color: "blue" }, tag)))),
+                    h("div", { className: "level-meta" }, h("label", null, "激励玩法"), h(Space, { wrap: true, size: [6, 6] }, item.play.map((tag) => h(Tag, { key: tag }, tag)))),
+                    h("div", { className: "level-meta" }, h("label", null, "选品目的"), h(Space, { wrap: true, size: [6, 6] }, item.purpose.map((tag) => h(Tag, { key: tag, color: "orange" }, tag)))),
+                    h("div", { className: "level-meta" }, h("label", null, "激励类型"), h(Text, { strong: true }, item.incentive)),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          h(
+            Card,
+            { className: "section-card", bordered: false },
+            h(
+              "div",
+              { className: "section-title-row" },
+              h(Title, { level: 2 }, "8类优先选品来源"),
+              h(Paragraph, null, "从季节、厂家资源、排名差异、效期、新品和组合活动中寻找更容易推动的重点品。"),
+            ),
+            h(
+              Row,
+              { gutter: [12, 12] },
+              selectionSources.map((text, index) =>
+                h(
+                  Col,
+                  { xs: 24, md: 12, xl: 6, key: text },
+                  h(Card, { className: "selection-source-card", bordered: false }, h("span", { className: "source-index" }, String(index + 1).padStart(2, "0")), h(Paragraph, null, text)),
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+
       function IncentivePage() {
         const flatRows = incentiveTypes.flatMap((group) =>
           group.plays.map(([play, rule, effect], index) => ({
@@ -955,6 +1179,7 @@
                 { key: "home", label: "首页", children: h(HomePage, { onOpenCalendar: () => setActiveKey("calendar") }) },
                 { key: "calendar", label: "对接行事历", children: h(CalendarPage, { dates }) },
                 { key: "incentive", label: "激励玩法", children: h(IncentivePage) },
+                { key: "selection", label: "选品思路", children: h(SelectionPage) },
               ],
             }),
           ),
