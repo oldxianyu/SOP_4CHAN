@@ -1,11 +1,12 @@
 # SOP_4CHAN
 
-四季蝉业务对接工作目录网页。
+四季蝉业务对接SOP网页，使用 Ant Design 组件库重构。
 
 ## 文件说明
 
-- `index.html`：业务对接工作目录网页。
+- `index.html`：业务对接SOP网页，包含“首页”和“对接行事历”两个页签。
 - `协议文件/`：网页中“材料下载”列引用的客户下载材料。
+- `vendor/`：本地化的 React、ReactDOM、Ant Design 和 Day.js 浏览器运行文件，避免依赖外部 CDN。
 
 ## 使用方式
 

@@ -1,1087 +1,593 @@
 <!doctype html>
 <html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>四季蝉 - 业务对接工作目录</title>
-  <style>
-    :root {
-      --bg: #f6f7f3;
-      --paper: #ffffff;
-      --ink: #1f2a24;
-      --muted: #657066;
-      --line: #dce2d9;
-      --soft: #eef3ec;
-      --accent: #27735c;
-      --accent-dark: #185641;
-      --warn: #9a6b1d;
-      --blue: #315f8c;
-      --shadow: 0 18px 46px rgba(31, 42, 36, 0.1);
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      color: var(--ink);
-      background:
-        linear-gradient(180deg, rgba(39, 115, 92, 0.08), transparent 320px),
-        var(--bg);
-      font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", Arial, sans-serif;
-      line-height: 1.55;
-    }
-
-    .page {
-      width: min(1480px, calc(100% - 40px));
-      margin: 0 auto;
-      padding: 34px 0 44px;
-    }
-
-    .masthead {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 24px;
-      align-items: end;
-      margin-bottom: 22px;
-    }
-
-    h1 {
-      margin: 0;
-      font-size: clamp(28px, 4vw, 48px);
-      letter-spacing: 0;
-      line-height: 1.1;
-      color: var(--accent-dark);
-    }
-
-    .subtitle {
-      margin: 12px 0 0;
-      font-size: 16px;
-      color: var(--muted);
-    }
-
-    .owner {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      padding: 12px 14px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.74);
-      color: var(--accent-dark);
-      font-weight: 700;
-      white-space: nowrap;
-    }
-
-    .owner span {
-      color: var(--muted);
-      font-weight: 500;
-    }
-
-    .tabs {
-      display: inline-flex;
-      gap: 6px;
-      padding: 5px;
-      margin-bottom: 18px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.8);
-    }
-
-    .tab-button {
-      min-width: 120px;
-      padding: 10px 16px;
-      border: 0;
-      border-radius: 6px;
-      background: transparent;
-      color: var(--muted);
-      font: inherit;
-      font-weight: 800;
-      cursor: pointer;
-    }
-
-    .tab-button:hover,
-    .tab-button:focus {
-      color: var(--accent-dark);
-      background: #eef5ef;
-      outline: none;
-    }
-
-    .tab-button.is-active {
-      color: #fff;
-      background: var(--accent);
-      box-shadow: 0 8px 18px rgba(39, 115, 92, 0.18);
-    }
-
-    .tab-panel {
-      display: none;
-    }
-
-    .tab-panel.is-active {
-      display: block;
-    }
-
-    .home-hero {
-      overflow: hidden;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #ffffff;
-      box-shadow: var(--shadow);
-    }
-
-    .home-intro {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(360px, 0.78fr);
-      gap: 36px;
-      align-items: stretch;
-      padding: 42px;
-      background:
-        linear-gradient(135deg, rgba(39, 115, 92, 0.09), transparent 46%),
-        linear-gradient(180deg, #ffffff, #f7faf7);
-      border-bottom: 1px solid var(--line);
-    }
-
-    .eyebrow {
-      margin: 0 0 12px;
-      color: var(--accent);
-      font-size: 14px;
-      font-weight: 900;
-      letter-spacing: 0;
-    }
-
-    .home-title {
-      margin: 0;
-      max-width: 760px;
-      color: var(--accent-dark);
-      font-size: clamp(34px, 5vw, 64px);
-      line-height: 1.08;
-      letter-spacing: 0;
-    }
-
-    .home-lede {
-      max-width: 760px;
-      margin: 22px 0 0;
-      color: #425047;
-      font-size: 19px;
-      line-height: 1.75;
-    }
-
-    .home-actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-top: 28px;
-    }
-
-    .home-action {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 42px;
-      padding: 9px 16px;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: #fff;
-      color: var(--accent-dark);
-      font-weight: 800;
-    }
-
-    .home-action.primary {
-      border-color: var(--accent);
-      background: var(--accent);
-      color: #fff;
-    }
-
-    .home-scoreboard {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
-      align-content: start;
-      padding: 18px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.78);
-    }
-
-    .score {
-      min-height: 112px;
-      padding: 16px;
-      border-radius: 8px;
-      background: #f5f8f3;
-    }
-
-    .score strong {
-      display: block;
-      margin-bottom: 8px;
-      color: var(--accent-dark);
-      font-size: 27px;
-      line-height: 1;
-    }
-
-    .score span {
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.5;
-    }
-
-    .home-section {
-      padding: 34px 42px;
-      border-bottom: 1px solid var(--line);
-    }
-
-    .home-section:last-child {
-      border-bottom: 0;
-    }
-
-    .section-heading {
-      display: flex;
-      justify-content: space-between;
-      gap: 18px;
-      align-items: end;
-      margin-bottom: 22px;
-    }
-
-    .section-heading h2 {
-      margin: 0;
-      color: var(--accent-dark);
-      font-size: 25px;
-      letter-spacing: 0;
-    }
-
-    .section-heading p {
-      max-width: 560px;
-      margin: 0;
-      color: var(--muted);
-      font-size: 14px;
-      text-align: right;
-    }
-
-    .flow {
-      display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
-      gap: 0;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      overflow: hidden;
-      background: #fbfcfa;
-    }
-
-    .flow-step {
-      position: relative;
-      min-height: 162px;
-      padding: 18px 14px;
-      border-right: 1px solid var(--line);
-      background: #fff;
-    }
-
-    .flow-step:last-child {
-      border-right: 0;
-    }
-
-    .flow-step::after {
-      content: "";
-      position: absolute;
-      right: -9px;
-      top: 50%;
-      z-index: 1;
-      width: 18px;
-      height: 18px;
-      border-top: 1px solid var(--line);
-      border-right: 1px solid var(--line);
-      background: #fff;
-      transform: translateY(-50%) rotate(45deg);
-    }
-
-    .flow-step:last-child::after {
-      display: none;
-    }
-
-    .step-num {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 30px;
-      height: 30px;
-      margin-bottom: 12px;
-      border-radius: 50%;
-      background: #e7f3ef;
-      color: var(--accent-dark);
-      font-size: 13px;
-      font-weight: 900;
-    }
-
-    .flow-step h3 {
-      margin: 0 0 8px;
-      color: var(--accent-dark);
-      font-size: 17px;
-      letter-spacing: 0;
-    }
-
-    .flow-step p {
-      margin: 0;
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.55;
-    }
-
-    .capability-grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 14px;
-    }
-
-    .capability {
-      min-height: 154px;
-      padding: 18px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #fbfcfa;
-    }
-
-    .capability h3 {
-      margin: 0 0 10px;
-      color: var(--accent-dark);
-      font-size: 18px;
-      letter-spacing: 0;
-    }
-
-    .capability p {
-      margin: 0;
-      color: var(--muted);
-      font-size: 14px;
-      line-height: 1.65;
-    }
-
-    .delivery-band {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      overflow: hidden;
-      background: #fff;
-    }
-
-    .delivery-item {
-      padding: 20px;
-      border-right: 1px solid var(--line);
-    }
-
-    .delivery-item:last-child {
-      border-right: 0;
-    }
-
-    .delivery-item strong {
-      display: block;
-      margin-bottom: 8px;
-      color: var(--accent-dark);
-      font-size: 18px;
-    }
-
-    .delivery-item span {
-      color: var(--muted);
-      font-size: 14px;
-      line-height: 1.6;
-    }
-
-    .summary {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 12px;
-      margin-bottom: 18px;
-    }
-
-    .metric {
-      padding: 16px 18px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.84);
-    }
-
-    .metric strong {
-      display: block;
-      margin-bottom: 4px;
-      font-size: 26px;
-      line-height: 1;
-      color: var(--accent-dark);
-    }
-
-    .metric span {
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    .table-shell {
-      overflow: hidden;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--paper);
-      box-shadow: var(--shadow);
-    }
-
-    .table-scroll {
-      overflow-x: auto;
-    }
-
-    table {
-      width: 100%;
-      min-width: 1240px;
-      border-collapse: separate;
-      border-spacing: 0;
-    }
-
-    caption {
-      padding: 16px 18px;
-      text-align: left;
-      font-weight: 700;
-      color: var(--accent-dark);
-      background: #fbfcfa;
-      border-bottom: 1px solid var(--line);
-    }
-
-    th,
-    td {
-      padding: 14px 13px;
-      border-right: 1px solid var(--line);
-      border-bottom: 1px solid var(--line);
-      vertical-align: top;
-      font-size: 14px;
-    }
-
-    th {
-      position: sticky;
-      top: 0;
-      z-index: 2;
-      background: var(--soft);
-      color: #314138;
-      font-size: 13px;
-      text-align: left;
-      white-space: nowrap;
-    }
-
-    tr:last-child td {
-      border-bottom: 0;
-    }
-
-    th:last-child,
-    td:last-child {
-      border-right: 0;
-    }
-
-    tbody tr:nth-child(even) td {
-      background: #fbfcfa;
-    }
-
-    tbody tr:hover td {
-      background: #f0f6f0;
-    }
-
-    .index {
-      width: 52px;
-      text-align: center;
-      color: var(--accent-dark);
-      font-weight: 800;
-    }
-
-    .project {
-      min-width: 132px;
-      font-weight: 800;
-      color: var(--accent-dark);
-    }
-
-    .date {
-      min-width: 116px;
-      color: var(--muted);
-    }
-
-    .status-cell {
-      min-width: 92px;
-      text-align: center;
-    }
-
-    .todo {
-      display: inline-flex;
-      gap: 7px;
-      align-items: center;
-      color: var(--muted);
-      font-weight: 700;
-    }
-
-    .box {
-      width: 16px;
-      height: 16px;
-      display: inline-block;
-      border: 2px solid #9ba79d;
-      border-radius: 3px;
-      background: #fff;
-    }
-
-    .tag-list {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-    }
-
-    .tag {
-      display: inline-flex;
-      align-items: center;
-      min-height: 25px;
-      padding: 3px 9px;
-      border-radius: 999px;
-      background: #eaf2ef;
-      color: var(--accent-dark);
-      font-size: 12px;
-      font-weight: 700;
-      white-space: nowrap;
-    }
-
-    .tag.blue {
-      background: #e9f0f7;
-      color: var(--blue);
-    }
-
-    .tag.warn {
-      background: #f6efe1;
-      color: var(--warn);
-    }
-
-    .stack {
-      display: grid;
-      gap: 8px;
-    }
-
-    .doc {
-      padding: 8px 10px;
-      border-left: 3px solid var(--accent);
-      background: #f5f8f3;
-      border-radius: 0 6px 6px 0;
-      font-weight: 650;
-    }
-
-    .doc a {
-      color: var(--accent-dark);
-      text-decoration: none;
-    }
-
-    .doc a:hover,
-    .doc a:focus {
-      text-decoration: underline;
-      text-underline-offset: 3px;
-    }
-
-    .materials {
-      min-width: 220px;
-    }
-
-    .material-link {
-      display: block;
-      padding: 9px 10px;
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      background: #fbfcfa;
-      color: var(--accent-dark);
-      font-weight: 700;
-      text-decoration: none;
-    }
-
-    .material-link + .material-link {
-      margin-top: 8px;
-    }
-
-    .material-link:hover,
-    .material-link:focus {
-      border-color: rgba(39, 115, 92, 0.45);
-      background: #f0f6f0;
-      text-decoration: underline;
-      text-underline-offset: 3px;
-    }
-
-    .notes {
-      min-width: 330px;
-      color: #39473f;
-    }
-
-    .notes p {
-      margin: 0 0 8px;
-    }
-
-    .notes ul {
-      margin: 0;
-      padding-left: 18px;
-    }
-
-    .notes li + li {
-      margin-top: 6px;
-    }
-
-    .empty {
-      color: #9aa49b;
-    }
-
-    .footer-note {
-      margin-top: 14px;
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    @media (max-width: 860px) {
-      .page {
-        width: min(100% - 24px, 1480px);
-        padding-top: 24px;
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>四季蝉业务对接SOP</title>
+    <link rel="stylesheet" href="vendor/antd-reset.css" />
+    <style>
+      :root {
+        color: #1f2a24;
+        background: #f4f7f3;
+        font-synthesis: none;
+        text-rendering: geometricPrecision;
       }
 
-      .masthead {
-        grid-template-columns: 1fr;
-        align-items: start;
+      * {
+        box-sizing: border-box;
       }
 
-      .owner {
-        width: 100%;
-        justify-content: space-between;
-        white-space: normal;
-      }
-
-      .tabs {
-        display: flex;
-      }
-
-      .tab-button {
-        flex: 1;
-      }
-
-      .summary {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-
-      .home-intro {
-        grid-template-columns: 1fr;
-        padding: 28px 20px;
-      }
-
-      .home-scoreboard,
-      .capability-grid,
-      .delivery-band {
-        grid-template-columns: 1fr;
-      }
-
-      .home-section {
-        padding: 26px 20px;
-      }
-
-      .section-heading {
-        display: block;
-      }
-
-      .section-heading p {
-        margin-top: 8px;
-        text-align: left;
-      }
-
-      .flow {
-        grid-template-columns: 1fr;
-      }
-
-      .flow-step {
-        min-height: auto;
-        border-right: 0;
-        border-bottom: 1px solid var(--line);
-      }
-
-      .flow-step:last-child {
-        border-bottom: 0;
-      }
-
-      .flow-step::after {
-        display: none;
-      }
-
-      .delivery-item {
-        border-right: 0;
-        border-bottom: 1px solid var(--line);
-      }
-
-      .delivery-item:last-child {
-        border-bottom: 0;
-      }
-    }
-
-    @media (max-width: 520px) {
-      .summary {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    @media print {
       body {
-        background: #fff;
+        min-width: 320px;
+        margin: 0;
+        background:
+          linear-gradient(180deg, rgba(36, 120, 95, 0.09), transparent 360px),
+          #f4f7f3;
+        font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", "Segoe UI", sans-serif;
       }
 
-      .page {
+      .app-shell {
+        width: min(1480px, calc(100% - 40px));
+        margin: 0 auto;
+        padding: 34px 0 48px;
+      }
+
+      .app-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 24px;
+        align-items: flex-end;
+        margin-bottom: 18px;
+      }
+
+      .app-header h1.ant-typography {
+        margin: 4px 0 8px;
+        color: #185641;
+        font-size: clamp(32px, 4vw, 52px);
+        line-height: 1.06;
+      }
+
+      .brand-kicker {
+        color: #24785f;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+      }
+
+      .main-tabs > .ant-tabs-nav {
+        margin-bottom: 18px;
+      }
+
+      .main-tabs .ant-tabs-tab {
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      .home-shell,
+      .calendar-shell {
+        animation: pageIn 320ms ease both;
+      }
+
+      .hero-panel {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(360px, 0.72fr);
+        gap: 28px;
+        min-height: 470px;
+        padding: 42px;
+        overflow: hidden;
+        border: 1px solid #dce2d9;
+        border-radius: 8px;
+        background:
+          radial-gradient(circle at 92% 18%, rgba(25, 118, 173, 0.18), transparent 28%),
+          linear-gradient(135deg, #ffffff 0%, #eef6f2 58%, #e8f2f5 100%);
+        box-shadow: 0 18px 46px rgba(31, 42, 36, 0.1);
+      }
+
+      .hero-copy {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+
+      .hero-copy h1.ant-typography {
+        max-width: 820px;
+        margin: 0;
+        color: #164d3b;
+        font-size: clamp(36px, 5.3vw, 72px);
+        line-height: 1.05;
+      }
+
+      .hero-lede.ant-typography {
+        max-width: 820px;
+        margin: 22px 0 26px;
+        color: #46554b;
+        font-size: 18px;
+        line-height: 1.85;
+      }
+
+      .hero-board {
+        align-self: center;
+        padding: 20px;
+        border: 1px solid rgba(36, 120, 95, 0.18);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.74);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72), 0 20px 46px rgba(31, 42, 36, 0.08);
+      }
+
+      .board-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+
+      .hero-board .ant-statistic {
+        min-height: 112px;
+        padding: 16px;
+        border-radius: 8px;
+        background: #f7faf7;
+      }
+
+      .stakeholder-row {
+        margin-top: 16px;
+      }
+
+      .stakeholder-card,
+      .section-card,
+      .table-card,
+      .summary-row .ant-card {
+        border: 1px solid #dce2d9;
+        box-shadow: 0 14px 36px rgba(31, 42, 36, 0.08);
+      }
+
+      .stakeholder-card {
+        height: 100%;
+      }
+
+      .card-icon,
+      .module-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        color: #185641;
+        background: #e9f4ef;
+        font-size: 18px;
+        font-weight: 900;
+      }
+
+      .section-card {
+        margin-top: 16px;
+      }
+
+      .section-title-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 20px;
+        align-items: flex-start;
+        margin-bottom: 20px;
+      }
+
+      .section-title-row .ant-typography {
+        max-width: 560px;
+        margin: 4px 0 0;
+        color: #657066;
+        text-align: right;
+      }
+
+      .tall-card {
+        height: 100%;
+      }
+
+      .module-card {
+        height: 100%;
+        background: #fbfcfa;
+      }
+
+      .module-card strong {
+        display: block;
+        margin-bottom: 6px;
+        color: #185641;
+      }
+
+      .calendar-shell .ant-alert,
+      .summary-row {
+        margin-bottom: 16px;
+      }
+
+      .table-card .ant-table-thead > tr > th {
+        background: #edf4ee !important;
+        color: #314138;
+        font-weight: 900;
+      }
+
+      .project-name {
+        color: #185641;
+      }
+
+      .task-tag {
+        max-width: 150px;
+        margin-inline-end: 0;
+        white-space: normal;
+        line-height: 1.55;
+      }
+
+      .notes-block ul {
+        margin: 6px 0 12px;
+        padding-left: 18px;
+      }
+
+      .notes-block li + li {
+        margin-top: 5px;
+      }
+
+      .download-list {
         width: 100%;
-        padding: 0;
       }
 
-      .table-shell {
-        box-shadow: none;
+      .download-list .ant-btn {
+        justify-content: flex-start;
+        height: auto;
+        min-height: 38px;
+        padding: 8px 10px;
+        white-space: normal;
+        text-align: left;
+        line-height: 1.45;
       }
 
-      th {
-        position: static;
+      @keyframes pageIn {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
       }
-    }
-  </style>
-</head>
-<body>
-  <main class="page">
-    <header class="masthead">
-      <div>
-        <h1>四季蝉业务对接SOP</h1>
-        <p class="subtitle">围绕重点品动销加速，沉淀客户对接材料、行事历与上线协同事项。</p>
-      </div>
-      <div class="owner">对接模式 <span>海典指导 / 连锁配合</span></div>
-    </header>
 
-    <nav class="tabs" aria-label="页面页签">
-      <button class="tab-button is-active" type="button" data-tab-target="home-panel" aria-selected="true">首页</button>
-      <button class="tab-button" type="button" data-tab-target="calendar-panel" aria-selected="false">对接行事历</button>
-    </nav>
+      @media (max-width: 960px) {
+        .app-shell {
+          width: min(100% - 24px, 1480px);
+          padding-top: 24px;
+        }
 
-    <section class="tab-panel is-active" id="home-panel">
-      <div class="home-hero" aria-label="四季蝉平台介绍">
-        <section class="home-intro">
-          <div>
-            <p class="eyebrow">重点品种数字化动销平台</p>
-            <h2 class="home-title">把厂家资源、重点品培训、店员激励和销售数据打通</h2>
-            <p class="home-lede">
-              四季蝉面向医药连锁，围绕重点品、高毛利品、任务品，提供从选品、培训、激励、销售归因、提现、统计到复盘的一整套数字化运营能力。店员知道今天卖什么、怎么卖、卖了能赚多少；总部和厂家能看到活动是否真正落地。
-            </p>
-            <div class="home-actions" aria-label="首页关键标签">
-              <span class="home-action primary">实时奖励闭环</span>
-              <span class="home-action">销售自动归因</span>
-              <span class="home-action">厂家协同看板</span>
-            </div>
-          </div>
+        .app-header,
+        .section-title-row {
+          display: block;
+        }
 
-          <aside class="home-scoreboard" aria-label="四季蝉价值对象">
-            <div class="score">
-              <strong>连锁</strong>
-              <span>提升重点品和高毛利品动销，减少人工统计和活动跟进成本。</span>
-            </div>
-            <div class="score">
-              <strong>店员</strong>
-              <span>看任务、学卖点、拿激励、查收益，卖得明白也赚得清楚。</span>
-            </div>
-            <div class="score">
-              <strong>厂家</strong>
-              <span>把市场费用打到门店执行层，用数据证明活动效果。</span>
-            </div>
-            <div class="score">
-              <strong>总部</strong>
-              <span>替代红包群、Excel对账和手工核算，统一过程与结果管理。</span>
-            </div>
-          </aside>
-        </section>
+        .hero-panel {
+          grid-template-columns: 1fr;
+          padding: 28px 20px;
+        }
 
-        <section class="home-section">
-          <div class="section-heading">
-            <h2>一条动销闭环</h2>
-            <p>从活动配置到收益提现，把“卖重点品”变成店员可感知、总部可追踪、厂家可复盘的运营动作。</p>
-          </div>
-          <div class="flow" aria-label="四季蝉运营闭环">
-            <div class="flow-step">
-              <span class="step-num">01</span>
-              <h3>配置活动</h3>
-              <p>总部或厂家配置重点品、任务政策、培训内容和激励规则。</p>
-            </div>
-            <div class="flow-step">
-              <span class="step-num">02</span>
-              <h3>店员学习</h3>
-              <p>员工端小程序查看产品卖点、培训资料、考试任务和奖励说明。</p>
-            </div>
-            <div class="flow-step">
-              <span class="step-num">03</span>
-              <h3>门店销售</h3>
-              <p>店员围绕指定品种完成销售，系统基于销售数据自动归因。</p>
-            </div>
-            <div class="flow-step">
-              <span class="step-num">04</span>
-              <h3>奖励计算</h3>
-              <p>按规则形成及时豆或延时豆，激励从“月底感知”变成“实时反馈”。</p>
-            </div>
-            <div class="flow-step">
-              <span class="step-num">05</span>
-              <h3>收益提现</h3>
-              <p>满足规则后可提现到账，资金流程在连锁账户体系中更可控。</p>
-            </div>
-            <div class="flow-step">
-              <span class="step-num">06</span>
-              <h3>看板复盘</h3>
-              <p>总部、门店、厂家查看销量、完成率、员工表现和费用使用。</p>
-            </div>
-          </div>
-        </section>
+        .section-title-row .ant-typography {
+          max-width: none;
+          text-align: left;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
 
-        <section class="home-section">
-          <div class="section-heading">
-            <h2>解决的核心问题</h2>
-            <p>四季蝉不是单点工具，而是把“培训、激励、销售、统计、结算”连成一套可执行系统。</p>
-          </div>
-          <div class="capability-grid">
-            <article class="capability">
-              <h3>重点品种管理难</h3>
-              <p>让门店和店员清楚知道重点品是什么、政策是什么、奖励怎么算、产品卖点怎么讲。</p>
-            </article>
-            <article class="capability">
-              <h3>店员激励不及时</h3>
-              <p>把月底工资、微信群红包和人工统计，改造成实时收益反馈和可提现激励。</p>
-            </article>
-            <article class="capability">
-              <h3>总部统计慢</h3>
-              <p>活动销量、门店完成率、员工完成率和费用核算集中看板化，减少Excel反复对账。</p>
-            </article>
-            <article class="capability">
-              <h3>厂家活动落地难</h3>
-              <p>厂家费用和政策不再只停留在方案层，可以追踪到区域、门店和员工执行效果。</p>
-            </article>
-            <article class="capability">
-              <h3>培训销售脱节</h3>
-              <p>产品知识、题库考试、培训奖励和销售结果相互关联，让学习转化为实际动销。</p>
-            </article>
-            <article class="capability">
-              <h3>过程管理依赖人盯</h3>
-              <p>通过AI机器人和社群运营自动推送排行榜、重点通知、大单分享和激励提醒。</p>
-            </article>
-          </div>
-        </section>
+    <script src="vendor/react.production.min.js"></script>
+    <script src="vendor/react-dom.production.min.js"></script>
+    <script src="vendor/dayjs.min.js"></script>
+    <script src="vendor/antd.min.js"></script>
+    <script>
+      const {
+        Alert,
+        Button,
+        Card,
+        Col,
+        ConfigProvider,
+        Row,
+        Space,
+        Statistic,
+        Steps,
+        Table,
+        Tabs,
+        Tag,
+        Timeline,
+        Typography,
+      } = antd;
+      const { Paragraph, Text, Title } = Typography;
+      const h = React.createElement;
 
-        <section class="home-section">
-          <div class="section-heading">
-            <h2>平台能力模块</h2>
-            <p>围绕“重点品动销”搭建从前端触达到后台管理的完整能力。</p>
-          </div>
-          <div class="delivery-band">
-            <div class="delivery-item">
-              <strong>员工端小程序</strong>
-              <span>看活动、看收益、看排行榜、看培训内容、查产品卖点。</span>
-            </div>
-            <div class="delivery-item">
-              <strong>活动与培训配置</strong>
-              <span>支持单品突破、关联销售、黄金单品、任务品、培训考试和培训奖励。</span>
-            </div>
-            <div class="delivery-item">
-              <strong>数据看板与资金结算</strong>
-              <span>沉淀活动销量、员工表现、费用使用、奖励到账和提现结果。</span>
-            </div>
-          </div>
-        </section>
-      </div>
-    </section>
-
-    <section class="tab-panel" id="calendar-panel">
-    <section class="summary" aria-label="工作概览">
-      <div class="metric">
-        <strong>7</strong>
-        <span>总事项</span>
-      </div>
-      <div class="metric">
-        <strong>5</strong>
-        <span>一次性工作</span>
-      </div>
-      <div class="metric">
-        <strong>1</strong>
-        <span>每月更新</span>
-      </div>
-      <div class="metric">
-        <strong>1</strong>
-        <span>及时更新</span>
-      </div>
-    </section>
-
-    <section class="table-shell">
-      <div class="table-scroll">
-        <table>
-          <caption>业务对接事项清单</caption>
-          <thead>
-            <tr>
-              <th>序号</th>
-              <th>项目</th>
-              <th>工作属性</th>
-              <th>对接内容</th>
-              <th>处理事务</th>
-              <th>注意事项</th>
-              <th>材料下载</th>
-              <th>连锁配合人员（建议）</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td class="index">1</td>
-              <td class="project">汇付账户开通</td>
-              <td><span class="tag warn">一次性</span></td>
-              <td>填写两份协议，用于申请开通汇付账户。</td>
-              <td>
-                <div class="stack">
-                  <div class="doc">《汇付-斗拱平台综合支付协议》</div>
-                  <div class="doc">《药店与店员激励协议》</div>
-                </div>
-              </td>
-              <td class="notes">
-                <p><strong>斗拱平台协议：</strong></p>
-                <ul>
-                  <li>02斗拱平台协议：打印两份。</li>
-                  <li>第三页合同日期：<span data-date-range>2026年6月5日 - 2027年6月4日</span>。</li>
-                  <li>盖章、签字，日期手写为<span data-current-date>2026年6月5日</span>。</li>
-                  <li>额外侧面加盖骑缝章，最后扫描成A4大小的PDF文件。</li>
-                </ul>
-                <p><strong>药店与店员激励协议：</strong></p>
-                <ul>
-                  <li>03药店与店员激励协议：打印一份。</li>
-                  <li>签字、盖章，乙方按手印，日期手写为<span data-current-date>2026年6月5日</span>。</li>
-                  <li>最后扫描成A4大小的PDF文件。</li>
-                </ul>
-                <p>按文档说明操作。法人和联系人身份证可以直接上传身份证原件；如使用复印件，需要盖公章。</p>
-              </td>
-              <td class="materials">
-                <a class="material-link" href="协议文件/02%20斗拱平台综合支付服务协议（四季蝉）20260113.docx" download>下载：斗拱平台综合支付服务协议</a>
-                <a class="material-link" href="协议文件/03%20药店与店员激励协议.doc" download>下载：药店与店员激励协议</a>
-              </td>
-              <td>
-                <div class="tag-list">
-                  <span class="tag blue">财务</span>
-                  <span class="tag blue">信息</span>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td class="index">2</td>
-              <td class="project">基础信息维护</td>
-              <td><span class="tag warn">一次性</span></td>
-              <td>维护员工信息、门店信息。</td>
-              <td>Excel表格维护至新零售后台。</td>
-              <td class="empty">暂无</td>
-              <td class="materials">
-                <a class="material-link" href="协议文件/门店地址批量更新模板.xlsx" download>下载：门店地址批量更新模板</a>
-                <a class="material-link" href="协议文件/员工账号批量更新模板.xlsx" download>下载：员工账号批量更新模板</a>
-              </td>
-              <td><span class="tag blue">信息</span></td>
-            </tr>
-            <tr>
-              <td class="index">3</td>
-              <td class="project">工业信息收集</td>
-              <td><span class="tag">及时更新</span></td>
-              <td>收集厂家信息，开通厂家账号，用于充值及建活动。</td>
-              <td>按模板填写《四季蝉供应商信息收集表》。</td>
-              <td class="empty">暂无</td>
-              <td class="materials">
-                <a class="material-link" href="协议文件/四季蝉厂家%26品种政策收集表.xlsx" download>下载：四季蝉厂家&amp;品种政策收集表</a>
-              </td>
-              <td>
-                <div class="tag-list">
-                  <span class="tag blue">运营</span>
-                  <span class="tag blue">采购</span>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td class="index">4</td>
-              <td class="project">活动商品创建</td>
-              <td><span class="tag">每月更新</span></td>
-              <td>确认活动品种和活动政策。</td>
-              <td>按模板填写《品种政策收集模板表》。</td>
-              <td class="empty">暂无</td>
-              <td class="empty">暂无</td>
-              <td>
-                <div class="tag-list">
-                  <span class="tag blue">运营</span>
-                  <span class="tag blue">采购</span>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td class="index">5</td>
-              <td class="project">操作培训</td>
-              <td><span class="tag warn">一次性</span></td>
-              <td>连锁培训。</td>
-              <td>参与在线会议。</td>
-              <td class="empty">暂无</td>
-              <td class="empty">暂无</td>
-              <td>
-                <div class="tag-list">
-                  <span class="tag blue">运营</span>
-                  <span class="tag blue">采购</span>
-                  <span class="tag blue">财务</span>
-                  <span class="tag blue">信息</span>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td class="index">6</td>
-              <td class="project">订单测试</td>
-              <td><span class="tag warn">一次性</span></td>
-              <td>完成正向、逆向订单的奖励生成收回测试。</td>
-              <td>零售测试。</td>
-              <td class="empty">暂无</td>
-              <td class="empty">暂无</td>
-              <td><span class="tag blue">信息</span></td>
-            </tr>
-            <tr>
-              <td class="index">7</td>
-              <td class="project">店员培训上线</td>
-              <td><span class="tag warn">一次性</span></td>
-              <td>
-                员工手机端培训：登录、认证；如何确认销售与奖励获得情况。
-              </td>
-              <td>发送视频操作说明，可给店员集中线上培训。</td>
-              <td class="empty">暂无</td>
-              <td class="empty">暂无</td>
-              <td><span class="tag blue">店员</span></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <p class="footer-note">提示：浏览器打印时会自动切换为简洁打印样式。</p>
-    </section>
-  </main>
-  <script>
-    (function () {
       function formatChineseDate(date) {
-        return date.getFullYear() + "年" + (date.getMonth() + 1) + "月" + date.getDate() + "日";
+        return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
       }
 
-      var today = new Date();
-      var endDate = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate());
-      endDate.setDate(endDate.getDate() - 1);
-      var todayText = formatChineseDate(today);
-      var rangeText = todayText + " - " + formatChineseDate(endDate);
+      function getDynamicDates() {
+        const today = new Date();
+        const endDate = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate());
+        endDate.setDate(endDate.getDate() - 1);
+        return {
+          todayText: formatChineseDate(today),
+          rangeText: `${formatChineseDate(today)} - ${formatChineseDate(endDate)}`,
+        };
+      }
 
-      document.querySelectorAll("[data-current-date]").forEach(function (node) {
-        node.textContent = todayText;
-      });
-      document.querySelectorAll("[data-date-range]").forEach(function (node) {
-        node.textContent = rangeText;
-      });
+      const materials = {
+        payment: [
+          { label: "斗拱平台综合支付服务协议", href: "协议文件/02%20斗拱平台综合支付服务协议（四季蝉）20260113.docx" },
+          { label: "药店与店员激励协议", href: "协议文件/03%20药店与店员激励协议.doc" },
+        ],
+        baseInfo: [
+          { label: "门店地址批量更新模板", href: "协议文件/门店地址批量更新模板.xlsx" },
+          { label: "员工账号批量更新模板", href: "协议文件/员工账号批量更新模板.xlsx" },
+        ],
+        industry: [
+          { label: "四季蝉厂家&品种政策收集表", href: "协议文件/四季蝉厂家%26品种政策收集表.xlsx" },
+        ],
+      };
 
-      var tabButtons = document.querySelectorAll("[data-tab-target]");
-      var tabPanels = document.querySelectorAll(".tab-panel");
+      function MaterialButtons({ items }) {
+        if (!items || !items.length) return h(Text, { type: "secondary" }, "暂无");
+        return h(
+          Space,
+          { direction: "vertical", size: 8, className: "download-list" },
+          items.map((item) =>
+            h(
+              Button,
+              { block: true, download: true, href: item.href, key: item.href },
+              `下载：${item.label}`,
+            ),
+          ),
+        );
+      }
 
-      tabButtons.forEach(function (button) {
-        button.addEventListener("click", function () {
-          var targetId = button.getAttribute("data-tab-target");
+      function HomePage({ onOpenCalendar }) {
+        const stakeholderCards = [
+          ["连锁总部", "提升重点品、高毛利品动销，把活动过程、费用核算和执行结果集中管理。"],
+          ["门店店员", "清楚知道今天重点卖什么、怎么卖、卖了能赚多少、奖励什么时候到账。"],
+          ["工业厂家", "把市场费用真正打到门店执行层，用门店和员工数据判断活动投入效果。"],
+          ["运营团队", "减少红包群、Excel对账和人工统计，形成活动上线、跟踪、复盘的标准动作。"],
+        ];
+        const painPoints = [
+          ["重点品种管理难", "店员记不住重点品、政策、奖励算法和产品卖点。"],
+          ["激励反馈不及时", "传统方式依赖月底工资、微信群红包和人工统计，奖励感知弱。"],
+          ["总部统计慢", "销量、完成率、员工表现和费用核算依赖Excel，慢且容易错。"],
+          ["厂家落地难", "厂家有费用和政策，却难以看到门店是否执行、哪里有效。"],
+          ["培训销售脱节", "培训学完不等于卖出去，知识和销售结果没有形成闭环。"],
+          ["过程管理靠人盯", "排行榜、重点提醒、大单分享、激励通知缺少自动化触达。"],
+        ];
+        const modules = [
+          ["员工端小程序", "看活动、看收益、看排行榜、看培训内容、查产品卖点。"],
+          ["活动配置", "支持单品突破、关联销售、黄金单品、任务品、培训奖励等活动。"],
+          ["培训考试", "产品知识培训、题库考试、考试奖励与销售目标联动。"],
+          ["AI机器人/社群运营", "自动推送排行榜、重点通知、大单分享、激励提醒和产品问答。"],
+          ["数据看板", "总部、门店、厂家查看活动销量、执行情况、员工表现和费用使用。"],
+          ["资金与提现", "奖励可实时到账/提现，资金在连锁账户中流转，流程更可控。"],
+        ];
 
-          tabButtons.forEach(function (item) {
-            var isActive = item === button;
-            item.classList.toggle("is-active", isActive);
-            item.setAttribute("aria-selected", String(isActive));
-          });
+        return h(
+          "div",
+          { className: "home-shell" },
+          h(
+            "section",
+            { className: "hero-panel" },
+            h(
+              "div",
+              { className: "hero-copy" },
+              h(Tag, { color: "green" }, "医药连锁重点品种数字化动销平台"),
+              h(Title, { level: 1 }, "把厂家资源、重点品培训、店员激励和销售数据打通"),
+              h(
+                Paragraph,
+                { className: "hero-lede" },
+                "四季蝉不是单纯的培训工具，也不是单纯的提成/红包工具。它围绕重点品、高毛利品、任务品，打通选品、培训、激励、销售、提现、统计和复盘，让动销动作被看见、被执行、被结算。",
+              ),
+              h(
+                Space,
+                { size: 12, wrap: true },
+                h(Button, { type: "primary", size: "large", onClick: onOpenCalendar }, "查看对接行事历"),
+                h(Button, { size: "large" }, "重点品动销闭环"),
+              ),
+            ),
+            h(
+              "div",
+              { className: "hero-board" },
+              h("div", { className: "board-header" }, h(Text, { strong: true }, "今日运营看板"), h(Tag, { color: "cyan" }, "SOP READY")),
+              h(
+                Row,
+                { gutter: [12, 12] },
+                ["重点品任务:选品", "店员激励:实时", "销售归因:自动", "活动复盘:可视"].map((item) => {
+                  const [title, value] = item.split(":");
+                  return h(Col, { span: 12, key: item }, h(Statistic, { title, value }));
+                }),
+              ),
+            ),
+          ),
+          h(
+            Row,
+            { gutter: [16, 16], className: "stakeholder-row" },
+            stakeholderCards.map(([title, text], index) =>
+              h(
+                Col,
+                { xs: 24, md: 12, xl: 6, key: title },
+                h(
+                  Card,
+                  { className: "stakeholder-card", bordered: false },
+                  h("div", { className: "card-icon" }, String(index + 1).padStart(2, "0")),
+                  h(Title, { level: 4 }, title),
+                  h(Paragraph, null, text),
+                ),
+              ),
+            ),
+          ),
+          h(
+            Card,
+            { className: "section-card", bordered: false },
+            h(
+              "div",
+              { className: "section-title-row" },
+              h(Title, { level: 2 }, "一条可结算的动销闭环"),
+              h(Paragraph, null, "把“卖重点品”变成店员可感知、总部可追踪、厂家可复盘的运营动作。"),
+            ),
+            h(Steps, {
+              current: 5,
+              responsive: true,
+              items: [
+                { title: "配置活动", description: "重点品、任务政策、培训内容和激励规则" },
+                { title: "店员学习", description: "小程序查看卖点、培训、考试和奖励" },
+                { title: "门店销售", description: "系统基于销售数据自动归因" },
+                { title: "奖励计算", description: "形成及时豆或延时豆" },
+                { title: "收益提现", description: "满足规则后可提现到账" },
+                { title: "看板复盘", description: "查看销量、完成率、表现和费用" },
+              ],
+            }),
+          ),
+          h(
+            Row,
+            { gutter: [16, 16] },
+            h(
+              Col,
+              { xs: 24, lg: 11 },
+              h(
+                Card,
+                { className: "section-card tall-card", bordered: false },
+                h(Title, { level: 2 }, "主要解决的痛点"),
+                h(Timeline, {
+                  items: painPoints.map(([title, children]) => ({
+                    color: "green",
+                    children: h("div", null, h(Text, { strong: true }, title), h(Paragraph, null, children)),
+                  })),
+                }),
+              ),
+            ),
+            h(
+              Col,
+              { xs: 24, lg: 13 },
+              h(
+                Card,
+                { className: "section-card tall-card", bordered: false },
+                h(Title, { level: 2 }, "核心能力模块"),
+                h(
+                  Row,
+                  { gutter: [12, 12] },
+                  modules.map(([title, text], index) =>
+                    h(
+                      Col,
+                      { xs: 24, md: 12, key: title },
+                      h(
+                        Card,
+                        { className: "module-card", size: "small" },
+                        h(Space, { align: "start" }, h("span", { className: "module-icon" }, index + 1), h("div", null, h(Text, { strong: true }, title), h(Paragraph, null, text))),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      }
 
-          tabPanels.forEach(function (panel) {
-            panel.classList.toggle("is-active", panel.id === targetId);
-          });
-        });
-      });
-    })();
-  </script>
-</body>
+      function CalendarPage({ dates }) {
+        const rows = [
+          {
+            key: 1,
+            index: 1,
+            project: "汇付账户开通",
+            property: "一次性",
+            propertyColor: "gold",
+            content: "填写两份协议，用于申请开通汇付账户。",
+            tasks: ["《汇付-斗拱平台综合支付协议》", "《药店与店员激励协议》"],
+            notes: h(
+              "div",
+              { className: "notes-block" },
+              h(Text, { strong: true }, "斗拱平台协议："),
+              h("ul", null, h("li", null, "02斗拱平台协议：打印两份。"), h("li", null, `第三页合同日期：${dates.rangeText}。`), h("li", null, `盖章、签字，日期手写为${dates.todayText}。`), h("li", null, "额外侧面加盖骑缝章，最后扫描成A4大小的PDF文件。")),
+              h(Text, { strong: true }, "药店与店员激励协议："),
+              h("ul", null, h("li", null, "03药店与店员激励协议：打印一份。"), h("li", null, `签字、盖章，乙方按手印，日期手写为${dates.todayText}。`), h("li", null, "最后扫描成A4大小的PDF文件。")),
+              h(Paragraph, null, "按文档说明操作。法人和联系人身份证可以直接上传身份证原件；如使用复印件，需要盖公章。"),
+            ),
+            materialItems: materials.payment,
+            people: ["财务", "信息"],
+          },
+          { key: 2, index: 2, project: "基础信息维护", property: "一次性", propertyColor: "gold", content: "维护员工信息、门店信息。", tasks: ["Excel表格维护至新零售后台。"], notes: "暂无", materialItems: materials.baseInfo, people: ["信息"] },
+          { key: 3, index: 3, project: "工业信息收集", property: "及时更新", propertyColor: "green", content: "收集厂家信息，开通厂家账号，用于充值及建活动。", tasks: ["按模板填写《四季蝉供应商信息收集表》。"], notes: "暂无", materialItems: materials.industry, people: ["运营", "采购"] },
+          { key: 4, index: 4, project: "活动商品创建", property: "每月更新", propertyColor: "cyan", content: "确认活动品种和活动政策。", tasks: ["按模板填写《品种政策收集模板表》。"], notes: "暂无", materialItems: [], people: ["运营", "采购"] },
+          { key: 5, index: 5, project: "操作培训", property: "一次性", propertyColor: "gold", content: "连锁培训。", tasks: ["参与在线会议。"], notes: "暂无", materialItems: [], people: ["运营", "采购", "财务", "信息"] },
+          { key: 6, index: 6, project: "订单测试", property: "一次性", propertyColor: "gold", content: "完成正向、逆向订单的奖励生成收回测试。", tasks: ["零售测试。"], notes: "暂无", materialItems: [], people: ["信息"] },
+          { key: 7, index: 7, project: "店员培训上线", property: "一次性", propertyColor: "gold", content: "员工手机端培训：登录、认证；如何确认销售与奖励获得情况。", tasks: ["发送视频操作说明，可给店员集中线上培训。"], notes: "暂无", materialItems: [], people: ["店员"] },
+        ];
+
+        const columns = [
+          { title: "序号", dataIndex: "index", width: 64, fixed: "left", align: "center", render: (value) => h(Text, { strong: true }, value) },
+          { title: "项目", dataIndex: "project", width: 140, fixed: "left", render: (value) => h(Text, { strong: true, className: "project-name" }, value) },
+          { title: "工作属性", dataIndex: "property", width: 112, render: (value, row) => h(Tag, { color: row.propertyColor }, value) },
+          { title: "对接内容", dataIndex: "content", width: 190 },
+          {
+            title: "处理事务",
+            dataIndex: "tasks",
+            width: 180,
+            render: (tasks) => h(Space, { direction: "vertical", size: 8 }, tasks.map((task) => h(Tag, { className: "task-tag", key: task }, task))),
+          },
+          { title: "注意事项", dataIndex: "notes", width: 360, render: (notes) => (notes === "暂无" ? h(Text, { type: "secondary" }, "暂无") : notes) },
+          { title: "材料下载", dataIndex: "materialItems", width: 230, render: (items) => h(MaterialButtons, { items }) },
+          {
+            title: "连锁配合人员（建议）",
+            dataIndex: "people",
+            width: 180,
+            render: (people) => h(Space, { wrap: true }, people.map((person) => h(Tag, { color: "blue", key: person }, person))),
+          },
+        ];
+
+        return h(
+          "div",
+          { className: "calendar-shell" },
+          h(Alert, { showIcon: true, type: "success", message: "对接行事历", description: "海典指导，连锁配合。材料下载列中的文件可直接提供给客户使用。" }),
+          h(
+            Row,
+            { gutter: [16, 16], className: "summary-row" },
+            [["总事项", 7], ["一次性工作", 5], ["每月更新", 1], ["及时更新", 1]].map(([title, value]) => h(Col, { xs: 12, md: 6, key: title }, h(Card, { bordered: false }, h(Statistic, { title, value })))),
+          ),
+          h(Card, { bordered: false, className: "table-card" }, h(Table, { columns, dataSource: rows, pagination: false, scroll: { x: 1500 }, sticky: true })),
+        );
+      }
+
+      function App() {
+        const [activeKey, setActiveKey] = React.useState("home");
+        const dates = React.useMemo(getDynamicDates, []);
+        return h(
+          ConfigProvider,
+          {
+            theme: {
+              token: {
+                colorPrimary: "#24785f",
+                borderRadius: 8,
+                colorInfo: "#1976ad",
+                fontFamily: '"Microsoft YaHei", "PingFang SC", "Noto Sans SC", "Segoe UI", sans-serif',
+              },
+            },
+          },
+          h(
+            "main",
+            { className: "app-shell" },
+            h(
+              "header",
+              { className: "app-header" },
+              h("div", null, h(Text, { className: "brand-kicker" }, "SOP_4CHAN"), h(Title, null, "四季蝉业务对接SOP"), h(Paragraph, null, "面向医药连锁重点品动销的客户对接门户。")),
+              h(Tag, { color: "green" }, "海典指导 / 连锁配合"),
+            ),
+            h(Tabs, {
+              activeKey,
+              className: "main-tabs",
+              onChange: setActiveKey,
+              items: [
+                { key: "home", label: "首页", children: h(HomePage, { onOpenCalendar: () => setActiveKey("calendar") }) },
+                { key: "calendar", label: "对接行事历", children: h(CalendarPage, { dates }) },
+              ],
+            }),
+          ),
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById("root")).render(h(App));
+    </script>
+  </body>
 </html>
