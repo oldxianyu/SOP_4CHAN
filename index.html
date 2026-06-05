@@ -520,6 +520,38 @@
         height: 100%;
       }
 
+      .pyramid-card .ant-card-body {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+      }
+
+      .pyramid-wrap {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 250px;
+      }
+
+      .pyramid-svg {
+        width: min(100%, 300px);
+        height: auto;
+        overflow: visible;
+        filter: drop-shadow(0 18px 24px rgba(31, 63, 149, 0.16));
+      }
+
+      .pyramid-svg text {
+        font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
+        font-weight: 900;
+      }
+
+      .pyramid-note {
+        margin-top: 8px;
+        color: #64748b;
+        text-align: center;
+      }
+
       .source-index {
         display: inline-flex;
         align-items: center;
@@ -907,6 +939,34 @@
         "门店活动组合品种：如买二赠一，既能激励顾客，也可对店员双向激励。",
       ];
 
+      function ProductPyramid() {
+        return h(
+          "svg",
+          { className: "pyramid-svg", viewBox: "0 0 360 320", role: "img", "aria-label": "品种分层金字塔：单品突破、黄金单品、普通带金" },
+          h("defs", null,
+            h("linearGradient", { id: "pyramidTop", x1: "0", y1: "0", x2: "1", y2: "1" }, h("stop", { offset: "0%", stopColor: "#ffb35c" }), h("stop", { offset: "100%", stopColor: "#ff7438" })),
+            h("linearGradient", { id: "pyramidMid", x1: "0", y1: "0", x2: "1", y2: "1" }, h("stop", { offset: "0%", stopColor: "#64a6ff" }), h("stop", { offset: "100%", stopColor: "#2f7ff4" })),
+            h("linearGradient", { id: "pyramidBase", x1: "0", y1: "0", x2: "1", y2: "1" }, h("stop", { offset: "0%", stopColor: "#247cff" }), h("stop", { offset: "100%", stopColor: "#1067df" })),
+            h("linearGradient", { id: "pyramidSide", x1: "0", y1: "0", x2: "1", y2: "0" }, h("stop", { offset: "0%", stopColor: "rgba(255,255,255,0.18)" }), h("stop", { offset: "100%", stopColor: "rgba(255,255,255,0)" })),
+          ),
+          h("ellipse", { cx: "180", cy: "298", rx: "124", ry: "18", fill: "rgba(31,63,149,0.14)" }),
+          h("polygon", { points: "42,244 180,178 318,244 252,292 108,292", fill: "url(#pyramidBase)" }),
+          h("polygon", { points: "42,244 180,178 180,292 108,292", fill: "rgba(17,105,220,0.35)" }),
+          h("polygon", { points: "92,168 180,118 268,168 318,244 42,244", fill: "url(#pyramidMid)" }),
+          h("polygon", { points: "92,168 180,118 180,244 42,244", fill: "rgba(255,255,255,0.14)" }),
+          h("polygon", { points: "180,22 236,128 180,168 124,128", fill: "url(#pyramidTop)" }),
+          h("polygon", { points: "180,22 180,168 124,128", fill: "rgba(255,255,255,0.22)" }),
+          h("polygon", { points: "42,244 180,178 318,244 252,292 108,292", fill: "url(#pyramidSide)", opacity: "0.5" }),
+          h("text", { x: "158", y: "122", fill: "rgba(255,255,255,0.28)", fontSize: "56" }, "1"),
+          h("text", { x: "205", y: "104", fill: "#fff", fontSize: "25", transform: "rotate(-10 205 104)" }, "单品"),
+          h("text", { x: "202", y: "136", fill: "#fff", fontSize: "25", transform: "rotate(-10 202 136)" }, "突破"),
+          h("text", { x: "110", y: "222", fill: "rgba(255,255,255,0.23)", fontSize: "62" }, "2"),
+          h("text", { x: "206", y: "213", fill: "#fff", fontSize: "27", transform: "rotate(-8 206 213)" }, "黄金单品"),
+          h("text", { x: "80", y: "278", fill: "rgba(255,255,255,0.18)", fontSize: "64" }, "3"),
+          h("text", { x: "212", y: "270", fill: "#fff", fontSize: "27", transform: "rotate(-7 212 270)" }, "普通带金"),
+        );
+      }
+
       function SelectionPage() {
         return h(
           "div",
@@ -927,10 +987,10 @@
             ),
             h(
               Card,
-              { bordered: false },
-              h(Title, { level: 4 }, "选品判断"),
-              h(Paragraph, null, "优先选择能形成清晰任务、清晰卖点、清晰奖励感知的品种。"),
-              h(Space, { wrap: true, size: [8, 8] }, h(Tag, { color: "blue" }, "重点突出"), h(Tag, { color: "orange" }, "主次分明"), h(Tag, { color: "purple" }, "动销可追踪")),
+              { bordered: false, className: "pyramid-card" },
+              h(Title, { level: 4 }, "品种分层金字塔"),
+              h("div", { className: "pyramid-wrap" }, h(ProductPyramid)),
+              h(Paragraph, { className: "pyramid-note" }, "从普通带金到黄金单品，再聚焦单品突破。"),
             ),
           ),
           h(
