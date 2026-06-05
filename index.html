@@ -42,27 +42,36 @@
 
       .brand-lockup {
         display: flex;
-        gap: 14px;
+        gap: 16px;
         align-items: center;
       }
 
       .brand-logo {
-        width: clamp(58px, 7vw, 86px);
-        height: clamp(58px, 7vw, 86px);
-        border-radius: 18px;
-        background: #fff;
+        width: clamp(64px, 7.4vw, 92px);
+        height: clamp(64px, 7.4vw, 92px);
+        padding: 9px;
+        border: 1px solid rgba(33, 142, 196, 0.24);
+        border-radius: 24px;
+        background:
+          linear-gradient(145deg, rgba(255, 255, 255, 0.72), rgba(229, 246, 255, 0.82));
         object-fit: contain;
-        box-shadow: 0 10px 24px rgba(20, 108, 150, 0.13);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.9),
+          0 12px 28px rgba(33, 142, 196, 0.12);
       }
 
       .brand-kicker {
         display: block;
         max-width: 760px;
-        margin-bottom: 4px;
+        margin-bottom: 2px;
         color: #218ec4;
         font-size: clamp(14px, 1.6vw, 18px);
         font-weight: 800;
         line-height: 1.35;
+      }
+
+      .brand-copy h1.ant-typography {
+        margin-top: 0;
       }
 
       .app-header h1.ant-typography {
@@ -891,7 +900,7 @@
                 h("img", { src: "assets/四季蝉.png", alt: "四季蝉logo", className: "brand-logo" }),
                 h(
                   "div",
-                  null,
+                  { className: "brand-copy" },
                   h(Text, { className: "brand-kicker" }, "It is like an all-season cicada; you can hear its song even in winter."),
                   h(Title, null, "海典四季蝉"),
                   h(Paragraph, null, "面向医药连锁重点品动销的客户对接门户。"),
