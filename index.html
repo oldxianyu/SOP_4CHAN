@@ -520,33 +520,6 @@
         height: 100%;
       }
 
-      .pyramid-card .ant-card-body {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-      }
-
-      .pyramid-wrap {
-        flex: 1;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 300px;
-      }
-
-      .pyramid-image {
-        width: min(100%, 420px);
-        height: auto;
-        display: block;
-        filter: drop-shadow(0 18px 24px rgba(31, 63, 149, 0.16));
-      }
-
-      .pyramid-note {
-        margin-top: 8px;
-        color: #64748b;
-        text-align: center;
-      }
-
       .source-index {
         display: inline-flex;
         align-items: center;
@@ -954,10 +927,10 @@
             ),
             h(
               Card,
-              { bordered: false, className: "pyramid-card" },
-              h(Title, { level: 4 }, "品种分层金字塔"),
-              h("div", { className: "pyramid-wrap" }, h("img", { className: "pyramid-image", src: "assets/product-pyramid.png", alt: "品种分层金字塔：单品突破、黄金单品、普通带金" })),
-              h(Paragraph, { className: "pyramid-note" }, "从普通带金到黄金单品，再聚焦单品突破。"),
+              { bordered: false },
+              h(Title, { level: 4 }, "选品判断"),
+              h(Paragraph, null, "优先选择能形成清晰任务、清晰卖点、清晰奖励感知的品种。"),
+              h(Space, { wrap: true, size: [8, 8] }, h(Tag, { color: "blue" }, "重点突出"), h(Tag, { color: "orange" }, "主次分明"), h(Tag, { color: "purple" }, "动销可追踪")),
             ),
           ),
           h(
