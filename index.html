@@ -619,6 +619,63 @@
         font-weight: 900;
       }
 
+      .ai-shell {
+        animation: pageIn 320ms ease both;
+      }
+
+      .ai-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+        gap: 18px;
+        align-items: start;
+      }
+
+      .ai-card.ant-card,
+      .report-card.ant-card {
+        border: 1px solid rgba(42, 75, 255, 0.14);
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: 0 14px 34px rgba(24, 52, 126, 0.07);
+      }
+
+      .ai-upload .ant-upload-drag {
+        border-radius: 12px;
+        background: linear-gradient(135deg, #f7f9ff, #ffffff);
+      }
+
+      .sheet-status {
+        margin-top: 14px;
+      }
+
+      .report-card {
+        margin-top: 18px;
+      }
+
+      .report-title.ant-typography {
+        margin-top: 0;
+        color: #1f3f95;
+      }
+
+      .report-section {
+        margin-top: 16px;
+        padding: 14px;
+        border-radius: 10px;
+        background: #f7f8ff;
+      }
+
+      .report-section h4.ant-typography {
+        margin: 0 0 8px;
+      }
+
+      .report-section ul {
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      .config-mask {
+        color: #64748b;
+        font-size: 13px;
+      }
+
       @keyframes pageIn {
         from {
           opacity: 0;
@@ -662,6 +719,10 @@
           grid-template-columns: 1fr;
         }
 
+        .ai-grid {
+          grid-template-columns: 1fr;
+        }
+
         .section-title-row .ant-typography {
           max-width: none;
           text-align: left;
@@ -683,6 +744,9 @@
         Card,
         Col,
         ConfigProvider,
+        Divider,
+        Form,
+        Input,
         Row,
         Space,
         Statistic,
@@ -692,6 +756,8 @@
         Tag,
         Timeline,
         Typography,
+        Upload,
+        message,
       } = antd;
       const { Paragraph, Text, Title } = Typography;
       const h = React.createElement;
@@ -734,6 +800,370 @@
               Button,
               { block: true, download: true, href: item.href, key: item.href },
               `下载：${item.label}`,
+            ),
+          ),
+        );
+      }
+
+      async function readApiJson(response) {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || "请求处理失败。");
+        return data;
+      }
+
+      async function copyText(text) {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(text);
+          return;
+        }
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        textarea.remove();
+      }
+
+      function SheetStatusTags({ summary }) {
+        if (!summary || !summary.sheetStatus) return null;
+        return h(
+          Space,
+          { wrap: true, className: "sheet-status", size: [8, 8] },
+          summary.sheetStatus.map((sheet) =>
+            h(
+              Tag,
+              { key: sheet.name, color: sheet.exists && sheet.rows > 0 ? "blue" : sheet.exists ? "gold" : "red" },
+              `${sheet.name}：${sheet.exists ? `${sheet.rows}行` : "缺失"}`,
+            ),
+          ),
+        );
+      }
+
+      function ReportView({ report, markdown }) {
+        if (!report) return null;
+        const sections = report.sections || [];
+        return h(
+          Card,
+          {
+            bordered: false,
+            className: "report-card",
+            extra: h(
+              Button,
+              {
+                type: "primary",
+                onClick: async () => {
+                  await copyText(markdown || "");
+                  message.success("报告已复制");
+                },
+              },
+              "复制报告",
+            ),
+          },
+          h(Title, { level: 2, className: "report-title" }, report.title || "四季蝉AI复盘报告"),
+          h(Paragraph, null, report.executiveSummary || "暂无摘要。"),
+          h(
+            Row,
+            { gutter: [16, 16] },
+            h(
+              Col,
+              { xs: 24, md: 12 },
+              h(
+                "div",
+                { className: "report-section" },
+                h(Title, { level: 4 }, "核心亮点"),
+                h("ul", null, (report.highlights || []).map((item) => h("li", { key: item }, item))),
+              ),
+            ),
+            h(
+              Col,
+              { xs: 24, md: 12 },
+              h(
+                "div",
+                { className: "report-section" },
+                h(Title, { level: 4 }, "风险与短板"),
+                h("ul", null, (report.risks || []).map((item) => h("li", { key: item }, item))),
+              ),
+            ),
+          ),
+          sections.map((section) =>
+            h(
+              "div",
+              { className: "report-section", key: section.heading },
+              h(Title, { level: 4 }, section.heading),
+              h("ul", null, (section.bullets || []).map((item) => h("li", { key: item }, item))),
+            ),
+          ),
+          h(
+            "div",
+            { className: "report-section" },
+            h(Title, { level: 4 }, "下一步动作"),
+            h("ul", null, (report.nextActions || []).map((item) => h("li", { key: item }, item))),
+          ),
+        );
+      }
+
+      function AIReviewPage() {
+        const [status, setStatus] = React.useState(null);
+        const [file, setFile] = React.useState(null);
+        const [loading, setLoading] = React.useState(false);
+        const [error, setError] = React.useState("");
+        const [summary, setSummary] = React.useState(null);
+        const [report, setReport] = React.useState(null);
+        const [markdown, setMarkdown] = React.useState("");
+
+        const loadStatus = React.useCallback(async () => {
+          const response = await fetch("/api/ai-config/status");
+          setStatus(await response.json());
+        }, []);
+
+        React.useEffect(() => {
+          loadStatus().catch(() => setStatus({ configured: false }));
+        }, [loadStatus]);
+
+        const generateReport = async () => {
+          if (!file) {
+            message.warning("请先上传xlsx文件");
+            return;
+          }
+          if (!status?.configured) {
+            message.warning("请先完成AI配置");
+            return;
+          }
+          setLoading(true);
+          setError("");
+          setReport(null);
+          setMarkdown("");
+          try {
+            const formData = new FormData();
+            formData.append("file", file);
+            const response = await fetch("/api/review-report", { method: "POST", body: formData });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              setSummary(data.summary || null);
+              throw new Error(data.error || "复盘报告生成失败。");
+            }
+            setSummary(data.summary);
+            setReport(data.report);
+            setMarkdown(data.markdown || "");
+            message.success("AI复盘报告已生成");
+          } catch (err) {
+            setError(err.message || "复盘报告生成失败。");
+          } finally {
+            setLoading(false);
+          }
+        };
+
+        return h(
+          "div",
+          { className: "ai-shell" },
+          h(
+            "div",
+            { className: "ai-grid" },
+            h(
+              Card,
+              { bordered: false, className: "ai-card" },
+              h(Tag, { color: "blue", className: "hero-platform-tag" }, "AI复盘报告"),
+              h(Title, { level: 2, className: "june-title" }, "上传客户数据，生成四季蝉复盘报告"),
+              h(Paragraph, null, "支持四季蝉复盘数据标准模板。系统会先读取销售变化、活动商品、店员提现、激励玩法、晒单打赏等明细，再由AI生成品种动销复盘。"),
+              h(Alert, {
+                type: status?.configured ? "success" : "warning",
+                showIcon: true,
+                message: status?.configured ? "AI服务已配置" : "AI服务未配置",
+                description: status?.configured ? `当前模型：${status.model}` : "请先到“AI配置”页签保存API Key和模型。",
+              }),
+              h(Divider, null),
+              h(
+                Upload.Dragger,
+                {
+                  className: "ai-upload",
+                  accept: ".xlsx",
+                  maxCount: 1,
+                  fileList: file ? [file] : [],
+                  beforeUpload: (nextFile) => {
+                    if (!/\.xlsx$/i.test(nextFile.name)) {
+                      message.error("仅支持xlsx文件");
+                      return Upload.LIST_IGNORE;
+                    }
+                    setFile(nextFile);
+                    setError("");
+                    setReport(null);
+                    setSummary(null);
+                    return false;
+                  },
+                  onRemove: () => {
+                    setFile(null);
+                    setReport(null);
+                    setSummary(null);
+                  },
+                },
+                h(Paragraph, { strong: true }, "点击或拖拽上传客户复盘数据Excel"),
+                h(Text, { type: "secondary" }, "仅支持 .xlsx，建议使用“四季蝉复盘数据标准模板”。"),
+              ),
+              h(
+                Space,
+                { style: { marginTop: 16 }, wrap: true },
+                h(Button, { type: "primary", loading, onClick: generateReport }, "生成AI复盘报告"),
+                h(Button, { onClick: () => loadStatus().then(() => message.success("配置状态已刷新")) }, "刷新配置状态"),
+              ),
+              error ? h(Alert, { style: { marginTop: 16 }, type: "error", showIcon: true, message: error }) : null,
+              h(SheetStatusTags, { summary }),
+            ),
+            h(
+              Card,
+              { bordered: false, className: "ai-card" },
+              h(Title, { level: 4 }, "复盘范围"),
+              h(
+                Space,
+                { direction: "vertical", size: 12 },
+                h(Text, null, "1. 品种增长与下滑复盘"),
+                h(Text, null, "2. 活动商品销售与奖励闭环"),
+                h(Text, null, "3. 激励方式已使用与未释放价值"),
+                h(Text, null, "4. 店员提现参与度"),
+                h(Text, null, "5. 厂家晒单打赏与协同动作"),
+                h(Text, null, "6. 下期品种与激励动作建议"),
+              ),
+              h(Divider, null),
+              h(Alert, {
+                type: "info",
+                showIcon: true,
+                message: "数据安全说明",
+                description: "上传文件只用于本次解析和AI生成，不在服务器落盘保存。API Key只保存在服务器本地配置文件中，不进入网页代码和GitHub。",
+              }),
+            ),
+          ),
+          h(ReportView, { report, markdown }),
+        );
+      }
+
+      function AIConfigPage() {
+        const [form] = Form.useForm();
+        const [status, setStatus] = React.useState(null);
+        const [saving, setSaving] = React.useState(false);
+        const [testing, setTesting] = React.useState(false);
+
+        const loadStatus = React.useCallback(async () => {
+          const response = await fetch("/api/ai-config/status");
+          const data = await response.json();
+          setStatus(data);
+          form.setFieldsValue({
+            baseUrl: data.baseUrl || "https://api.openai.com/v1",
+            model: data.model || "gpt-5.2",
+          });
+        }, [form]);
+
+        React.useEffect(() => {
+          loadStatus().catch(() => setStatus({ configured: false }));
+        }, [loadStatus]);
+
+        const saveConfig = async () => {
+          const values = await form.validateFields();
+          setSaving(true);
+          try {
+            const response = await fetch("/api/ai-config", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(values),
+            });
+            const data = await readApiJson(response);
+            setStatus(data.status);
+            form.setFieldsValue({ apiKey: "", newAdminPassword: "" });
+            message.success("AI配置已保存");
+          } catch (err) {
+            message.error(err.message || "保存失败");
+          } finally {
+            setSaving(false);
+          }
+        };
+
+        const testConfig = async () => {
+          const values = await form.validateFields();
+          setTesting(true);
+          try {
+            const response = await fetch("/api/ai-config/test", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(values),
+            });
+            const data = await readApiJson(response);
+            message.success(data.message || "连接成功");
+          } catch (err) {
+            message.error(err.message || "连接失败");
+          } finally {
+            setTesting(false);
+          }
+        };
+
+        return h(
+          "div",
+          { className: "ai-shell" },
+          h(
+            "div",
+            { className: "ai-grid" },
+            h(
+              Card,
+              { bordered: false, className: "ai-card" },
+              h(Tag, { color: "blue", className: "hero-platform-tag" }, "AI配置"),
+              h(Title, { level: 2, className: "june-title" }, "配置AI接口和模型"),
+              h(Paragraph, null, "管理员可在这里配置OpenAI API Key、接口地址和模型名称。保存后，AI复盘报告页面会自动使用该配置。"),
+              h(Alert, {
+                type: status?.configured ? "success" : "warning",
+                showIcon: true,
+                message: status?.configured ? "AI接口已配置" : "尚未完成AI接口配置",
+                description: status?.configured ? `当前模型：${status.model}；接口：${status.baseUrl}` : "首次保存时，输入的管理密码会成为后续管理密码。",
+              }),
+              h(Divider, null),
+              h(
+                Form,
+                { form, layout: "vertical" },
+                h(
+                  Form.Item,
+                  { label: "管理密码", name: "adminPassword", rules: [{ required: true, message: "请输入管理密码" }] },
+                  h(Input.Password, { placeholder: status?.adminReady ? "输入已有管理密码" : "首次设置管理密码，至少6位" }),
+                ),
+                h(
+                  Form.Item,
+                  { label: "API Key", name: "apiKey" },
+                  h(Input.Password, { placeholder: status?.hasApiKey ? "已保存，留空则继续沿用" : "请输入OpenAI API Key" }),
+                ),
+                h(
+                  Form.Item,
+                  { label: "Base URL", name: "baseUrl", rules: [{ required: true, message: "请输入Base URL" }] },
+                  h(Input, { placeholder: "https://api.openai.com/v1" }),
+                ),
+                h(
+                  Form.Item,
+                  { label: "模型名称", name: "model", rules: [{ required: true, message: "请输入模型名称" }] },
+                  h(Input, { placeholder: "gpt-5.2" }),
+                ),
+                h(
+                  Form.Item,
+                  { label: "新管理密码（可选）", name: "newAdminPassword" },
+                  h(Input.Password, { placeholder: "需要修改管理密码时填写" }),
+                ),
+              ),
+              h(
+                Space,
+                { wrap: true },
+                h(Button, { type: "primary", loading: saving, onClick: saveConfig }, "保存配置"),
+                h(Button, { loading: testing, onClick: testConfig }, "测试连接"),
+                h(Button, { onClick: loadStatus }, "刷新状态"),
+              ),
+            ),
+            h(
+              Card,
+              { bordered: false, className: "ai-card" },
+              h(Title, { level: 4 }, "配置说明"),
+              h(Paragraph, null, "API Key不会显示在页面上，也不会提交到GitHub。服务器只返回“是否已配置”的状态。"),
+              h(Paragraph, { className: "config-mask" }, "默认接口：https://api.openai.com/v1"),
+              h(Paragraph, { className: "config-mask" }, "默认模型：gpt-5.2，可按账号可用模型调整。"),
+              h(Alert, {
+                type: "info",
+                showIcon: true,
+                message: "首版权限策略",
+                description: "首次配置时创建管理密码；之后保存、测试或更改配置都需要输入管理密码。",
+              }),
             ),
           ),
         );
@@ -1480,6 +1910,8 @@
                 { key: "incentive", label: "激励玩法", children: h(IncentivePage) },
                 { key: "selection", label: "选品思路", children: h(SelectionPage) },
                 { key: "june", label: "6月营销推荐", children: h(JuneMarketingPage) },
+                { key: "aiReview", label: "AI复盘报告", children: h(AIReviewPage) },
+                { key: "aiConfig", label: "AI配置", children: h(AIConfigPage) },
               ],
             }),
           ),

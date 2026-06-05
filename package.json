@@ -1,0 +1,14 @@
+{
+  "name": "sop-4chan",
+  "version": "1.0.0",
+  "private": true,
+  "description": "海典四季蝉业务对接与AI复盘门户",
+  "scripts": {
+    "start": "node preview-server.js",
+    "dev": "node preview-server.js"
+  },
+  "dependencies": {
+    "busboy": "^1.6.0",
+    "jszip": "^3.10.1"
+  }
+}
