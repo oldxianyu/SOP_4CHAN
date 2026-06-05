@@ -493,6 +493,7 @@
         padding: 12px;
         border-radius: 8px;
         background: #f6f8ff;
+        min-width: 0;
       }
 
       .level-meta label {
@@ -500,6 +501,19 @@
         margin-bottom: 6px;
         color: #64748b;
         font-size: 13px;
+      }
+
+      .level-meta .ant-space,
+      .level-meta .ant-space-item {
+        max-width: 100%;
+      }
+
+      .level-meta .selection-tag.ant-tag {
+        max-width: 100%;
+        margin-inline-end: 0;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        line-height: 1.35;
       }
 
       .selection-source-card {
@@ -939,9 +953,9 @@
                   h(
                     "div",
                     { className: "level-meta-grid" },
-                    h("div", { className: "level-meta" }, h("label", null, "选品定位"), h(Space, { wrap: true, size: [6, 6] }, item.position.map((tag) => h(Tag, { key: tag, color: "blue" }, tag)))),
-                    h("div", { className: "level-meta" }, h("label", null, "激励玩法"), h(Space, { wrap: true, size: [6, 6] }, item.play.map((tag) => h(Tag, { key: tag }, tag)))),
-                    h("div", { className: "level-meta" }, h("label", null, "选品目的"), h(Space, { wrap: true, size: [6, 6] }, item.purpose.map((tag) => h(Tag, { key: tag, color: "orange" }, tag)))),
+                    h("div", { className: "level-meta" }, h("label", null, "选品定位"), h(Space, { wrap: true, size: [6, 6] }, item.position.map((tag) => h(Tag, { key: tag, color: "blue", className: "selection-tag" }, tag)))),
+                    h("div", { className: "level-meta" }, h("label", null, "激励玩法"), h(Space, { wrap: true, size: [6, 6] }, item.play.map((tag) => h(Tag, { key: tag, className: "selection-tag" }, tag)))),
+                    h("div", { className: "level-meta" }, h("label", null, "选品目的"), h(Space, { wrap: true, size: [6, 6] }, item.purpose.map((tag) => h(Tag, { key: tag, color: "orange", className: "selection-tag" }, tag)))),
                     h("div", { className: "level-meta" }, h("label", null, "激励类型"), h(Text, { strong: true }, item.incentive)),
                   ),
                 ),
