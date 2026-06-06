@@ -1532,6 +1532,64 @@ async function ensureSijichanRepo() {
       await runCommand("npm", ["install", "--omit=dev"], { cwd: sijichanRepoDir, timeoutMs: 180000 });
     }
   }
+  patchSijichanExporter();
+}
+
+function patchSijichanExporter() {
+  const scriptPath = path.join(sijichanRepoDir, "sijichan_data_export.js");
+  if (!fs.existsSync(scriptPath)) return;
+  let script = fs.readFileSync(scriptPath, "utf8");
+  const original = script;
+
+  script = script.replace(
+    /function headers\(token, merCode\) \{\s*return \{\s*"content-type": "application\/json",\s*Authorization: token,\s*merCode,\s*isSuper: "1",\s*\};\s*\}/,
+    `function headers(token, merCode) {
+  const out = {
+    "content-type": "application/json",
+    Authorization: token,
+  };
+  if (merCode) {
+    out.merCode = merCode;
+    out.isSuper = "1";
+  }
+  return out;
+}`,
+  );
+
+  script = script.replace(/const merCode = args\["mer-code"\] \|\| "000000";/, `const merCode = args["mer-code"] || "";`);
+  script = script.replace(/const merName = args\["mer-name"\] \|\| "[^"]*";/, `const merName = args["mer-name"] || "";`);
+  script = script.replace(
+    `const trainBase = { merCode, startTime: windows.nearHalf.start, endTime: windows.nearHalf.end, authorizeBusinessCode: "" };`,
+    `const trainBase = { startTime: windows.nearHalf.start, endTime: windows.nearHalf.end, authorizeBusinessCode: "" };
+  if (merCode) trainBase.merCode = merCode;`,
+  );
+  script = script.replace(/\{ merCode \}/g, `merCode ? { merCode } : {}`);
+
+  if (!script.includes("function assertSuccessfulResponse(result, label)")) {
+    script = script.replace(
+      `function rowsFromPaged(paged) {
+  return paged && Array.isArray(paged.rows) ? paged.rows : [];
+}`,
+      `function assertSuccessfulResponse(result, label) {
+  const response = result && result.response;
+  if (!response) return;
+  if (response.code && String(response.code) !== "10000") {
+    throw new Error(label + "接口返回失败：" + (response.msg || response.code));
+  }
+}
+
+function rowsFromPaged(paged) {
+  if (paged && Array.isArray(paged.pages)) {
+    for (const page of paged.pages) assertSuccessfulResponse(page, paged.endpoint || "分页");
+  }
+  return paged && Array.isArray(paged.rows) ? paged.rows : [];
+}`,
+    );
+  }
+
+  if (script !== original) {
+    fs.writeFileSync(scriptPath, script, "utf8");
+  }
 }
 
 function listJsonFiles(dir) {
@@ -1554,13 +1612,79 @@ function readJsonFile(filePath) {
 }
 
 function rowsFromAnyJson(value) {
-  if (Array.isArray(value)) return value;
-  if (Array.isArray(value?.rows)) return value.rows;
-  if (Array.isArray(value?.data)) return value.data;
-  if (Array.isArray(value?.records)) return value.records;
-  if (Array.isArray(value?.items)) return value.items;
-  if (Array.isArray(value?.list)) return value.list;
-  return [];
+  const groups = [];
+  const ROW_CONTAINER_KEYS = new Set(["rows", "data", "records", "items", "list", "products", "details", "summary"]);
+  const META_KEYS = new Set(["name", "path", "description", "title", "module", "file", "generatedAt", "source"]);
+  const isMetadataPath = (pathParts) => {
+    const last = pathParts[pathParts.length - 1];
+    return ["modules", "headers", "columns", "fields"].includes(last);
+  };
+  const isMetadataRows = (rows) => {
+    if (!rows.length) return true;
+    return rows.every((row) => {
+      const keys = Object.keys(row || {});
+      return keys.length > 0 && keys.every((key) => META_KEYS.has(key));
+    });
+  };
+  const scalarFieldCount = (row) =>
+    Object.values(row || {}).filter((val) => val === null || ["string", "number", "boolean"].includes(typeof val)).length;
+  const looksLikeBusinessRow = (row) => {
+    const keys = Object.keys(row || {});
+    if (!keys.length) return false;
+    if (keys.every((key) => META_KEYS.has(key))) return false;
+    return scalarFieldCount(row) >= 2 || keys.some((key) => /金额|数量|销售|毛利|奖励|提现|客流|商品|品种|门店|员工|amount|count|qty|sales|profit|reward|cash|sku|goods|product|store|clerk/i.test(key));
+  };
+  const objectMapRows = (node) => {
+    const entries = Object.entries(node || {});
+    if (entries.length < 2) return [];
+    const objectEntries = entries.filter(([, child]) => child && typeof child === "object" && !Array.isArray(child));
+    if (objectEntries.length !== entries.length) return [];
+    const rows = objectEntries
+      .filter(([, child]) => looksLikeBusinessRow(child))
+      .map(([key, child]) => ({ 数据键: key, ...child }));
+    return rows.length === entries.length ? rows : [];
+  };
+  const pushGroup = (pathParts, rows) => {
+    if (!rows.length || isMetadataPath(pathParts) || isMetadataRows(rows)) return;
+    groups.push({
+      path: pathParts.join(".") || "root",
+      rows,
+    });
+  };
+  const visit = (node, pathParts = []) => {
+    if (!node) return;
+    if (Array.isArray(node)) {
+      const objectRows = node.filter((item) => item && typeof item === "object" && !Array.isArray(item) && looksLikeBusinessRow(item));
+      pushGroup(pathParts, objectRows);
+      node.forEach((item, index) => {
+        if (item && typeof item === "object" && !Array.isArray(item)) visit(item, [...pathParts, String(index)]);
+      });
+      return;
+    }
+    if (typeof node !== "object") return;
+    const lastPath = pathParts[pathParts.length - 1];
+    const mapRows = objectMapRows(node);
+    if (mapRows.length && ROW_CONTAINER_KEYS.has(lastPath)) pushGroup(pathParts, mapRows);
+    for (const [key, child] of Object.entries(node)) {
+      visit(child, [...pathParts, key]);
+    }
+  };
+  visit(value);
+  return groups;
+}
+
+function headersFromRows(rows) {
+  const headers = [];
+  const seen = new Set();
+  for (const row of rows) {
+    for (const key of Object.keys(row || {})) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+      headers.push(key);
+      if (headers.length >= 40) return headers;
+    }
+  }
+  return headers;
 }
 
 function pickField(row, candidates) {
@@ -1593,19 +1717,27 @@ function summarizeSijichanDataset(outDir, requestInfo) {
   const jsonFiles = listJsonFiles(datasetDir);
   const files = jsonFiles.map((filePath) => {
     const data = readJsonFile(filePath);
-    const rows = rowsFromAnyJson(data);
+    const name = path.relative(datasetDir, filePath).replace(/\\/g, "/");
+    const groups = rowsFromAnyJson(data);
+    const rows = groups.flatMap((group) =>
+      group.rows.map((row) => ({
+        ...row,
+        数据文件: name,
+        数据路径: group.path,
+      })),
+    );
     return {
-      name: path.relative(datasetDir, filePath).replace(/\\/g, "/"),
+      name,
       rows,
       rowCount: rows.length,
-      headers: rows[0] ? Object.keys(rows[0]).slice(0, 40) : [],
+      headers: headersFromRows(rows),
     };
   });
 
-  const allRows = files.flatMap((file) => file.rows.map((row) => ({ ...row, 数据文件: file.name })));
+  const allRows = files.flatMap((file) => file.rows);
   const productName = [{ name: "商品名称", candidates: ["商品名称", "品种名称", "通用名", "productName", "goodsName", "skuName", "name"] }];
   const productCode = [{ name: "商品编码", candidates: ["商品编码", "品种编码", "productCode", "goodsCode", "skuCode", "code"] }];
-  const commonFields = [...productName, ...productCode, { name: "数据文件", candidates: ["数据文件"] }];
+  const commonFields = [...productName, ...productCode, { name: "数据文件", candidates: ["数据文件"] }, { name: "数据路径", candidates: ["数据路径"] }];
 
   const salesMetric = ["销售金额", "激励商品销售金额", "saleAmount", "salesAmount", "amount", "销售额"];
   const growthMetric = ["销售数量比上期（%）", "growthRate", "increaseRate", "环比增长率", "增长率"];
