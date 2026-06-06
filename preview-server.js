@@ -954,7 +954,7 @@ function summarizeSijichanDataset(outDir, requestInfo) {
   const cashoutMetric = ["累计提现及时豆（元）", "提现金额", "cashoutAmount", "withdrawAmount"];
 
   return {
-    source: "sijichan-shuju接口导入",
+    source: "登录获取",
     sessionId: "019e990b-bed6-7fa0-9aaf-02058375c7f0",
     repository: "oldxianyu/sijichan-shuju",
     requestInfo,

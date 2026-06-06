@@ -1050,7 +1050,7 @@
               { bordered: false, className: "ai-card" },
               h(Tag, { color: "blue", className: "hero-platform-tag" }, "AI复盘报告"),
               h(Title, { level: 2, className: "june-title" }, "上传客户数据，生成四季蝉复盘报告"),
-              h(Paragraph, null, "支持Excel模板上传，也支持通过 sijichan-shuju 接口导入客户复盘数据。系统会读取销售变化、活动商品、店员提现、激励玩法、晒单打赏等明细，再由AI生成品种动销复盘。"),
+              h(Paragraph, null, "支持Excel模板上传，也支持通过登录获取客户复盘数据。系统会读取销售变化、活动商品、店员提现、激励玩法、晒单打赏等明细，再由AI生成品种动销复盘。"),
               h(Alert, {
                 type: status?.configured ? "success" : "warning",
                 showIcon: true,
@@ -1071,7 +1071,7 @@
                   style: { marginBottom: 16 },
                 },
                 h(Radio.Button, { value: "excel" }, "Excel模板上传"),
-                h(Radio.Button, { value: "sijichan" }, "sijichan-shuju接口导入"),
+                h(Radio.Button, { value: "sijichan" }, "登录获取"),
               ),
               sourceType === "excel"
                 ? h(
@@ -1117,7 +1117,7 @@
                     h(Alert, {
                       type: "info",
                       showIcon: true,
-                      message: "接口来源：oldxianyu/sijichan-shuju",
+                      message: "数据来源：登录获取",
                       description: "使用会话 019e990b-bed6-7fa0-9aaf-02058375c7f0 中沉淀的四季蝉接口导出器，临时拉取dataset数据包后直接生成AI复盘报告。",
                     }),
                     h(
@@ -1150,7 +1150,7 @@
                     h(
                       Space,
                       { style: { marginTop: 4 }, wrap: true },
-                      h(Button, { type: "primary", loading, onClick: generateFromSijichan }, "从接口导入并生成报告"),
+                      h(Button, { type: "primary", loading, onClick: generateFromSijichan }, "登录获取并生成报告"),
                       h(Button, { onClick: () => loadStatus().then(() => message.success("配置状态已刷新")) }, "刷新配置状态"),
                     ),
                   ),
@@ -1177,7 +1177,7 @@
                 type: "info",
                 showIcon: true,
                 message: "数据安全说明",
-                description: "上传文件和接口导入的数据只用于本次解析和AI生成，不在服务器落盘保存。API Key只保存在服务器本地配置文件中，不进入网页代码和GitHub。",
+                description: "上传文件和登录获取的数据只用于本次解析和AI生成，不在服务器落盘保存。API Key只保存在服务器本地配置文件中，不进入网页代码和GitHub。",
               }),
             ),
           ),
