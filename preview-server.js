@@ -1,4 +1,5 @@
 const http = require("http");
+const dns = require("dns");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -9,6 +10,8 @@ const JSZip = require("jszip");
 const QRCode = require("qrcode");
 const dotenv = require("dotenv");
 const { Pool } = require("pg");
+
+dns.setDefaultResultOrder("ipv4first");
 
 const root = __dirname;
 const host = process.env.HOST || "0.0.0.0";
