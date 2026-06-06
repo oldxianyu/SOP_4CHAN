@@ -36,10 +36,10 @@
       .app-header {
         display: flex;
         justify-content: space-between;
-        gap: 24px;
+        gap: 18px;
         align-items: flex-end;
-        margin-bottom: 18px;
-        padding: 18px;
+        margin-bottom: 14px;
+        padding: 14px 16px;
         border: 1px solid rgba(42, 75, 255, 0.16);
         border-radius: 8px;
         background:
@@ -55,11 +55,11 @@
       }
 
       .brand-logo {
-        width: clamp(58px, 6.4vw, 78px);
-        height: clamp(58px, 6.4vw, 78px);
-        padding: 9px;
-        border: 1px solid rgba(42, 75, 255, 0.2);
-        border-radius: 24px;
+        width: clamp(50px, 5.4vw, 68px);
+        height: clamp(50px, 5.4vw, 68px);
+        padding: 8px;
+        border: 1px solid rgba(42, 75, 255, 0.18);
+        border-radius: 20px;
         background:
           linear-gradient(145deg, rgba(255, 255, 255, 0.78), rgba(238, 242, 255, 0.88));
         object-fit: contain;
@@ -83,9 +83,9 @@
       }
 
       .app-header h1.ant-typography {
-        margin: 4px 0 8px;
+        margin: 2px 0 4px;
         color: #1f3f95;
-        font-size: clamp(30px, 3.8vw, 48px);
+        font-size: clamp(28px, 3.2vw, 42px);
         line-height: 1.06;
       }
 
@@ -1179,7 +1179,7 @@
       @media (max-width: 960px) {
         .app-shell {
           width: min(100% - 24px, 1480px);
-          padding-top: 24px;
+          padding-top: 14px;
         }
 
         .app-header,
@@ -1187,8 +1187,42 @@
           display: block;
         }
 
+        .app-header {
+          margin-bottom: 12px;
+          padding: 12px;
+        }
+
         .brand-lockup {
           align-items: flex-start;
+          gap: 12px;
+        }
+
+        .brand-logo {
+          width: 48px;
+          height: 48px;
+          padding: 7px;
+          border-radius: 17px;
+        }
+
+        .brand-kicker {
+          max-width: 360px;
+          font-size: 13px;
+          line-height: 1.28;
+        }
+
+        .app-header h1.ant-typography {
+          margin: 2px 0 3px;
+          font-size: 30px;
+        }
+
+        .brand-copy .ant-typography {
+          margin-bottom: 0;
+        }
+
+        .user-panel {
+          justify-content: flex-start;
+          gap: 8px;
+          margin-top: 10px;
         }
 
         .hero-panel {
@@ -2971,7 +3005,7 @@
                   { className: "brand-copy" },
                   h(Text, { className: "brand-kicker" }, "It is like an all-season cicada; you can hear its song even in winter."),
                   h(Title, null, "海典四季蝉"),
-                  h(Paragraph, null, "面向医药连锁重点品动销的客户对接门户。"),
+                  h(Paragraph, null, "帮助连锁重点品动销加速的运营数字化解决方案"),
                 ),
               ),
               h(
