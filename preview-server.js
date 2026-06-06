@@ -2,6 +2,8 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const os = require("os");
+const { spawn } = require("child_process");
 const Busboy = require("busboy");
 const JSZip = require("jszip");
 
@@ -12,6 +14,8 @@ const ports = [configuredPort, 8766, 8767, 8768].filter((value, index, list) => 
 const uploadLimitBytes = Number(process.env.UPLOAD_LIMIT_BYTES || 10 * 1024 * 1024);
 const serverDir = path.join(root, ".server");
 const configPath = path.join(serverDir, "ai-config.json");
+const sijichanRepoDir = path.join(serverDir, "sijichan-shuju");
+const sijichanRepoUrl = "https://github.com/oldxianyu/sijichan-shuju.git";
 
 const mime = {
   ".html": "text/html; charset=utf-8",
@@ -67,6 +71,37 @@ function readJsonBody(req, maxBytes = 1024 * 1024) {
       }
     });
     req.on("error", reject);
+  });
+}
+
+function runCommand(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: options.cwd || root,
+      env: options.env || process.env,
+      shell: false,
+      windowsHide: true,
+    });
+    let stdout = "";
+    let stderr = "";
+    const timer = setTimeout(() => {
+      child.kill("SIGTERM");
+      reject(new Error(`${command} 执行超时。`));
+    }, options.timeoutMs || 120000);
+    child.stdout.on("data", (data) => (stdout += data.toString()));
+    child.stderr.on("data", (data) => (stderr += data.toString()));
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) {
+        resolve({ stdout, stderr });
+        return;
+      }
+      reject(new Error((stderr || stdout || `${command} 执行失败。`).trim()));
+    });
   });
 }
 
@@ -531,6 +566,225 @@ function reportToMarkdown(report) {
   return lines.filter((line, index) => line !== "" || lines[index - 1] !== "").join("\n");
 }
 
+async function generateReportFromSummary(summary) {
+  const config = loadConfig();
+  if (!config.apiKey || !config.model) {
+    const error = new Error("AI服务未配置，请先进入AI配置页面。");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const prompt = buildPrompt(summary);
+  let reportText;
+  try {
+    reportText = await callOpenAI(config, prompt, true);
+  } catch (error) {
+    if (error.status === 400) {
+      reportText = await callOpenAI(config, `${prompt}\n请按JSON对象返回，字段包含title、executiveSummary、highlights、risks、sections、nextActions。`, false);
+    } else {
+      throw error;
+    }
+  }
+
+  const report = parseReportJson(reportText);
+  return { report, markdown: reportToMarkdown(report) };
+}
+
+async function ensureSijichanRepo() {
+  ensureServerDir();
+  if (fs.existsSync(path.join(sijichanRepoDir, ".git"))) {
+    await runCommand("git", ["fetch", "origin", "main"], { cwd: sijichanRepoDir, timeoutMs: 120000 });
+    await runCommand("git", ["reset", "--hard", "origin/main"], { cwd: sijichanRepoDir, timeoutMs: 120000 });
+  } else {
+    if (fs.existsSync(sijichanRepoDir)) {
+      fs.rmSync(sijichanRepoDir, { recursive: true, force: true });
+    }
+    await runCommand("git", ["clone", "--depth", "1", sijichanRepoUrl, sijichanRepoDir], { timeoutMs: 180000 });
+  }
+
+  if (fs.existsSync(path.join(sijichanRepoDir, "package.json")) && !fs.existsSync(path.join(sijichanRepoDir, "node_modules"))) {
+    if (fs.existsSync(path.join(sijichanRepoDir, "package-lock.json"))) {
+      await runCommand("npm", ["ci", "--omit=dev"], { cwd: sijichanRepoDir, timeoutMs: 180000 });
+    } else {
+      await runCommand("npm", ["install", "--omit=dev"], { cwd: sijichanRepoDir, timeoutMs: 180000 });
+    }
+  }
+}
+
+function listJsonFiles(dir) {
+  if (!fs.existsSync(dir)) return [];
+  const out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...listJsonFiles(full));
+    if (entry.isFile() && entry.name.toLowerCase().endsWith(".json")) out.push(full);
+  }
+  return out;
+}
+
+function readJsonFile(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function rowsFromAnyJson(value) {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.rows)) return value.rows;
+  if (Array.isArray(value?.data)) return value.data;
+  if (Array.isArray(value?.records)) return value.records;
+  if (Array.isArray(value?.items)) return value.items;
+  if (Array.isArray(value?.list)) return value.list;
+  return [];
+}
+
+function pickField(row, candidates) {
+  for (const key of candidates) {
+    if (row && row[key] !== undefined && row[key] !== "") return row[key];
+  }
+  return "";
+}
+
+function topGenericRows(rows, metricCandidates, fields, limit = 10, desc = true) {
+  const metricKey = metricCandidates.find((key) => rows.some((row) => toNumber(row[key]) !== 0));
+  if (!metricKey) return [];
+  return [...rows]
+    .filter((row) => toNumber(row[metricKey]) !== 0)
+    .sort((a, b) => (desc ? toNumber(b[metricKey]) - toNumber(a[metricKey]) : toNumber(a[metricKey]) - toNumber(b[metricKey])))
+    .slice(0, limit)
+    .map((row) => {
+      const out = {};
+      for (const field of fields) {
+        const value = pickField(row, field.candidates);
+        if (value !== "") out[field.name] = value;
+      }
+      out[metricKey] = row[metricKey];
+      return out;
+    });
+}
+
+function summarizeSijichanDataset(outDir, requestInfo) {
+  const datasetDir = path.join(outDir, "dataset");
+  const jsonFiles = listJsonFiles(datasetDir);
+  const files = jsonFiles.map((filePath) => {
+    const data = readJsonFile(filePath);
+    const rows = rowsFromAnyJson(data);
+    return {
+      name: path.relative(datasetDir, filePath).replace(/\\/g, "/"),
+      rows,
+      rowCount: rows.length,
+      headers: rows[0] ? Object.keys(rows[0]).slice(0, 40) : [],
+    };
+  });
+
+  const allRows = files.flatMap((file) => file.rows.map((row) => ({ ...row, 数据文件: file.name })));
+  const productName = [{ name: "商品名称", candidates: ["商品名称", "品种名称", "通用名", "productName", "goodsName", "skuName", "name"] }];
+  const productCode = [{ name: "商品编码", candidates: ["商品编码", "品种编码", "productCode", "goodsCode", "skuCode", "code"] }];
+  const commonFields = [...productName, ...productCode, { name: "数据文件", candidates: ["数据文件"] }];
+
+  const salesMetric = ["销售金额", "激励商品销售金额", "saleAmount", "salesAmount", "amount", "销售额"];
+  const growthMetric = ["销售数量比上期（%）", "growthRate", "increaseRate", "环比增长率", "增长率"];
+  const rewardMetric = ["奖励金额", "激励总金额", "单品奖励金额", "rewardAmount", "amount"];
+  const cashoutMetric = ["累计提现及时豆（元）", "提现金额", "cashoutAmount", "withdrawAmount"];
+
+  return {
+    source: "sijichan-shuju接口导入",
+    sessionId: "019e990b-bed6-7fa0-9aaf-02058375c7f0",
+    repository: "oldxianyu/sijichan-shuju",
+    requestInfo,
+    generatedAt: new Date().toISOString(),
+    datasetFiles: files.map(({ name, rowCount, headers }) => ({ name, rowCount, headers })),
+    rowCounts: Object.fromEntries(files.map((file) => [file.name, file.rowCount])),
+    salesChange: {
+      topSalesAmount: topGenericRows(allRows, salesMetric, commonFields, 10, true),
+      topQuantityGrowth: topGenericRows(allRows, growthMetric, commonFields, 10, true),
+      weakQuantityGrowth: topGenericRows(allRows, growthMetric, commonFields, 10, false),
+    },
+    activity: {
+      skuCount: new Set(allRows.map((row) => pickField(row, ["商品编码", "品种编码", "productCode", "goodsCode", "skuCode"])).filter(hasValue)).size,
+      topSalesAmount: topGenericRows(allRows, salesMetric, commonFields, 10, true),
+      topRewardAmount: topGenericRows(allRows, rewardMetric, commonFields, 10, true),
+    },
+    cashout: {
+      topCashout: topGenericRows(allRows, cashoutMetric, [
+        { name: "员工姓名", candidates: ["员工姓名", "clerkName", "employeeName", "name"] },
+        { name: "门店名称", candidates: ["门店名称", "storeName", "机构名称"] },
+        { name: "数据文件", candidates: ["数据文件"] },
+      ], 10, true),
+    },
+    incentive: {
+      rewardTypes: [
+        "单品奖励金额",
+        "疗程奖励金额",
+        "关联奖励金额",
+        "单品目标奖励金额",
+        "系列目标奖励金额",
+        "组合目标奖励金额",
+        "早鸟奖励金额",
+        "排名奖励金额",
+      ].map((field) => ({
+        name: field,
+        skuCount: countPositive(allRows, field),
+        amount: sumField(allRows, field),
+        used: countPositive(allRows, field) > 0,
+      })),
+    },
+    shareReward: {
+      topFactories: topGenericRows(allRows, ["激励总金额", "rewardAmount", "amount"], [
+        { name: "激励厂家", candidates: ["激励厂家", "factoryName", "manufacturer"] },
+        { name: "员工姓名", candidates: ["员工姓名", "employeeName", "clerkName"] },
+        { name: "数据文件", candidates: ["数据文件"] },
+      ], 10, true),
+    },
+  };
+}
+
+async function runSijichanExport(body) {
+  await ensureSijichanRepo();
+
+  const scriptPath = path.join(sijichanRepoDir, "sijichan_data_export.js");
+  if (!fs.existsSync(scriptPath)) {
+    throw new Error("sijichan-shuju仓库中未找到 sijichan_data_export.js。");
+  }
+
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "sijichan-data-"));
+  const args = [scriptPath, "--out-dir", outDir];
+  if (body.asOf) args.push("--as-of", String(body.asOf));
+  if (body.merCode) args.push("--mer-code", String(body.merCode));
+  if (body.merName) args.push("--mer-name", String(body.merName));
+  if (body.operator) args.push("--operator", String(body.operator));
+
+  const env = {
+    ...process.env,
+    HTTP_PROXY: "",
+    HTTPS_PROXY: "",
+    ALL_PROXY: "",
+    SJC_USERNAME: body.username || "",
+    SJC_PASSWORD: body.password || "",
+    SJC_TOKEN: body.token || "",
+  };
+
+  if (!env.SJC_TOKEN && (!env.SJC_USERNAME || !env.SJC_PASSWORD)) {
+    fs.rmSync(outDir, { recursive: true, force: true });
+    throw new Error("请填写四季蝉账号密码，或填写已有Token。");
+  }
+
+  try {
+    await runCommand("node", args, { cwd: sijichanRepoDir, env, timeoutMs: 180000 });
+    return { outDir, summary: summarizeSijichanDataset(outDir, {
+      asOf: body.asOf || "",
+      merCode: body.merCode || "",
+      merName: body.merName || "",
+      operator: body.operator || "",
+    }) };
+  } catch (error) {
+    fs.rmSync(outDir, { recursive: true, force: true });
+    throw error;
+  }
+}
+
 async function handleConfigStatus(_req, res) {
   sendJson(res, 200, publicConfigStatus());
 }
@@ -603,31 +857,35 @@ async function handleReviewReport(req, res) {
     return;
   }
 
+  const { report, markdown } = await generateReportFromSummary(summary);
+  sendJson(res, 200, {
+    ok: true,
+    summary,
+    report,
+    markdown,
+  });
+}
+
+async function handleSijichanReviewReport(req, res) {
+  const body = await readJsonBody(req, 1024 * 1024);
   const config = loadConfig();
   if (!config.apiKey || !config.model) {
     sendJson(res, 400, { error: "AI服务未配置，请先进入AI配置页面。" });
     return;
   }
 
-  const prompt = buildPrompt(summary);
-  let reportText;
+  const { outDir, summary } = await runSijichanExport(body);
   try {
-    reportText = await callOpenAI(config, prompt, true);
-  } catch (error) {
-    if (error.status === 400) {
-      reportText = await callOpenAI(config, `${prompt}\n请按JSON对象返回，字段包含title、executiveSummary、highlights、risks、sections、nextActions。`, false);
-    } else {
-      throw error;
+    const files = summary.datasetFiles || [];
+    if (!files.some((file) => file.rowCount > 0)) {
+      sendJson(res, 422, { error: "接口已返回数据包，但没有可用于复盘的明细数据。", summary });
+      return;
     }
+    const { report, markdown } = await generateReportFromSummary(summary);
+    sendJson(res, 200, { ok: true, summary, report, markdown });
+  } finally {
+    fs.rmSync(outDir, { recursive: true, force: true });
   }
-
-  const report = parseReportJson(reportText);
-  sendJson(res, 200, {
-    ok: true,
-    summary,
-    report,
-    markdown: reportToMarkdown(report),
-  });
 }
 
 function serveStatic(req, res) {
@@ -665,6 +923,7 @@ function createServer() {
       if (url.pathname === "/api/ai-config" && req.method === "POST") return await handleSaveConfig(req, res);
       if (url.pathname === "/api/ai-config/test" && req.method === "POST") return await handleTestConfig(req, res);
       if (url.pathname === "/api/review-report" && req.method === "POST") return await handleReviewReport(req, res);
+      if (url.pathname === "/api/sijichan-review-report" && req.method === "POST") return await handleSijichanReviewReport(req, res);
       return serveStatic(req, res);
     } catch (error) {
       const status = error.message && error.message.includes("超过10MB") ? 413 : 500;

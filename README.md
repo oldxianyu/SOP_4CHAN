@@ -9,7 +9,7 @@
 - 激励玩法：四季蝉激励类型说明。
 - 选品思路：重点品分层和选品来源。
 - 6月营销推荐：品种营销建议页。
-- AI复盘报告：上传四季蝉复盘数据标准模板 `.xlsx`，生成AI复盘报告并支持复制。
+- AI复盘报告：上传四季蝉复盘数据标准模板 `.xlsx`，或通过 `oldxianyu/sijichan-shuju` 接口导入数据，生成AI复盘报告并支持复制。
 - AI配置：管理员配置 OpenAI API Key、Base URL 和模型。
 
 ## 本地运行
@@ -36,6 +36,15 @@ http://localhost:8765/
 5. 点击“测试连接”，确认可用后保存。
 
 配置会保存到服务器本地 `.server/ai-config.json`，该目录已加入 `.gitignore`，不会提交到 GitHub。
+
+## 复盘数据来源
+
+AI复盘报告支持两种来源：
+
+1. Excel模板上传：上传“四季蝉复盘数据标准模板”的 `.xlsx` 文件。
+2. sijichan-shuju接口导入：使用 `oldxianyu/sijichan-shuju` 仓库中的 `sijichan_data_export.js`，临时拉取标准 `dataset/` 数据包后生成报告。
+
+接口导入时，四季蝉账号、密码或Token只会传给服务器用于本次导出，不会写入GitHub。临时导出的数据包在报告生成后会删除。
 
 ## 服务器运行
 

@@ -747,6 +747,7 @@
         Divider,
         Form,
         Input,
+        Radio,
         Row,
         Space,
         Statistic,
@@ -841,6 +842,21 @@
         );
       }
 
+      function DatasetStatusTags({ summary }) {
+        if (!summary || !summary.datasetFiles) return null;
+        return h(
+          Space,
+          { wrap: true, className: "sheet-status", size: [8, 8] },
+          summary.datasetFiles.map((file) =>
+            h(
+              Tag,
+              { key: file.name, color: file.rowCount > 0 ? "blue" : "gold" },
+              `${file.name}：${file.rowCount}行`,
+            ),
+          ),
+        );
+      }
+
       function ReportView({ report, markdown }) {
         if (!report) return null;
         const sections = report.sections || [];
@@ -905,6 +921,8 @@
       }
 
       function AIReviewPage() {
+        const [sourceType, setSourceType] = React.useState("excel");
+        const [sourceForm] = Form.useForm();
         const [status, setStatus] = React.useState(null);
         const [file, setFile] = React.useState(null);
         const [loading, setLoading] = React.useState(false);
@@ -921,6 +939,13 @@
         React.useEffect(() => {
           loadStatus().catch(() => setStatus({ configured: false }));
         }, [loadStatus]);
+
+        const resetReport = () => {
+          setError("");
+          setReport(null);
+          setMarkdown("");
+          setSummary(null);
+        };
 
         const generateReport = async () => {
           if (!file) {
@@ -955,6 +980,36 @@
           }
         };
 
+        const generateFromSijichan = async () => {
+          if (!status?.configured) {
+            message.warning("请先完成AI配置");
+            return;
+          }
+          const values = await sourceForm.validateFields();
+          setLoading(true);
+          resetReport();
+          try {
+            const response = await fetch("/api/sijichan-review-report", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(values),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              setSummary(data.summary || null);
+              throw new Error(data.error || "接口数据导入失败。");
+            }
+            setSummary(data.summary);
+            setReport(data.report);
+            setMarkdown(data.markdown || "");
+            message.success("接口数据复盘报告已生成");
+          } catch (err) {
+            setError(err.message || "接口数据导入失败。");
+          } finally {
+            setLoading(false);
+          }
+        };
+
         return h(
           "div",
           { className: "ai-shell" },
@@ -966,7 +1021,7 @@
               { bordered: false, className: "ai-card" },
               h(Tag, { color: "blue", className: "hero-platform-tag" }, "AI复盘报告"),
               h(Title, { level: 2, className: "june-title" }, "上传客户数据，生成四季蝉复盘报告"),
-              h(Paragraph, null, "支持四季蝉复盘数据标准模板。系统会先读取销售变化、活动商品、店员提现、激励玩法、晒单打赏等明细，再由AI生成品种动销复盘。"),
+              h(Paragraph, null, "支持Excel模板上传，也支持通过 sijichan-shuju 接口导入客户复盘数据。系统会读取销售变化、活动商品、店员提现、激励玩法、晒单打赏等明细，再由AI生成品种动销复盘。"),
               h(Alert, {
                 type: status?.configured ? "success" : "warning",
                 showIcon: true,
@@ -974,6 +1029,25 @@
                 description: status?.configured ? `当前模型：${status.model}` : "请先到“AI配置”页签保存API Key和模型。",
               }),
               h(Divider, null),
+              h(
+                Radio.Group,
+                {
+                  value: sourceType,
+                  onChange: (event) => {
+                    setSourceType(event.target.value);
+                    resetReport();
+                  },
+                  optionType: "button",
+                  buttonStyle: "solid",
+                  style: { marginBottom: 16 },
+                },
+                h(Radio.Button, { value: "excel" }, "Excel模板上传"),
+                h(Radio.Button, { value: "sijichan" }, "sijichan-shuju接口导入"),
+              ),
+              sourceType === "excel"
+                ? h(
+                    React.Fragment,
+                    null,
               h(
                 Upload.Dragger,
                 {
@@ -1007,8 +1081,53 @@
                 h(Button, { type: "primary", loading, onClick: generateReport }, "生成AI复盘报告"),
                 h(Button, { onClick: () => loadStatus().then(() => message.success("配置状态已刷新")) }, "刷新配置状态"),
               ),
+                    )
+                : h(
+                    React.Fragment,
+                    null,
+                    h(Alert, {
+                      type: "info",
+                      showIcon: true,
+                      message: "接口来源：oldxianyu/sijichan-shuju",
+                      description: "使用会话 019e990b-bed6-7fa0-9aaf-02058375c7f0 中沉淀的四季蝉接口导出器，临时拉取dataset数据包后直接生成AI复盘报告。",
+                    }),
+                    h(
+                      Form,
+                      { form: sourceForm, layout: "vertical", style: { marginTop: 16 } },
+                      h(
+                        Row,
+                        { gutter: [12, 0] },
+                        h(
+                          Col,
+                          { xs: 24, md: 12 },
+                          h(Form.Item, { label: "四季蝉账号", name: "username" }, h(Input, { placeholder: "使用账号密码时填写" })),
+                        ),
+                        h(
+                          Col,
+                          { xs: 24, md: 12 },
+                          h(Form.Item, { label: "四季蝉密码", name: "password" }, h(Input.Password, { placeholder: "使用账号密码时填写" })),
+                        ),
+                      ),
+                      h(Form.Item, { label: "已有Token（可选）", name: "token" }, h(Input.Password, { placeholder: "如果已有Token，可只填Token" })),
+                      h(
+                        Row,
+                        { gutter: [12, 0] },
+                        h(Col, { xs: 24, md: 12 }, h(Form.Item, { label: "统计日期 as-of", name: "asOf" }, h(Input, { placeholder: "如 2026-06-01" }))),
+                        h(Col, { xs: 24, md: 12 }, h(Form.Item, { label: "操作人", name: "operator" }, h(Input, { placeholder: "可选" }))),
+                        h(Col, { xs: 24, md: 12 }, h(Form.Item, { label: "商户编码", name: "merCode" }, h(Input, { placeholder: "可选" }))),
+                        h(Col, { xs: 24, md: 12 }, h(Form.Item, { label: "商户名称", name: "merName" }, h(Input, { placeholder: "可选" }))),
+                      ),
+                    ),
+                    h(
+                      Space,
+                      { style: { marginTop: 4 }, wrap: true },
+                      h(Button, { type: "primary", loading, onClick: generateFromSijichan }, "从接口导入并生成报告"),
+                      h(Button, { onClick: () => loadStatus().then(() => message.success("配置状态已刷新")) }, "刷新配置状态"),
+                    ),
+                  ),
               error ? h(Alert, { style: { marginTop: 16 }, type: "error", showIcon: true, message: error }) : null,
               h(SheetStatusTags, { summary }),
+              h(DatasetStatusTags, { summary }),
             ),
             h(
               Card,
@@ -1029,7 +1148,7 @@
                 type: "info",
                 showIcon: true,
                 message: "数据安全说明",
-                description: "上传文件只用于本次解析和AI生成，不在服务器落盘保存。API Key只保存在服务器本地配置文件中，不进入网页代码和GitHub。",
+                description: "上传文件和接口导入的数据只用于本次解析和AI生成，不在服务器落盘保存。API Key只保存在服务器本地配置文件中，不进入网页代码和GitHub。",
               }),
             ),
           ),
