@@ -433,11 +433,18 @@ async function findUserByLogin(login) {
   const value = String(login || "").trim();
   if (!value) return null;
   if (await isDbAvailable()) {
-    const result = await queryDb("select * from users where lower(coalesce(email,'')) = lower($1) or phone = $1 limit 1", [value]);
+    const result = await queryDb("select * from users where lower(coalesce(email,'')) = lower($1) or phone = $1 or lower(name) = lower($1) limit 1", [value]);
     return normalizeUserRow(result.rows[0]);
   }
   const data = readLocalData();
-  return normalizeUserRow(data.users.find((user) => String(user.email || "").toLowerCase() === value.toLowerCase() || user.phone === value));
+  return normalizeUserRow(
+    data.users.find(
+      (user) =>
+        String(user.email || "").toLowerCase() === value.toLowerCase() ||
+        user.phone === value ||
+        String(user.name || "").toLowerCase() === value.toLowerCase(),
+    ),
+  );
 }
 
 async function getUserById(id) {
@@ -1728,8 +1735,8 @@ async function handleRegister(req, res) {
   const phone = String(body.phone || "").trim();
   const email = String(body.email || "").trim();
   const password = String(body.password || "");
-  if (!name || !companyName || !password || (!phone && !email)) {
-    sendJson(res, 400, { error: "请填写姓名、公司名称、手机号或邮箱、密码。" });
+  if (!name || !password || (!phone && !email)) {
+    sendJson(res, 400, { error: "请填写姓名、手机号或邮箱、密码。" });
     return;
   }
   if (password.length < 6) {

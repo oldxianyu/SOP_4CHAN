@@ -102,6 +102,426 @@
         animation: pageIn 320ms ease both;
       }
 
+      .auth-route-shell {
+        width: 100%;
+        min-height: 100vh;
+        padding: 0;
+      }
+
+      .auth-shell {
+        min-height: min(760px, calc(100vh - 178px));
+        display: grid;
+        grid-template-columns: minmax(440px, 1.02fr) minmax(360px, 0.74fr);
+        overflow: hidden;
+        border: 1px solid rgba(42, 75, 255, 0.14);
+        border-radius: 28px;
+        background:
+          radial-gradient(circle at 18% 18%, rgba(108, 63, 245, 0.13), transparent 28%),
+          radial-gradient(circle at 88% 18%, rgba(255, 155, 107, 0.13), transparent 25%),
+          linear-gradient(135deg, #f8faff 0%, #eef3ff 54%, #fff8f1 100%);
+        box-shadow: 0 34px 90px rgba(24, 52, 126, 0.14);
+      }
+
+      .auth-route-shell .auth-shell {
+        width: 100%;
+        min-height: 100vh;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+        grid-template-columns: minmax(610px, 1fr) minmax(460px, 0.74fr);
+      }
+
+      .auth-scene {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        min-height: 100%;
+        padding: 38px 42px;
+        overflow: hidden;
+        color: #ffffff;
+        background:
+          radial-gradient(circle at 78% 18%, rgba(255, 255, 255, 0.22), transparent 25%),
+          radial-gradient(circle at 14% 78%, rgba(255, 214, 128, 0.2), transparent 30%),
+          linear-gradient(145deg, #3145a8 0%, #26347f 58%, #171f4c 100%);
+      }
+
+      .auth-scene::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        opacity: 0.18;
+        background-image:
+          linear-gradient(rgba(255, 255, 255, 0.35) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.35) 1px, transparent 1px);
+        background-size: 22px 22px;
+      }
+
+      .auth-scene-copy,
+      .auth-stage,
+      .auth-scene-foot {
+        position: relative;
+        z-index: 1;
+      }
+
+      .auth-brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 28px;
+        font-weight: 850;
+        letter-spacing: 0;
+      }
+
+      .auth-brand img {
+        width: 42px;
+        height: 42px;
+        padding: 6px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.92);
+      }
+
+      .auth-scene-copy h2.ant-typography {
+        max-width: 560px;
+        margin: 0;
+        color: #ffffff;
+        font-size: clamp(32px, 3.2vw, 50px);
+        line-height: 1.08;
+      }
+
+      .auth-scene-copy .ant-typography {
+        max-width: 560px;
+        color: rgba(255, 255, 255, 0.82);
+        font-size: 17px;
+        line-height: 1.8;
+      }
+
+      .auth-stage {
+        position: relative;
+        display: grid;
+        place-items: end center;
+        height: 430px;
+        margin: 8px 0 14px;
+      }
+
+      .character-floor {
+        position: absolute;
+        left: 8%;
+        right: 8%;
+        bottom: 12px;
+        height: 50px;
+        border-radius: 999px;
+        background: radial-gradient(ellipse, rgba(3, 12, 42, 0.42), transparent 68%);
+        filter: blur(3px);
+      }
+
+      .ref-characters {
+        position: relative;
+        width: min(560px, 100%);
+        height: 400px;
+        transform: translateY(4px);
+      }
+
+      .ref-character {
+        position: absolute;
+        bottom: 0;
+        transition:
+          height 680ms cubic-bezier(0.2, 0.8, 0.2, 1),
+          left 680ms cubic-bezier(0.2, 0.8, 0.2, 1),
+          transform 680ms cubic-bezier(0.2, 0.8, 0.2, 1);
+        transform-origin: bottom center;
+        box-shadow: 0 24px 42px rgba(0, 0, 0, 0.18);
+      }
+
+      .ref-character.purple {
+        left: 70px;
+        z-index: 1;
+        width: 180px;
+        height: 400px;
+        border-radius: 10px 10px 0 0;
+        background:
+          linear-gradient(90deg, rgba(255, 255, 255, 0.12), transparent 24%),
+          #6c3ff5;
+        transform: skewX(var(--purple-skew, 0deg));
+      }
+
+      .ref-character.black {
+        left: 240px;
+        z-index: 2;
+        width: 120px;
+        height: 310px;
+        border-radius: 8px 8px 0 0;
+        background:
+          linear-gradient(90deg, rgba(255, 255, 255, 0.06), transparent 24%),
+          #2d2d2d;
+        transform: skewX(var(--black-skew, 0deg));
+      }
+
+      .ref-character.orange {
+        left: 0;
+        z-index: 3;
+        width: 240px;
+        height: 200px;
+        border-radius: 120px 120px 0 0;
+        background:
+          linear-gradient(90deg, rgba(255, 255, 255, 0.18), transparent 30%),
+          #ff9b6b;
+        transform: skewX(var(--orange-skew, 0deg));
+      }
+
+      .ref-character.yellow {
+        left: 310px;
+        z-index: 4;
+        width: 140px;
+        height: 230px;
+        border-radius: 70px 70px 0 0;
+        background:
+          linear-gradient(90deg, rgba(255, 255, 255, 0.22), transparent 30%),
+          #e8d754;
+        transform: skewX(var(--yellow-skew, 0deg));
+      }
+
+      .auth-shell.is-typing .ref-character.purple,
+      .auth-shell.is-password:not(.show-password) .ref-character.purple {
+        left: 110px;
+        height: 440px;
+        transform: skewX(calc(var(--purple-skew, 0deg) - 12deg)) translateX(34px);
+      }
+
+      .auth-shell.is-typing .ref-character.black,
+      .auth-shell.is-password:not(.show-password) .ref-character.black {
+        transform: skewX(calc(var(--black-skew, 0deg) + 8deg)) translateX(18px);
+      }
+
+      .auth-shell.show-password .ref-character.purple,
+      .auth-shell.show-password .ref-character.black,
+      .auth-shell.show-password .ref-character.orange,
+      .auth-shell.show-password .ref-character.yellow {
+        transform: skewX(0deg);
+      }
+
+      .ref-eyes {
+        position: absolute;
+        display: flex;
+        transition:
+          top 680ms cubic-bezier(0.2, 0.8, 0.2, 1),
+          left 680ms cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+
+      .ref-character.purple .ref-eyes {
+        left: calc(45px + var(--face-x, 0px));
+        top: calc(40px + var(--face-y, 0px));
+        gap: 28px;
+      }
+
+      .ref-character.black .ref-eyes {
+        left: calc(26px + var(--face-x, 0px));
+        top: calc(32px + var(--face-y, 0px));
+        gap: 24px;
+      }
+
+      .ref-character.orange .ref-eyes {
+        left: calc(82px + var(--face-x, 0px));
+        top: calc(90px + var(--face-y, 0px));
+        gap: 42px;
+      }
+
+      .ref-character.yellow .ref-eyes {
+        left: calc(52px + var(--face-x, 0px));
+        top: calc(40px + var(--face-y, 0px));
+        gap: 36px;
+      }
+
+      .auth-shell.is-typing .ref-character.purple .ref-eyes {
+        left: 55px;
+        top: 65px;
+      }
+
+      .auth-shell.is-typing .ref-character.black .ref-eyes {
+        left: 32px;
+        top: 12px;
+      }
+
+      .auth-shell.show-password .ref-character.purple .ref-eyes {
+        left: 20px;
+        top: 35px;
+      }
+
+      .auth-shell.show-password .ref-character.black .ref-eyes {
+        left: 10px;
+        top: 28px;
+      }
+
+      .auth-shell.show-password .ref-character.orange .ref-eyes {
+        left: 50px;
+        top: 85px;
+      }
+
+      .auth-shell.show-password .ref-character.yellow .ref-eyes {
+        left: 20px;
+        top: 35px;
+      }
+
+      .ref-eye {
+        position: relative;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        background: #ffffff;
+        overflow: hidden;
+        transition: height 140ms ease;
+      }
+
+      .ref-eye.lg {
+        width: 18px;
+        height: 18px;
+      }
+
+      .ref-eye.md {
+        width: 16px;
+        height: 16px;
+      }
+
+      .ref-eye.dot-eye {
+        width: 12px;
+        height: 12px;
+        background: transparent;
+        overflow: visible;
+      }
+
+      .ref-pupil {
+        display: block;
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: #2d2d2d;
+        transform: translate(var(--pupil-x, 0px), var(--pupil-y, 0px));
+        transition: transform 120ms ease;
+      }
+
+      .ref-pupil.dot {
+        width: 12px;
+        height: 12px;
+      }
+
+      .auth-shell.is-typing .ref-character.purple .ref-pupil {
+        transform: translate(3px, 4px);
+      }
+
+      .auth-shell.is-typing .ref-character.black .ref-pupil {
+        transform: translate(0, -4px);
+      }
+
+      .auth-shell.show-password .ref-character.purple .ref-pupil {
+        animation: peekLook 1.4s ease-in-out infinite;
+      }
+
+      .auth-shell.show-password .ref-character.black .ref-pupil,
+      .auth-shell.show-password .ref-character.orange .ref-pupil,
+      .auth-shell.show-password .ref-character.yellow .ref-pupil {
+        transform: translate(-5px, -4px);
+      }
+
+      .yellow-mouth {
+        position: absolute;
+        left: calc(40px + var(--face-x, 0px));
+        top: calc(88px + var(--face-y, 0px));
+        width: 80px;
+        height: 4px;
+        border-radius: 999px;
+        background: #2d2d2d;
+        transition: left 200ms ease, top 200ms ease;
+      }
+
+      .auth-shell.show-password .yellow-mouth {
+        left: 10px;
+        top: 88px;
+      }
+
+      .password-cover {
+        position: absolute;
+        z-index: 8;
+        border-radius: 22px;
+        opacity: 0;
+        transform: translateY(112px) rotate(0deg);
+        transition: transform 360ms ease, opacity 240ms ease;
+        box-shadow: 0 16px 28px rgba(0, 0, 0, 0.24);
+      }
+
+      .password-cover.left {
+        left: 23px;
+        top: 31px;
+        width: 64px;
+        height: 48px;
+        background: #ff9b6b;
+        transform-origin: right bottom;
+      }
+
+      .password-cover.right {
+        left: 86px;
+        top: 31px;
+        width: 64px;
+        height: 48px;
+        background: #e8d754;
+        transform-origin: left bottom;
+      }
+
+      .auth-shell.is-password:not(.show-password) .password-cover.left {
+        opacity: 1;
+        transform: translateY(0) rotate(10deg);
+      }
+
+      .auth-shell.is-password:not(.show-password) .password-cover.right {
+        opacity: 1;
+        transform: translateY(0) rotate(-10deg);
+      }
+
+      .auth-shell.show-password .password-cover.left {
+        opacity: 0.82;
+        transform: translate(-36px, 28px) rotate(24deg);
+      }
+
+      .auth-shell.show-password .password-cover.right {
+        opacity: 0.82;
+        transform: translate(36px, 28px) rotate(-24deg);
+      }
+
+      @keyframes peekLook {
+        0%,
+        100% {
+          transform: translate(-4px, -4px);
+        }
+        50% {
+          transform: translate(4px, 5px);
+        }
+      }
+
+      .auth-badge-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        color: rgba(255, 255, 255, 0.76);
+      }
+
+      .auth-badge-row span {
+        padding: 8px 12px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(8px);
+      }
+
+      .auth-form-panel {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 34px;
+        background:
+          radial-gradient(circle at 70% 10%, rgba(108, 63, 245, 0.08), transparent 30%),
+          rgba(255, 255, 255, 0.76);
+        backdrop-filter: blur(14px);
+      }
+
       .auth-card,
       .history-card {
         border: 1px solid rgba(42, 75, 255, 0.14);
@@ -111,7 +531,44 @@
       }
 
       .auth-card {
-        max-width: 620px;
+        width: min(460px, 100%);
+        max-width: 460px;
+        padding: 10px;
+        border-radius: 24px;
+      }
+
+      .auth-page-actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 18px;
+      }
+
+      .auth-card .ant-input,
+      .auth-card .ant-input-password,
+      .auth-card .ant-input-affix-wrapper {
+        border-radius: 999px;
+      }
+
+      .auth-card .ant-form-item {
+        margin-bottom: 16px;
+      }
+
+      .auth-primary-button {
+        min-width: 148px;
+        height: 44px;
+        border-radius: 999px;
+        font-weight: 850;
+        box-shadow: 0 14px 28px rgba(42, 75, 255, 0.18);
+      }
+
+      @media (max-width: 960px) {
+        .auth-shell {
+          grid-template-columns: 1fr;
+        }
+
+        .auth-scene {
+          min-height: 380px;
+        }
       }
 
       .gate-card {
@@ -916,10 +1373,114 @@
         );
       }
 
+      function RefEye({ size = "lg", dot = false, style }) {
+        return h(
+          "span",
+          { className: `ref-eye ${dot ? "dot-eye" : size}` },
+          h("span", { className: `ref-pupil ${dot ? "dot" : ""}`, style }),
+        );
+      }
+
+      function RefCharacters({ look, typing, hidingPassword, showingPassword }) {
+        const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+        const face = {
+          x: clamp(look.x * 15, -15, 15),
+          y: clamp(look.y * 10, -10, 10),
+        };
+        const pupil = {
+          x: clamp(look.x * 5, -5, 5),
+          y: clamp(look.y * 5, -5, 5),
+        };
+        const makeStyle = (scale = 1) => ({
+          "--face-x": `${face.x * scale}px`,
+          "--face-y": `${face.y * scale}px`,
+          "--pupil-x": `${pupil.x}px`,
+          "--pupil-y": `${pupil.y}px`,
+        });
+        const bodyStyle = {
+          "--purple-skew": `${clamp(-look.x * 6, -6, 6)}deg`,
+          "--black-skew": `${clamp(-look.x * 5, -6, 6)}deg`,
+          "--orange-skew": `${clamp(-look.x * 4, -5, 5)}deg`,
+          "--yellow-skew": `${clamp(-look.x * 4, -5, 5)}deg`,
+        };
+        const hiding = hidingPassword && !showingPassword;
+        const purpleStyle = { ...makeStyle(1), "--purple-skew": bodyStyle["--purple-skew"] };
+        const blackStyle = { ...makeStyle(0.82), "--black-skew": bodyStyle["--black-skew"] };
+        const orangeStyle = { ...makeStyle(0.55), "--orange-skew": bodyStyle["--orange-skew"] };
+        const yellowStyle = { ...makeStyle(0.7), "--yellow-skew": bodyStyle["--yellow-skew"] };
+        const pupilStyle = { "--pupil-x": `${pupil.x}px`, "--pupil-y": `${pupil.y}px` };
+
+        return h(
+          "div",
+          { className: "ref-characters", "aria-label": "四季蝉登录动画角色" },
+          h(
+            "div",
+            { className: "ref-character purple", style: purpleStyle },
+            h(
+              "div",
+              { className: "ref-eyes" },
+              h(RefEye, { size: "lg", style: pupilStyle }),
+              h(RefEye, { size: "lg", style: pupilStyle }),
+            ),
+            h("span", { className: "password-cover left" }),
+            h("span", { className: "password-cover right" }),
+          ),
+          h(
+            "div",
+            { className: "ref-character black", style: blackStyle },
+            h(
+              "div",
+              { className: "ref-eyes" },
+              h(RefEye, { size: "md", style: pupilStyle }),
+              h(RefEye, { size: "md", style: pupilStyle }),
+            ),
+          ),
+          h(
+            "div",
+            { className: "ref-character orange", style: orangeStyle },
+            h(
+              "div",
+              { className: "ref-eyes" },
+              h(RefEye, { dot: true, style: pupilStyle }),
+              h(RefEye, { dot: true, style: pupilStyle }),
+            ),
+          ),
+          h(
+            "div",
+            { className: "ref-character yellow", style: yellowStyle },
+            h(
+              "div",
+              { className: "ref-eyes" },
+              h(RefEye, { dot: true, style: pupilStyle }),
+              h(RefEye, { dot: true, style: pupilStyle }),
+            ),
+            h("span", { className: "yellow-mouth" }),
+          ),
+        );
+      }
+
       function AuthPage({ mode, onModeChange, onAuthed }) {
         const [form] = Form.useForm();
         const [loading, setLoading] = React.useState(false);
+        const [focusType, setFocusType] = React.useState("");
+        const [showPassword, setShowPassword] = React.useState(false);
+        const [look, setLook] = React.useState({ x: 0, y: 0 });
         const isRegister = mode === "register";
+        const passwordValue = Form.useWatch("password", form) || "";
+        const isTyping = focusType && focusType !== "password";
+        const isPassword = focusType === "password" || passwordValue.length > 0;
+        const sceneClassName = [
+          "auth-shell",
+          isTyping ? "is-typing" : "",
+          isPassword ? "is-password" : "",
+          showPassword ? "show-password" : "",
+        ].filter(Boolean).join(" ");
+        const onMouseMove = (event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          const x = Math.max(-1, Math.min(1, (event.clientX - (rect.left + rect.width / 2)) / (rect.width / 2)));
+          const y = Math.max(-1, Math.min(1, (event.clientY - (rect.top + rect.height / 2)) / (rect.height / 2)));
+          setLook({ x, y });
+        };
         const submit = async () => {
           const values = await form.validateFields();
           setLoading(true);
@@ -939,33 +1500,54 @@
 
         return h(
           "div",
-          { className: "auth-shell" },
+          { className: sceneClassName, onMouseMove },
           h(
-            Card,
-            { bordered: false, className: "auth-card" },
-            h(Tag, { color: "blue", className: "hero-platform-tag" }, isRegister ? "开放注册" : "用户登录"),
-            h(Title, { level: 2, className: "june-title" }, isRegister ? "注册四季蝉客户门户账号" : "登录四季蝉客户门户"),
-            h(Paragraph, null, isRegister ? "注册后可直接上传客户数据、生成AI复盘报告并查看历史记录。" : "登录后可使用AI复盘报告、历史报告和客户资料能力。"),
+            "section",
+            { className: "auth-scene" },
             h(
-              Form,
-              { form, layout: "vertical" },
-              isRegister
-                ? h(
-                    React.Fragment,
-                    null,
-                    h(Form.Item, { label: "姓名", name: "name", rules: [{ required: true, message: "请输入姓名" }] }, h(Input, { placeholder: "联系人姓名" })),
-                    h(Form.Item, { label: "公司名称", name: "companyName", rules: [{ required: true, message: "请输入公司名称" }] }, h(Input, { placeholder: "连锁或客户名称" })),
-                    h(Form.Item, { label: "手机号", name: "phone" }, h(Input, { placeholder: "手机号，可用于登录" })),
-                    h(Form.Item, { label: "邮箱", name: "email" }, h(Input, { placeholder: "邮箱，可用于登录" })),
-                  )
-                : h(Form.Item, { label: "手机号或邮箱", name: "login", rules: [{ required: true, message: "请输入手机号或邮箱" }] }, h(Input, { placeholder: "手机号或邮箱" })),
-              h(Form.Item, { label: "密码", name: "password", rules: [{ required: true, message: "请输入密码" }, { min: 6, message: "密码至少6位" }] }, h(Input.Password, { placeholder: "至少6位" })),
+              "div",
+              { className: "auth-scene-copy" },
+              h("div", { className: "auth-brand" }, h("img", { src: "assets/四季蝉.png", alt: "四季蝉logo" }), h("span", null, "海典四季蝉")),
+              h(Title, { level: 2 }, isRegister ? "欢迎加入重点品动销门户" : "欢迎回到四季蝉客户门户"),
+              h(Paragraph, null, isRegister ? "注册后即可保存客户复盘记录，让每一次动销分析都能沉淀下来。" : "登录后上传客户数据、生成AI复盘报告，并继续查看历史分享材料。"),
             ),
             h(
-              Space,
-              { wrap: true },
-              h(Button, { type: "primary", loading, onClick: submit }, isRegister ? "注册并登录" : "登录"),
-              h(Button, { onClick: () => onModeChange(isRegister ? "login" : "register") }, isRegister ? "已有账号，去登录" : "没有账号，去注册"),
+              "div",
+              { className: "auth-stage" },
+              h("div", { className: "character-floor" }),
+              h(RefCharacters, { look, typing: isTyping, hidingPassword: isPassword, showingPassword: showPassword }),
+            ),
+            h("div", { className: "auth-scene-foot" }, h("div", { className: "auth-badge-row" }, h("span", null, "客户数据留痕"), h("span", null, "AI复盘报告"), h("span", null, "分享长图与二维码"))),
+          ),
+          h(
+            "section",
+            { className: "auth-form-panel" },
+            h(
+              Card,
+              { bordered: false, className: "auth-card" },
+              h(Tag, { color: "blue", className: "hero-platform-tag" }, isRegister ? "开放注册" : "用户登录"),
+              h(Title, { level: 2, className: "june-title" }, isRegister ? "注册四季蝉客户门户账号" : "登录四季蝉客户门户"),
+              h(Paragraph, null, isRegister ? "注册后可直接上传客户数据、生成AI复盘报告并查看历史记录。" : "登录后可使用AI复盘报告、历史报告和客户资料能力。"),
+              h(
+                Form,
+                { form, layout: "vertical" },
+                isRegister
+                  ? h(
+                      React.Fragment,
+                      null,
+                      h(Form.Item, { label: "姓名", name: "name", rules: [{ required: true, message: "请输入姓名" }] }, h(Input, { placeholder: "联系人姓名", onFocus: () => setFocusType("text"), onBlur: () => setFocusType("") })),
+                      h(Form.Item, { label: "手机号", name: "phone" }, h(Input, { placeholder: "手机号，可用于登录", onFocus: () => setFocusType("text"), onBlur: () => setFocusType("") })),
+                      h(Form.Item, { label: "邮箱", name: "email" }, h(Input, { placeholder: "邮箱，可用于登录", onFocus: () => setFocusType("text"), onBlur: () => setFocusType("") })),
+                    )
+                  : h(Form.Item, { label: "手机号或邮箱", name: "login", rules: [{ required: true, message: "请输入手机号或邮箱" }] }, h(Input, { placeholder: "手机号或邮箱", onFocus: () => setFocusType("text"), onBlur: () => setFocusType("") })),
+                h(Form.Item, { label: "密码", name: "password", rules: [{ required: true, message: "请输入密码" }, { min: 6, message: "密码至少6位" }] }, h(Input.Password, { placeholder: "至少6位", visibilityToggle: { visible: showPassword, onVisibleChange: setShowPassword }, onFocus: () => setFocusType("password"), onBlur: () => setFocusType("") })),
+              ),
+              h(
+                Space,
+                { wrap: true },
+                h(Button, { type: "primary", loading, onClick: submit, className: "auth-primary-button" }, isRegister ? "注册并登录" : "登录"),
+                h(Button, { onClick: () => onModeChange(isRegister ? "login" : "register") }, isRegister ? "已有账号，去登录" : "没有账号，去注册"),
+              ),
             ),
           ),
         );
@@ -2214,6 +2796,8 @@
       function App() {
         const [activeKey, setActiveKey] = React.useState("home");
         const [auth, setAuth] = React.useState({ user: null, profile: null, loading: true });
+        const initialAuthPage = new URLSearchParams(window.location.search).get("page");
+        const [authPage, setAuthPage] = React.useState(initialAuthPage === "register" ? "register" : initialAuthPage === "login" ? "login" : "");
         const dates = React.useMemo(getDynamicDates, []);
         const loadMe = React.useCallback(async () => {
           try {
@@ -2229,16 +2813,24 @@
 
         const onAuthed = (data) => {
           setAuth({ user: data.user || null, profile: data.profile || null, loading: false });
+          setAuthPage("");
+          window.history.replaceState(null, "", `${window.location.pathname}?v=auth-portal`);
           setActiveKey("aiReview");
         };
         const logout = async () => {
           await apiJson("/api/auth/logout", { method: "POST", body: "{}" }).catch(() => null);
           setAuth({ user: null, profile: null, loading: false });
+          setAuthPage("");
+          window.history.replaceState(null, "", `${window.location.pathname}?v=auth-portal`);
           setActiveKey("home");
           message.success("已退出登录");
         };
-        const openLogin = () => setActiveKey("login");
-        const openRegister = () => setActiveKey("register");
+        const openAuthPage = (mode) => {
+          setAuthPage(mode);
+          window.history.pushState(null, "", `${window.location.pathname}?page=${mode}`);
+        };
+        const openLogin = () => openAuthPage("login");
+        const openRegister = () => openAuthPage("register");
         const authProps = { auth, onLogin: openLogin, onRegister: openRegister };
         const tabItems = [
           { key: "home", label: "首页", children: h(HomePage, { onOpenCalendar: () => setActiveKey("calendar") }) },
@@ -2249,11 +2841,24 @@
           { key: "aiReview", label: "AI复盘报告", children: h(AIReviewPage, authProps) },
           { key: "history", label: "历史报告", children: h(HistoryPage, authProps) },
           ...(auth.user?.role === "admin" ? [{ key: "aiConfig", label: "AI配置", children: h(AIConfigPage, authProps) }] : []),
-          ...(auth.user ? [] : [
-            { key: "login", label: "登录", children: h(AuthPage, { mode: "login", onModeChange: (mode) => setActiveKey(mode), onAuthed }) },
-            { key: "register", label: "注册", children: h(AuthPage, { mode: "register", onModeChange: (mode) => setActiveKey(mode), onAuthed }) },
-          ]),
         ];
+
+        if (authPage && !auth.user) {
+          return h(
+            ConfigProvider,
+            {
+              theme: {
+                token: {
+                  colorPrimary: "#2a4bff",
+                  borderRadius: 8,
+                  colorInfo: "#2a4bff",
+                  fontFamily: '"Segoe UI", "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif',
+                },
+              },
+            },
+            h("main", { className: "auth-route-shell" }, h(AuthPage, { mode: authPage, onModeChange: openAuthPage, onAuthed })),
+          );
+        }
 
         return h(
           ConfigProvider,
