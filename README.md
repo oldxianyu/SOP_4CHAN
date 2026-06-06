@@ -51,6 +51,11 @@ npx skills add supabase/agent-skills
 服务支持 Supabase/Postgres。数据库连接配置只放在服务器 `.server/.env` 或 PM2 环境变量，不提交 GitHub。
 
 ```bash
+# 推荐：使用 Supabase Dashboard 提供的 Session pooler / Transaction pooler 连接串，
+# 尤其是服务器没有 IPv6 出口时。
+DATABASE_URL=postgresql://sijichan.<project-ref>:********@aws-0-<region>.pooler.supabase.com:5432/postgres
+
+# 或者使用直连参数；注意 db.<project-ref>.supabase.co 可能只返回 IPv6。
 DB_HOST=db.gqinewwwnfdxwqtnapjl.supabase.co
 DB_PORT=5432
 DB_NAME=postgres
