@@ -1282,13 +1282,21 @@ function renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUr
     ul { margin:0; padding-left:22px; line-height:1.75; }
     li + li { margin-top:7px; }
     .report-section { margin-top:18px; padding:24px; }
-    .actions { display:grid; grid-template-columns:1fr 260px; gap:18px; align-items:center; margin-top:22px; padding:22px; border-radius:18px; border:1px solid var(--line); background:#fff; }
+    .actions { display:grid; grid-template-columns:1fr 190px; gap:18px; align-items:center; margin-top:22px; padding:22px; border-radius:18px; border:1px solid var(--line); background:#fff; }
     .buttons { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }
     a.button { display:inline-flex; align-items:center; justify-content:center; min-height:40px; padding:0 16px; border-radius:10px; text-decoration:none; color:#fff; background:var(--blue); font-weight:800; }
     a.button.secondary { color:var(--navy); background:#fff; border:1px solid var(--line); }
-    .qr { width:220px; height:220px; padding:12px; border-radius:16px; border:1px solid var(--line); background:#fff; justify-self:end; }
+    .qr-button { width:170px; padding:10px; border:1px solid var(--line); border-radius:16px; background:#fff; justify-self:end; cursor:pointer; box-shadow:0 12px 28px rgba(24,52,126,.08); }
+    .qr-button img { display:block; width:100%; height:auto; }
+    .qr-button span { display:block; margin-top:8px; color:var(--muted); font-size:13px; text-align:center; }
+    .qr-modal[hidden] { display:none; }
+    .qr-modal { position:fixed; inset:0; z-index:30; display:grid; place-items:center; padding:20px; background:rgba(17,24,39,.45); backdrop-filter:blur(4px); }
+    .qr-dialog { width:min(340px,100%); padding:20px; border-radius:18px; border:1px solid var(--line); background:#fff; box-shadow:0 24px 70px rgba(12,21,48,.24); text-align:center; }
+    .qr-dialog img { width:240px; max-width:100%; height:auto; padding:10px; border:1px solid var(--line); border-radius:14px; }
+    .qr-dialog h3 { margin:4px 0 12px; color:var(--navy); font-size:20px; }
+    .qr-close { margin-top:14px; min-height:38px; padding:0 16px; border:0; border-radius:10px; color:#fff; background:var(--blue); font-weight:800; cursor:pointer; }
     .markdown { white-space:pre-wrap; display:none; }
-    @media (max-width:760px){ h1{font-size:32px}.grid,.actions{grid-template-columns:1fr}.qr{justify-self:start;width:180px;height:180px}.hero{padding:24px} }
+    @media (max-width:760px){ h1{font-size:32px}.grid,.actions{grid-template-columns:1fr}.qr-button{justify-self:start;width:140px}.hero{padding:24px} }
   </style>
 </head>
 <body>
@@ -1315,10 +1323,33 @@ function renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUr
           <a class="button secondary" href="${escapeHtml(shareUrl)}">刷新报告页</a>
         </div>
       </div>
-      <img class="qr" src="${escapeHtml(qrSvgUrl)}" alt="报告二维码" />
+      <button class="qr-button" id="openQr" type="button" aria-label="查看报告二维码">
+        <img src="${escapeHtml(qrSvgUrl)}" alt="报告二维码" />
+        <span>点击查看二维码</span>
+      </button>
     </section>
+    <div class="qr-modal" id="qrModal" hidden>
+      <div class="qr-dialog" role="dialog" aria-modal="true" aria-labelledby="qrTitle">
+        <h3 id="qrTitle">扫码查看报告</h3>
+        <img src="${escapeHtml(qrSvgUrl)}" alt="报告二维码" />
+        <button class="qr-close" id="closeQr" type="button">关闭</button>
+      </div>
+    </div>
     <pre class="markdown">${escapeHtml(markdown)}</pre>
   </main>
+  <script>
+    const openQr = document.getElementById("openQr");
+    const closeQr = document.getElementById("closeQr");
+    const qrModal = document.getElementById("qrModal");
+    openQr?.addEventListener("click", () => { qrModal.hidden = false; });
+    closeQr?.addEventListener("click", () => { qrModal.hidden = true; });
+    qrModal?.addEventListener("click", (event) => {
+      if (event.target === qrModal) qrModal.hidden = true;
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && qrModal) qrModal.hidden = true;
+    });
+  </script>
 </body>
 </html>`;
 }
@@ -1333,7 +1364,7 @@ function svgText(lines, x, y, options = {}) {
     .join("");
 }
 
-function renderReportSvg({ report, summary, shareUrl }) {
+function renderReportSvg({ report, summary, shareUrl, qrSvg }) {
   const width = 1200;
   let y = 92;
   const parts = [];
@@ -1366,9 +1397,12 @@ function renderReportSvg({ report, summary, shareUrl }) {
   for (const section of report.sections || []) addBlock(section.heading, section.bullets || []);
   addBlock("下一步动作", report.nextActions || []);
 
-  parts.push(`<rect x="60" y="${y - 30}" width="1080" height="130" rx="22" fill="#1f3f95"/>`);
-  parts.push(svgText(["扫码查看完整网页报告", shareUrl], 88, y + 24, { size: 25, weight: 800, fill: "#ffffff", lineHeight: 38 }));
-  y += 150;
+  parts.push(`<rect x="60" y="${y - 30}" width="1080" height="210" rx="22" fill="#1f3f95"/>`);
+  parts.push(svgText(["扫码查看完整网页报告", shareUrl], 88, y + 34, { size: 25, weight: 800, fill: "#ffffff", lineHeight: 38 }));
+  parts.push(`<rect x="942" y="${y - 4}" width="142" height="142" rx="14" fill="#ffffff"/>`);
+  parts.push(inlineQrSvg(qrSvg, 954, y + 8, 118));
+  parts.push(`<text x="958" y="${y + 158}" font-size="18" font-weight="800" fill="#ffffff">扫码查看报告</text>`);
+  y += 230;
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${y}" viewBox="0 0 ${width} ${y}">
   <defs>
@@ -1380,6 +1414,16 @@ function renderReportSvg({ report, summary, shareUrl }) {
   </defs>
   ${parts.join("\n")}
 </svg>`;
+}
+
+function inlineQrSvg(qrSvg, x, y, size) {
+  const viewBoxMatch = qrSvg.match(/viewBox="([^"]+)"/i);
+  const bodyMatch = qrSvg.match(/<svg[^>]*>([\s\S]*?)<\/svg>/i);
+  if (!viewBoxMatch || !bodyMatch) return "";
+  const [, , width] = viewBoxMatch[1].split(/\s+/).map(Number);
+  const scale = width ? size / width : 1;
+  const body = bodyMatch[1].replace(/<\?xml[^>]*>/g, "").trim();
+  return `<g transform="translate(${x} ${y}) scale(${scale})">${body}</g>`;
 }
 
 async function persistReportArtifact({ report, markdown, summary }) {
@@ -1398,7 +1442,7 @@ async function persistReportArtifact({ report, markdown, summary }) {
     margin: 1,
     color: { dark: "#1f3f95", light: "#ffffff" },
   });
-  const reportSvg = renderReportSvg({ report, summary, shareUrl });
+  const reportSvg = renderReportSvg({ report, summary, shareUrl, qrSvg });
   const html = renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUrl });
 
   fs.writeFileSync(path.join(reportDir, "report.json"), JSON.stringify({ report, markdown, summary, shareUrl, svgUrl, qrSvgUrl }, null, 2), "utf8");
@@ -1408,6 +1452,43 @@ async function persistReportArtifact({ report, markdown, summary }) {
 
   return { reportId, shareUrl, svgUrl, qrSvgUrl };
 }
+
+async function refreshExistingReportArtifacts() {
+  if (!fs.existsSync(reportsDir)) return;
+  const entries = fs.readdirSync(reportsDir, { withFileTypes: true }).filter((entry) => entry.isDirectory());
+  for (const entry of entries) {
+    const reportDir = path.join(reportsDir, entry.name);
+    const jsonPath = path.join(reportDir, "report.json");
+    if (!fs.existsSync(jsonPath)) continue;
+    try {
+      const saved = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
+      if (!saved.report || !saved.shareUrl) continue;
+      const qrSvg = await QRCode.toString(saved.shareUrl, {
+        type: "svg",
+        errorCorrectionLevel: "M",
+        margin: 1,
+        color: { dark: "#1f3f95", light: "#ffffff" },
+      });
+      const svgUrl = saved.svgUrl || `${saved.shareUrl.replace(/\/+$/, "")}/report.svg`;
+      const qrSvgUrl = saved.qrSvgUrl || `${saved.shareUrl.replace(/\/+$/, "")}/qr.svg`;
+      const reportSvg = renderReportSvg({ report: saved.report, summary: saved.summary, shareUrl: saved.shareUrl, qrSvg });
+      const html = renderReportHtml({
+        report: saved.report,
+        markdown: saved.markdown || "",
+        summary: saved.summary,
+        shareUrl: saved.shareUrl,
+        svgUrl,
+        qrSvgUrl,
+      });
+      fs.writeFileSync(path.join(reportDir, "index.html"), html, "utf8");
+      fs.writeFileSync(path.join(reportDir, "report.svg"), reportSvg, "utf8");
+      fs.writeFileSync(path.join(reportDir, "qr.svg"), qrSvg, "utf8");
+    } catch (error) {
+      console.warn(`Refresh report artifact failed for ${entry.name}: ${error.message}`);
+    }
+  }
+}
+
 
 async function generateReportFromSummary(summary) {
   const config = await loadAiConfig();
@@ -1902,4 +1983,7 @@ function listenOn(portIndex = 0) {
   });
 }
 
+refreshExistingReportArtifacts().catch((error) => {
+  console.warn(`Refresh existing reports failed: ${error.message}`);
+});
 listenOn();
