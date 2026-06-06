@@ -1,0 +1,3044 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>海典四季蝉</title>
+    <link rel="stylesheet" href="vendor/antd-reset.css" />
+    <style>
+      :root {
+        color: #1f2a24;
+        background: #f4f7f3;
+        font-synthesis: none;
+        text-rendering: geometricPrecision;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-width: 320px;
+        margin: 0;
+        background:
+          radial-gradient(circle at 18% 8%, rgba(47, 77, 255, 0.14), transparent 28%),
+          radial-gradient(circle at 78% 2%, rgba(255, 122, 61, 0.12), transparent 24%),
+          linear-gradient(180deg, #f5f7ff 0%, #fafbff 48%, #f8fafc 100%);
+        font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
+      }
+
+      .app-shell {
+        width: min(1480px, calc(100% - 40px));
+        margin: 0 auto;
+        padding: 28px 0 48px;
+      }
+
+      .app-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 18px;
+        align-items: flex-end;
+        margin-bottom: 14px;
+        padding: 14px 16px;
+        border: 1px solid rgba(42, 75, 255, 0.16);
+        border-radius: 8px;
+        background:
+          linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(239, 242, 255, 0.82));
+        box-shadow: 0 18px 42px rgba(24, 52, 126, 0.08);
+        backdrop-filter: blur(10px);
+      }
+
+      .brand-lockup {
+        display: flex;
+        gap: 16px;
+        align-items: center;
+      }
+
+      .brand-logo {
+        width: clamp(50px, 5.4vw, 68px);
+        height: clamp(50px, 5.4vw, 68px);
+        padding: 8px;
+        border: 1px solid rgba(42, 75, 255, 0.18);
+        border-radius: 20px;
+        background:
+          linear-gradient(145deg, rgba(255, 255, 255, 0.78), rgba(238, 242, 255, 0.88));
+        object-fit: contain;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.9),
+          0 12px 28px rgba(24, 52, 126, 0.12);
+      }
+
+      .brand-kicker {
+        display: block;
+        max-width: 760px;
+        margin-bottom: 2px;
+        color: #64748b;
+        font-size: clamp(14px, 1.6vw, 18px);
+        font-weight: 650;
+        line-height: 1.35;
+      }
+
+      .brand-copy h1.ant-typography {
+        margin-top: 0;
+      }
+
+      .app-header h1.ant-typography {
+        margin: 2px 0 4px;
+        color: #1f3f95;
+        font-size: clamp(28px, 3.2vw, 42px);
+        line-height: 1.06;
+      }
+
+      .user-panel {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        justify-content: flex-end;
+      }
+
+      .auth-shell,
+      .history-shell {
+        animation: pageIn 320ms ease both;
+      }
+
+      .auth-route-shell {
+        width: 100%;
+        min-height: 100vh;
+        padding: 0;
+      }
+
+      .auth-shell {
+        min-height: min(760px, calc(100vh - 178px));
+        display: grid;
+        grid-template-columns: minmax(440px, 1.02fr) minmax(360px, 0.74fr);
+        overflow: hidden;
+        border: 1px solid rgba(42, 75, 255, 0.14);
+        border-radius: 28px;
+        background:
+          radial-gradient(circle at 18% 18%, rgba(108, 63, 245, 0.13), transparent 28%),
+          radial-gradient(circle at 88% 18%, rgba(255, 155, 107, 0.13), transparent 25%),
+          linear-gradient(135deg, #f8faff 0%, #eef3ff 54%, #fff8f1 100%);
+        box-shadow: 0 34px 90px rgba(24, 52, 126, 0.14);
+      }
+
+      .auth-route-shell .auth-shell {
+        width: 100%;
+        min-height: 100vh;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+        grid-template-columns: minmax(610px, 1fr) minmax(460px, 0.74fr);
+      }
+
+      .auth-scene {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        min-height: 100%;
+        padding: 38px 42px;
+        overflow: hidden;
+        color: #ffffff;
+        background:
+          radial-gradient(circle at 78% 18%, rgba(255, 255, 255, 0.22), transparent 25%),
+          radial-gradient(circle at 14% 78%, rgba(255, 214, 128, 0.2), transparent 30%),
+          linear-gradient(145deg, #3145a8 0%, #26347f 58%, #171f4c 100%);
+      }
+
+      .auth-scene::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        opacity: 0.18;
+        background-image:
+          linear-gradient(rgba(255, 255, 255, 0.35) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.35) 1px, transparent 1px);
+        background-size: 22px 22px;
+      }
+
+      .auth-scene-copy,
+      .auth-stage,
+      .auth-scene-foot {
+        position: relative;
+        z-index: 1;
+      }
+
+      .auth-brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 28px;
+        font-weight: 850;
+        letter-spacing: 0;
+      }
+
+      .auth-brand img {
+        width: 42px;
+        height: 42px;
+        padding: 6px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.92);
+      }
+
+      .auth-scene-copy h2.ant-typography {
+        max-width: 560px;
+        margin: 0;
+        color: #ffffff;
+        font-size: clamp(32px, 3.2vw, 50px);
+        line-height: 1.08;
+      }
+
+      .auth-scene-copy .ant-typography {
+        max-width: 560px;
+        color: rgba(255, 255, 255, 0.82);
+        font-size: 17px;
+        line-height: 1.8;
+      }
+
+      .auth-stage {
+        position: relative;
+        display: grid;
+        place-items: end center;
+        height: 430px;
+        margin: 8px 0 14px;
+      }
+
+      .character-floor {
+        position: absolute;
+        left: 8%;
+        right: 8%;
+        bottom: 12px;
+        height: 50px;
+        border-radius: 999px;
+        background: radial-gradient(ellipse, rgba(3, 12, 42, 0.42), transparent 68%);
+        filter: blur(3px);
+      }
+
+      .ref-characters {
+        position: relative;
+        width: min(560px, 100%);
+        height: 400px;
+        transform: translateY(4px);
+      }
+
+      .ref-character {
+        position: absolute;
+        bottom: 0;
+        transition:
+          height 680ms cubic-bezier(0.2, 0.8, 0.2, 1),
+          left 680ms cubic-bezier(0.2, 0.8, 0.2, 1),
+          transform 680ms cubic-bezier(0.2, 0.8, 0.2, 1);
+        transform-origin: bottom center;
+        box-shadow: 0 24px 42px rgba(0, 0, 0, 0.18);
+      }
+
+      .ref-character.purple {
+        left: 70px;
+        z-index: 1;
+        width: 180px;
+        height: 400px;
+        border-radius: 10px 10px 0 0;
+        background:
+          linear-gradient(90deg, rgba(255, 255, 255, 0.12), transparent 24%),
+          #6c3ff5;
+        transform: skewX(var(--purple-skew, 0deg));
+      }
+
+      .ref-character.black {
+        left: 240px;
+        z-index: 2;
+        width: 120px;
+        height: 310px;
+        border-radius: 8px 8px 0 0;
+        background:
+          linear-gradient(90deg, rgba(255, 255, 255, 0.06), transparent 24%),
+          #2d2d2d;
+        transform: skewX(var(--black-skew, 0deg));
+      }
+
+      .ref-character.orange {
+        left: 0;
+        z-index: 3;
+        width: 240px;
+        height: 200px;
+        border-radius: 120px 120px 0 0;
+        background:
+          linear-gradient(90deg, rgba(255, 255, 255, 0.18), transparent 30%),
+          #ff9b6b;
+        transform: skewX(var(--orange-skew, 0deg));
+      }
+
+      .ref-character.yellow {
+        left: 310px;
+        z-index: 4;
+        width: 140px;
+        height: 230px;
+        border-radius: 70px 70px 0 0;
+        background:
+          linear-gradient(90deg, rgba(255, 255, 255, 0.22), transparent 30%),
+          #e8d754;
+        transform: skewX(var(--yellow-skew, 0deg));
+      }
+
+      .auth-shell.is-typing .ref-character.purple,
+      .auth-shell.is-password:not(.show-password) .ref-character.purple {
+        left: 110px;
+        height: 440px;
+        transform: skewX(calc(var(--purple-skew, 0deg) - 12deg)) translateX(34px);
+      }
+
+      .auth-shell.is-typing .ref-character.black,
+      .auth-shell.is-password:not(.show-password) .ref-character.black {
+        transform: skewX(calc(var(--black-skew, 0deg) + 8deg)) translateX(18px);
+      }
+
+      .auth-shell.show-password .ref-character.purple,
+      .auth-shell.show-password .ref-character.black,
+      .auth-shell.show-password .ref-character.orange,
+      .auth-shell.show-password .ref-character.yellow {
+        transform: skewX(0deg);
+      }
+
+      .ref-eyes {
+        position: absolute;
+        display: flex;
+        transition:
+          top 680ms cubic-bezier(0.2, 0.8, 0.2, 1),
+          left 680ms cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+
+      .ref-character.purple .ref-eyes {
+        left: calc(45px + var(--face-x, 0px));
+        top: calc(40px + var(--face-y, 0px));
+        gap: 28px;
+      }
+
+      .ref-character.black .ref-eyes {
+        left: calc(26px + var(--face-x, 0px));
+        top: calc(32px + var(--face-y, 0px));
+        gap: 24px;
+      }
+
+      .ref-character.orange .ref-eyes {
+        left: calc(82px + var(--face-x, 0px));
+        top: calc(90px + var(--face-y, 0px));
+        gap: 42px;
+      }
+
+      .ref-character.yellow .ref-eyes {
+        left: calc(52px + var(--face-x, 0px));
+        top: calc(40px + var(--face-y, 0px));
+        gap: 36px;
+      }
+
+      .auth-shell.is-typing .ref-character.purple .ref-eyes {
+        left: 55px;
+        top: 65px;
+      }
+
+      .auth-shell.is-typing .ref-character.black .ref-eyes {
+        left: 32px;
+        top: 12px;
+      }
+
+      .auth-shell.show-password .ref-character.purple .ref-eyes {
+        left: 20px;
+        top: 35px;
+      }
+
+      .auth-shell.show-password .ref-character.black .ref-eyes {
+        left: 10px;
+        top: 28px;
+      }
+
+      .auth-shell.show-password .ref-character.orange .ref-eyes {
+        left: 50px;
+        top: 85px;
+      }
+
+      .auth-shell.show-password .ref-character.yellow .ref-eyes {
+        left: 20px;
+        top: 35px;
+      }
+
+      .ref-eye {
+        position: relative;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        background: #ffffff;
+        overflow: hidden;
+        transition: height 140ms ease;
+      }
+
+      .ref-eye.lg {
+        width: 18px;
+        height: 18px;
+      }
+
+      .ref-eye.md {
+        width: 16px;
+        height: 16px;
+      }
+
+      .ref-eye.dot-eye {
+        width: 12px;
+        height: 12px;
+        background: transparent;
+        overflow: visible;
+      }
+
+      .ref-pupil {
+        display: block;
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: #2d2d2d;
+        transform: translate(var(--pupil-x, 0px), var(--pupil-y, 0px));
+        transition: transform 120ms ease;
+      }
+
+      .ref-pupil.dot {
+        width: 12px;
+        height: 12px;
+      }
+
+      .auth-shell.is-typing .ref-character.purple .ref-pupil {
+        transform: translate(3px, 4px);
+      }
+
+      .auth-shell.is-typing .ref-character.black .ref-pupil {
+        transform: translate(0, -4px);
+      }
+
+      .auth-shell.show-password .ref-character.purple .ref-pupil {
+        animation: peekLook 1.4s ease-in-out infinite;
+      }
+
+      .auth-shell.show-password .ref-character.black .ref-pupil,
+      .auth-shell.show-password .ref-character.orange .ref-pupil,
+      .auth-shell.show-password .ref-character.yellow .ref-pupil {
+        transform: translate(-5px, -4px);
+      }
+
+      .yellow-mouth {
+        position: absolute;
+        left: calc(40px + var(--face-x, 0px));
+        top: calc(88px + var(--face-y, 0px));
+        width: 80px;
+        height: 4px;
+        border-radius: 999px;
+        background: #2d2d2d;
+        transition: left 200ms ease, top 200ms ease;
+      }
+
+      .auth-shell.show-password .yellow-mouth {
+        left: 10px;
+        top: 88px;
+      }
+
+      .password-cover {
+        position: absolute;
+        z-index: 8;
+        border-radius: 22px;
+        opacity: 0;
+        transform: translateY(112px) rotate(0deg);
+        transition: transform 360ms ease, opacity 240ms ease;
+        box-shadow: 0 16px 28px rgba(0, 0, 0, 0.24);
+      }
+
+      .password-cover.left {
+        left: 23px;
+        top: 31px;
+        width: 64px;
+        height: 48px;
+        background: #ff9b6b;
+        transform-origin: right bottom;
+      }
+
+      .password-cover.right {
+        left: 86px;
+        top: 31px;
+        width: 64px;
+        height: 48px;
+        background: #e8d754;
+        transform-origin: left bottom;
+      }
+
+      .auth-shell.is-password:not(.show-password) .password-cover.left {
+        opacity: 1;
+        transform: translateY(0) rotate(10deg);
+      }
+
+      .auth-shell.is-password:not(.show-password) .password-cover.right {
+        opacity: 1;
+        transform: translateY(0) rotate(-10deg);
+      }
+
+      .auth-shell.show-password .password-cover.left {
+        opacity: 0.82;
+        transform: translate(-36px, 28px) rotate(24deg);
+      }
+
+      .auth-shell.show-password .password-cover.right {
+        opacity: 0.82;
+        transform: translate(36px, 28px) rotate(-24deg);
+      }
+
+      @keyframes peekLook {
+        0%,
+        100% {
+          transform: translate(-4px, -4px);
+        }
+        50% {
+          transform: translate(4px, 5px);
+        }
+      }
+
+      .auth-badge-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        color: rgba(255, 255, 255, 0.76);
+      }
+
+      .auth-badge-row span {
+        padding: 8px 12px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(8px);
+      }
+
+      .auth-form-panel {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 34px;
+        background:
+          radial-gradient(circle at 70% 10%, rgba(108, 63, 245, 0.08), transparent 30%),
+          rgba(255, 255, 255, 0.76);
+        backdrop-filter: blur(14px);
+      }
+
+      .auth-card,
+      .history-card {
+        border: 1px solid rgba(42, 75, 255, 0.14);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.9);
+        box-shadow: 0 18px 42px rgba(24, 52, 126, 0.08);
+      }
+
+      .auth-card {
+        width: min(460px, 100%);
+        max-width: 460px;
+        padding: 10px;
+        border-radius: 24px;
+      }
+
+      .auth-page-actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 18px;
+      }
+
+      .auth-card .ant-input,
+      .auth-card .ant-input-password,
+      .auth-card .ant-input-affix-wrapper {
+        border-radius: 999px;
+      }
+
+      .auth-card .ant-form-item {
+        margin-bottom: 16px;
+      }
+
+      .auth-primary-button {
+        min-width: 148px;
+        height: 44px;
+        border-radius: 999px;
+        font-weight: 850;
+        box-shadow: 0 14px 28px rgba(42, 75, 255, 0.18);
+      }
+
+      @media (max-width: 960px) {
+        .auth-shell {
+          grid-template-columns: 1fr;
+        }
+
+        .auth-scene {
+          min-height: 380px;
+        }
+      }
+
+      .gate-card {
+        border: 1px solid rgba(42, 75, 255, 0.18);
+        border-radius: 8px;
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(240, 244, 255, 0.9));
+        box-shadow: 0 18px 42px rgba(24, 52, 126, 0.08);
+      }
+
+      .main-tabs > .ant-tabs-nav {
+        margin-bottom: 18px;
+        padding: 8px;
+        border: 1px solid rgba(42, 75, 255, 0.14);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.62);
+        box-shadow: 0 12px 30px rgba(24, 52, 126, 0.06);
+      }
+
+      .main-tabs .ant-tabs-tab {
+        border-radius: 8px;
+        background: transparent;
+        padding: 14px 22px;
+        font-size: 19px;
+        font-weight: 800;
+        line-height: 1.2;
+      }
+
+      .main-tabs .ant-tabs-tab + .ant-tabs-tab {
+        margin-left: 12px;
+      }
+
+      .main-tabs .ant-tabs-tab-active {
+        background: linear-gradient(135deg, #eef2ff, #ffffff);
+        box-shadow: 0 8px 18px rgba(42, 75, 255, 0.12);
+      }
+
+      .main-tabs .ant-tabs-tab-btn {
+        min-width: 82px;
+        text-align: center;
+      }
+
+      .home-shell,
+      .calendar-shell {
+        animation: pageIn 320ms ease both;
+      }
+
+      .hero-panel {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(360px, 0.72fr);
+        gap: 28px;
+        min-height: 470px;
+        padding: 42px;
+        overflow: hidden;
+        border: 1px solid rgba(42, 75, 255, 0.18);
+        border-radius: 8px;
+        background:
+          radial-gradient(circle at 92% 18%, rgba(42, 75, 255, 0.18), transparent 28%),
+          radial-gradient(circle at 12% 76%, rgba(255, 122, 61, 0.12), transparent 30%),
+          linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(241, 244, 255, 0.92) 58%, rgba(235, 239, 255, 0.9) 100%);
+        box-shadow: 0 22px 56px rgba(24, 52, 126, 0.1);
+      }
+
+      .hero-copy {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+
+      .hero-copy h1.ant-typography {
+        max-width: 820px;
+        margin: 0;
+        color: #1f3f95;
+        font-size: clamp(30px, 4.1vw, 54px);
+        line-height: 1.12;
+      }
+
+      .hero-lede.ant-typography {
+        max-width: 820px;
+        margin: 22px 0 26px;
+        color: #46554b;
+        font-size: 18px;
+        line-height: 1.85;
+      }
+
+      .hero-board {
+        align-self: center;
+        padding: 20px;
+        border: 1px solid rgba(42, 75, 255, 0.16);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.78);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78), 0 20px 46px rgba(24, 52, 126, 0.09);
+        backdrop-filter: blur(12px);
+      }
+
+      .board-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+
+      .hero-board .ant-statistic {
+        min-height: 112px;
+        padding: 16px;
+        border-radius: 8px;
+        background: linear-gradient(180deg, #fbfcff, #f0f3ff);
+      }
+
+      .stakeholder-row {
+        margin-top: 16px;
+      }
+
+      .stakeholder-card,
+      .section-card,
+      .table-card,
+      .summary-row .ant-card {
+        border: 1px solid rgba(42, 75, 255, 0.14);
+        background: rgba(255, 255, 255, 0.86);
+        box-shadow: 0 14px 36px rgba(24, 52, 126, 0.07);
+      }
+
+      .stakeholder-card {
+        height: 100%;
+        transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+      }
+
+      .stakeholder-card:hover,
+      .module-card:hover,
+      .play-card:hover {
+        border-color: rgba(42, 75, 255, 0.26);
+        box-shadow: 0 18px 42px rgba(24, 52, 126, 0.1);
+        transform: translateY(-2px);
+      }
+
+      .card-icon,
+      .module-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        color: #1f3f95;
+        background: linear-gradient(135deg, #eef2ff, #fff7f1);
+        font-size: 18px;
+        font-weight: 900;
+      }
+
+      .section-card {
+        margin-top: 16px;
+      }
+
+      .section-title-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 20px;
+        align-items: flex-start;
+        margin-bottom: 20px;
+      }
+
+      .section-title-row .ant-typography {
+        max-width: 560px;
+        margin: 4px 0 0;
+        color: #657066;
+        text-align: right;
+      }
+
+      .tall-card {
+        height: 100%;
+      }
+
+      .module-card {
+        height: 100%;
+        border-color: rgba(42, 75, 255, 0.14);
+        background: #fbfcff;
+      }
+
+      .module-card strong {
+        display: block;
+        margin-bottom: 6px;
+        color: #1f3f95;
+      }
+
+      .calendar-shell .ant-alert,
+      .summary-row {
+        margin-bottom: 16px;
+      }
+
+      .calendar-shell .ant-alert {
+        border-color: rgba(42, 75, 255, 0.16);
+        background: linear-gradient(135deg, #f6f8ff, #ffffff);
+      }
+
+      .table-card .ant-table-thead > tr > th {
+        background: #eef2ff !important;
+        color: #253f7c;
+        font-weight: 900;
+      }
+
+      .project-name {
+        color: #1f3f95;
+      }
+
+      .hero-platform-tag.ant-tag {
+        width: fit-content;
+        margin-bottom: 18px;
+        padding: 9px 14px;
+        border-radius: 999px;
+        font-size: clamp(19px, 2.3vw, 30px);
+        font-weight: 900;
+        line-height: 1.25;
+        letter-spacing: 0;
+      }
+
+      .task-tag {
+        max-width: 150px;
+        margin-inline-end: 0;
+        white-space: normal;
+        padding: 5px 9px;
+        font-size: 14px;
+        line-height: 1.55;
+      }
+
+      .work-tag.ant-tag,
+      .people-tag.ant-tag {
+        padding: 5px 10px;
+        border-radius: 999px;
+        font-size: 14px;
+        font-weight: 800;
+        line-height: 1.35;
+      }
+
+      .people-tag.ant-tag {
+        margin-inline-end: 0;
+      }
+
+      .notes-block ul {
+        margin: 6px 0 12px;
+        padding-left: 18px;
+      }
+
+      .notes-block li + li {
+        margin-top: 5px;
+      }
+
+      .download-list {
+        width: 100%;
+      }
+
+      .download-list .ant-btn {
+        justify-content: flex-start;
+        height: auto;
+        min-height: 38px;
+        padding: 8px 10px;
+        white-space: normal;
+        text-align: left;
+        line-height: 1.45;
+        border-color: rgba(42, 75, 255, 0.16);
+        background: #fbfcff;
+      }
+
+      .ant-btn-primary {
+        box-shadow: 0 10px 22px rgba(42, 75, 255, 0.16);
+      }
+
+      .incentive-shell {
+        animation: pageIn 320ms ease both;
+      }
+
+      .incentive-hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 340px;
+        gap: 18px;
+        align-items: stretch;
+        margin-bottom: 16px;
+      }
+
+      .incentive-hero .ant-card {
+        height: 100%;
+        border: 1px solid rgba(42, 75, 255, 0.15);
+        background: rgba(255, 255, 255, 0.88);
+        box-shadow: 0 14px 36px rgba(24, 52, 126, 0.07);
+      }
+
+      .incentive-title.ant-typography {
+        margin: 0 0 12px;
+        color: #1f3f95;
+        font-size: clamp(30px, 4vw, 52px);
+        line-height: 1.1;
+      }
+
+      .incentive-lede.ant-typography {
+        max-width: 900px;
+        color: #46554b;
+        font-size: 17px;
+        line-height: 1.75;
+      }
+
+      .mode-card {
+        height: 100%;
+        border: 1px solid rgba(42, 75, 255, 0.14);
+        background: linear-gradient(180deg, #fbfcff, #f0f3ff);
+      }
+
+      .play-card {
+        height: 100%;
+        border: 1px solid rgba(42, 75, 255, 0.14);
+        background: rgba(255, 255, 255, 0.9);
+        box-shadow: 0 12px 28px rgba(24, 52, 126, 0.07);
+      }
+
+      .play-card .ant-card-head-title {
+        color: #1f3f95;
+        font-weight: 900;
+      }
+
+      .play-card .ant-typography {
+        margin-bottom: 0;
+      }
+
+      .play-meta {
+        margin-top: 12px;
+      }
+
+      .position-card {
+        height: 100%;
+        border: 1px solid rgba(42, 75, 255, 0.14);
+        background: linear-gradient(180deg, #fbfcff, #fff7f1);
+      }
+
+      .position-card strong {
+        display: block;
+        margin-bottom: 8px;
+        color: #1f3f95;
+      }
+
+      .incentive-table .ant-table-thead > tr > th {
+        background: #eef2ff !important;
+        color: #253f7c;
+        font-weight: 900;
+      }
+
+      .selection-shell {
+        animation: pageIn 320ms ease both;
+      }
+
+      .selection-hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 330px;
+        gap: 18px;
+        margin-bottom: 16px;
+      }
+
+      .selection-hero .ant-card,
+      .selection-level-card,
+      .selection-source-card {
+        border: 1px solid rgba(42, 75, 255, 0.14);
+        background: rgba(255, 255, 255, 0.9);
+        box-shadow: 0 14px 34px rgba(24, 52, 126, 0.07);
+      }
+
+      .selection-title.ant-typography {
+        margin: 0 0 12px;
+        color: #1f3f95;
+        font-size: clamp(30px, 4vw, 52px);
+        line-height: 1.1;
+      }
+
+      .selection-level-card {
+        height: 100%;
+        overflow: hidden;
+      }
+
+      .level-card-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: flex-start;
+        margin-bottom: 14px;
+      }
+
+      .level-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 44px;
+        height: 44px;
+        border-radius: 14px;
+        color: #ffffff;
+        background: linear-gradient(135deg, #2a4bff, #1f3f95);
+        font-size: 22px;
+        font-weight: 900;
+      }
+
+      .level-stars {
+        color: #ff7438;
+        font-size: 18px;
+        font-weight: 900;
+        letter-spacing: 2px;
+      }
+
+      .level-meta-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .level-meta {
+        min-height: 74px;
+        padding: 12px;
+        border-radius: 8px;
+        background: #f6f8ff;
+        min-width: 0;
+      }
+
+      .level-meta label {
+        display: block;
+        margin-bottom: 6px;
+        color: #64748b;
+        font-size: 13px;
+      }
+
+      .level-meta .ant-space,
+      .level-meta .ant-space-item {
+        max-width: 100%;
+      }
+
+      .level-meta .selection-tag.ant-tag {
+        max-width: 100%;
+        margin-inline-end: 0;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        line-height: 1.35;
+      }
+
+      .selection-source-card {
+        height: 100%;
+      }
+
+      .source-index {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 34px;
+        height: 34px;
+        margin-bottom: 12px;
+        border-radius: 11px;
+        color: #1f3f95;
+        background: #eef2ff;
+        font-weight: 900;
+      }
+
+      .june-shell {
+        animation: pageIn 320ms ease both;
+      }
+
+      .june-hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 360px;
+        gap: 18px;
+        margin-bottom: 16px;
+      }
+
+      .june-hero .ant-card,
+      .calendar-node-card,
+      .category-play-card,
+      .activity-pack-card {
+        border: 1px solid rgba(42, 75, 255, 0.14);
+        background: rgba(255, 255, 255, 0.9);
+        box-shadow: 0 14px 34px rgba(24, 52, 126, 0.07);
+      }
+
+      .june-title.ant-typography {
+        margin: 0 0 12px;
+        color: #1f3f95;
+        font-size: clamp(30px, 4vw, 52px);
+        line-height: 1.1;
+      }
+
+      .aaa-definition {
+        height: 100%;
+        background: linear-gradient(180deg, #fbfcff, #fff7f1);
+      }
+
+      .aaa-definition .ant-statistic-content {
+        color: #1f3f95;
+        font-weight: 900;
+      }
+
+      .calendar-node-card,
+      .category-play-card,
+      .activity-pack-card {
+        height: 100%;
+      }
+
+      .node-date {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 74px;
+        height: 34px;
+        margin-bottom: 12px;
+        border-radius: 999px;
+        color: #1f3f95;
+        background: #eef2ff;
+        font-weight: 900;
+      }
+
+      .node-products,
+      .category-products {
+        margin: 12px 0;
+      }
+
+      .node-products .ant-tag,
+      .category-products .ant-tag {
+        margin-bottom: 8px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 15px;
+        font-weight: 700;
+        white-space: normal;
+        line-height: 1.45;
+      }
+
+      .pack-rank {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 42px;
+        height: 42px;
+        margin-bottom: 12px;
+        border-radius: 14px;
+        color: #ffffff;
+        background: linear-gradient(135deg, #2a4bff, #1f3f95);
+        font-size: 22px;
+        font-weight: 900;
+      }
+
+      .ai-shell {
+        animation: pageIn 320ms ease both;
+      }
+
+      .ai-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+        gap: 18px;
+        align-items: start;
+      }
+
+      .ai-card.ant-card,
+      .report-card.ant-card {
+        border: 1px solid rgba(42, 75, 255, 0.14);
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: 0 14px 34px rgba(24, 52, 126, 0.07);
+      }
+
+      .ai-upload .ant-upload-drag {
+        border-radius: 12px;
+        background: linear-gradient(135deg, #f7f9ff, #ffffff);
+      }
+
+      .sheet-status {
+        margin-top: 14px;
+      }
+
+      .report-card {
+        margin-top: 18px;
+      }
+
+      .report-title.ant-typography {
+        margin-top: 0;
+        color: #1f3f95;
+      }
+
+      .report-section {
+        margin-top: 16px;
+        padding: 14px;
+        border-radius: 10px;
+        background: #f7f8ff;
+      }
+
+      .report-section h4.ant-typography {
+        margin: 0 0 8px;
+      }
+
+      .report-section ul {
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      .config-mask {
+        color: #64748b;
+        font-size: 13px;
+      }
+
+      @keyframes pageIn {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @media (max-width: 960px) {
+        .app-shell {
+          width: min(100% - 24px, 1480px);
+          padding-top: 14px;
+        }
+
+        .app-header,
+        .section-title-row {
+          display: block;
+        }
+
+        .app-header {
+          margin-bottom: 12px;
+          padding: 12px;
+        }
+
+        .brand-lockup {
+          align-items: flex-start;
+          gap: 12px;
+        }
+
+        .brand-logo {
+          width: 48px;
+          height: 48px;
+          padding: 7px;
+          border-radius: 17px;
+        }
+
+        .brand-kicker {
+          max-width: 360px;
+          font-size: 13px;
+          line-height: 1.28;
+        }
+
+        .app-header h1.ant-typography {
+          margin: 2px 0 3px;
+          font-size: 30px;
+        }
+
+        .brand-copy .ant-typography {
+          margin-bottom: 0;
+        }
+
+        .user-panel {
+          justify-content: flex-start;
+          gap: 8px;
+          margin-top: 10px;
+        }
+
+        .hero-panel {
+          grid-template-columns: 1fr;
+          padding: 28px 20px;
+        }
+
+        .incentive-hero {
+          grid-template-columns: 1fr;
+        }
+
+        .selection-hero {
+          grid-template-columns: 1fr;
+        }
+
+        .june-hero {
+          grid-template-columns: 1fr;
+        }
+
+        .ai-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .section-title-row .ant-typography {
+          max-width: none;
+          text-align: left;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script src="vendor/react.production.min.js"></script>
+    <script src="vendor/react-dom.production.min.js"></script>
+    <script src="vendor/dayjs.min.js"></script>
+    <script src="vendor/antd.min.js"></script>
+    <script>
+      const {
+        Alert,
+        Button,
+        Card,
+        Col,
+        ConfigProvider,
+        Divider,
+        Form,
+        Input,
+        Radio,
+        Row,
+        Space,
+        Statistic,
+        Steps,
+        Table,
+        Tabs,
+        Tag,
+        Timeline,
+        Typography,
+        Upload,
+        message,
+      } = antd;
+      const { Paragraph, Text, Title } = Typography;
+      const h = React.createElement;
+
+      function formatChineseDate(date) {
+        return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+      }
+
+      function getDynamicDates() {
+        const today = new Date();
+        const endDate = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate());
+        endDate.setDate(endDate.getDate() - 1);
+        return {
+          todayText: formatChineseDate(today),
+          rangeText: `${formatChineseDate(today)} - ${formatChineseDate(endDate)}`,
+        };
+      }
+
+      const materials = {
+        payment: [
+          { label: "斗拱平台综合支付服务协议", href: "协议文件/02%20斗拱平台综合支付服务协议（四季蝉）20260113.docx" },
+          { label: "药店与店员激励协议", href: "协议文件/03%20药店与店员激励协议.doc" },
+        ],
+        baseInfo: [
+          { label: "门店地址批量更新模板", href: "协议文件/门店地址批量更新模板.xlsx" },
+          { label: "员工账号批量更新模板", href: "协议文件/员工账号批量更新模板.xlsx" },
+        ],
+        industry: [
+          { label: "四季蝉厂家&品种政策收集表", href: "协议文件/四季蝉厂家%26品种政策收集表.xlsx" },
+        ],
+      };
+
+      function MaterialButtons({ items }) {
+        if (!items || !items.length) return h(Text, { type: "secondary" }, "暂无");
+        return h(
+          Space,
+          { direction: "vertical", size: 8, className: "download-list" },
+          items.map((item) =>
+            h(
+              Button,
+              { block: true, download: true, href: item.href, key: item.href },
+              `下载：${item.label}`,
+            ),
+          ),
+        );
+      }
+
+      async function readApiJson(response) {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || "请求处理失败。");
+        return data;
+      }
+
+      async function apiJson(url, options = {}) {
+        const response = await fetch(url, {
+          ...options,
+          headers: {
+            ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+            ...(options.headers || {}),
+          },
+        });
+        return readApiJson(response);
+      }
+
+      async function copyText(text) {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(text);
+          return;
+        }
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        textarea.remove();
+      }
+
+      function SheetStatusTags({ summary }) {
+        if (!summary || !summary.sheetStatus) return null;
+        return h(
+          Space,
+          { wrap: true, className: "sheet-status", size: [8, 8] },
+          summary.sheetStatus.map((sheet) =>
+            h(
+              Tag,
+              { key: sheet.name, color: sheet.exists && sheet.rows > 0 ? "blue" : sheet.exists ? "gold" : "red" },
+              `${sheet.name}：${sheet.exists ? `${sheet.rows}行` : "缺失"}`,
+            ),
+          ),
+        );
+      }
+
+      function DatasetStatusTags({ summary }) {
+        if (!summary || !summary.datasetFiles) return null;
+        return h(
+          Space,
+          { wrap: true, className: "sheet-status", size: [8, 8] },
+          summary.datasetFiles.map((file) =>
+            h(
+              Tag,
+              { key: file.name, color: file.rowCount > 0 ? "blue" : "gold" },
+              `${file.name}：${file.rowCount}行`,
+            ),
+          ),
+        );
+      }
+
+      function GateCard({ title, text, onLogin, onRegister }) {
+        return h(
+          Card,
+          { bordered: false, className: "gate-card" },
+          h(Tag, { color: "blue", className: "hero-platform-tag" }, "需要登录"),
+          h(Title, { level: 3 }, title || "请先登录后继续"),
+          h(Paragraph, null, text || "登录后即可上传客户数据、生成AI复盘报告，并查看历史报告。"),
+          h(
+            Space,
+            { wrap: true },
+            h(Button, { type: "primary", onClick: onLogin }, "登录"),
+            h(Button, { onClick: onRegister }, "注册账号"),
+          ),
+        );
+      }
+
+      function RefEye({ size = "lg", dot = false, style }) {
+        return h(
+          "span",
+          { className: `ref-eye ${dot ? "dot-eye" : size}` },
+          h("span", { className: `ref-pupil ${dot ? "dot" : ""}`, style }),
+        );
+      }
+
+      function RefCharacters({ look, typing, hidingPassword, showingPassword }) {
+        const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+        const face = {
+          x: clamp(look.x * 15, -15, 15),
+          y: clamp(look.y * 10, -10, 10),
+        };
+        const pupil = {
+          x: clamp(look.x * 5, -5, 5),
+          y: clamp(look.y * 5, -5, 5),
+        };
+        const makeStyle = (scale = 1) => ({
+          "--face-x": `${face.x * scale}px`,
+          "--face-y": `${face.y * scale}px`,
+          "--pupil-x": `${pupil.x}px`,
+          "--pupil-y": `${pupil.y}px`,
+        });
+        const bodyStyle = {
+          "--purple-skew": `${clamp(-look.x * 6, -6, 6)}deg`,
+          "--black-skew": `${clamp(-look.x * 5, -6, 6)}deg`,
+          "--orange-skew": `${clamp(-look.x * 4, -5, 5)}deg`,
+          "--yellow-skew": `${clamp(-look.x * 4, -5, 5)}deg`,
+        };
+        const hiding = hidingPassword && !showingPassword;
+        const purpleStyle = { ...makeStyle(1), "--purple-skew": bodyStyle["--purple-skew"] };
+        const blackStyle = { ...makeStyle(0.82), "--black-skew": bodyStyle["--black-skew"] };
+        const orangeStyle = { ...makeStyle(0.55), "--orange-skew": bodyStyle["--orange-skew"] };
+        const yellowStyle = { ...makeStyle(0.7), "--yellow-skew": bodyStyle["--yellow-skew"] };
+        const pupilStyle = { "--pupil-x": `${pupil.x}px`, "--pupil-y": `${pupil.y}px` };
+
+        return h(
+          "div",
+          { className: "ref-characters", "aria-label": "四季蝉登录动画角色" },
+          h(
+            "div",
+            { className: "ref-character purple", style: purpleStyle },
+            h(
+              "div",
+              { className: "ref-eyes" },
+              h(RefEye, { size: "lg", style: pupilStyle }),
+              h(RefEye, { size: "lg", style: pupilStyle }),
+            ),
+            h("span", { className: "password-cover left" }),
+            h("span", { className: "password-cover right" }),
+          ),
+          h(
+            "div",
+            { className: "ref-character black", style: blackStyle },
+            h(
+              "div",
+              { className: "ref-eyes" },
+              h(RefEye, { size: "md", style: pupilStyle }),
+              h(RefEye, { size: "md", style: pupilStyle }),
+            ),
+          ),
+          h(
+            "div",
+            { className: "ref-character orange", style: orangeStyle },
+            h(
+              "div",
+              { className: "ref-eyes" },
+              h(RefEye, { dot: true, style: pupilStyle }),
+              h(RefEye, { dot: true, style: pupilStyle }),
+            ),
+          ),
+          h(
+            "div",
+            { className: "ref-character yellow", style: yellowStyle },
+            h(
+              "div",
+              { className: "ref-eyes" },
+              h(RefEye, { dot: true, style: pupilStyle }),
+              h(RefEye, { dot: true, style: pupilStyle }),
+            ),
+            h("span", { className: "yellow-mouth" }),
+          ),
+        );
+      }
+
+      function AuthPage({ mode, onModeChange, onAuthed }) {
+        const [form] = Form.useForm();
+        const [loading, setLoading] = React.useState(false);
+        const [focusType, setFocusType] = React.useState("");
+        const [showPassword, setShowPassword] = React.useState(false);
+        const [look, setLook] = React.useState({ x: 0, y: 0 });
+        const isRegister = mode === "register";
+        const passwordValue = Form.useWatch("password", form) || "";
+        const isTyping = focusType && focusType !== "password";
+        const isPassword = focusType === "password" || passwordValue.length > 0;
+        const sceneClassName = [
+          "auth-shell",
+          isTyping ? "is-typing" : "",
+          isPassword ? "is-password" : "",
+          showPassword ? "show-password" : "",
+        ].filter(Boolean).join(" ");
+        const onMouseMove = (event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          const x = Math.max(-1, Math.min(1, (event.clientX - (rect.left + rect.width / 2)) / (rect.width / 2)));
+          const y = Math.max(-1, Math.min(1, (event.clientY - (rect.top + rect.height / 2)) / (rect.height / 2)));
+          setLook({ x, y });
+        };
+        const submit = async () => {
+          const values = await form.validateFields();
+          setLoading(true);
+          try {
+            const data = await apiJson(isRegister ? "/api/auth/register" : "/api/auth/login", {
+              method: "POST",
+              body: JSON.stringify(values),
+            });
+            message.success(isRegister ? "注册成功，已自动登录" : "登录成功");
+            onAuthed(data);
+          } catch (err) {
+            message.error(err.message || "处理失败");
+          } finally {
+            setLoading(false);
+          }
+        };
+
+        return h(
+          "div",
+          { className: sceneClassName, onMouseMove },
+          h(
+            "section",
+            { className: "auth-scene" },
+            h(
+              "div",
+              { className: "auth-scene-copy" },
+              h("div", { className: "auth-brand" }, h("img", { src: "assets/四季蝉.png", alt: "四季蝉logo" }), h("span", null, "海典四季蝉")),
+              h(Title, { level: 2 }, isRegister ? "欢迎加入重点品动销门户" : "欢迎回到四季蝉客户门户"),
+              h(Paragraph, null, isRegister ? "注册后即可保存客户复盘记录，让每一次动销分析都能沉淀下来。" : "登录后数据分析复盘、生成AI复盘报告，并继续查看历史分享材料。"),
+            ),
+            h(
+              "div",
+              { className: "auth-stage" },
+              h("div", { className: "character-floor" }),
+              h(RefCharacters, { look, typing: isTyping, hidingPassword: isPassword, showingPassword: showPassword }),
+            ),
+            h("div", { className: "auth-scene-foot" }, h("div", { className: "auth-badge-row" }, h("span", null, "数据整合分析"), h("span", null, "AI复盘报告"), h("span", null, "分享长图与二维码"))),
+          ),
+          h(
+            "section",
+            { className: "auth-form-panel" },
+            h(
+              Card,
+              { bordered: false, className: "auth-card" },
+              h(Tag, { color: "blue", className: "hero-platform-tag" }, isRegister ? "开放注册" : "用户登录"),
+              h(Title, { level: 2, className: "june-title" }, isRegister ? "注册四季蝉客户门户账号" : "登录四季蝉客户门户"),
+              h(Paragraph, null, isRegister ? "注册后可直接上传客户数据、生成AI复盘报告并查看历史记录。" : "登录后可使用AI复盘报告、历史报告和客户资料能力。"),
+              h(
+                Form,
+                { form, layout: "vertical" },
+                isRegister
+                  ? h(
+                      React.Fragment,
+                      null,
+                      h(Form.Item, { label: "姓名", name: "name", rules: [{ required: true, message: "请输入姓名" }] }, h(Input, { placeholder: "联系人姓名", onFocus: () => setFocusType("text"), onBlur: () => setFocusType("") })),
+                      h(Form.Item, { label: "手机号", name: "phone" }, h(Input, { placeholder: "手机号，可用于登录", onFocus: () => setFocusType("text"), onBlur: () => setFocusType("") })),
+                      h(Form.Item, { label: "邮箱", name: "email" }, h(Input, { placeholder: "邮箱，可用于登录", onFocus: () => setFocusType("text"), onBlur: () => setFocusType("") })),
+                    )
+                  : h(Form.Item, { label: "手机号或邮箱", name: "login", rules: [{ required: true, message: "请输入手机号或邮箱" }] }, h(Input, { placeholder: "手机号或邮箱", onFocus: () => setFocusType("text"), onBlur: () => setFocusType("") })),
+                h(Form.Item, { label: "密码", name: "password", rules: [{ required: true, message: "请输入密码" }, { min: 6, message: "密码至少6位" }] }, h(Input.Password, { placeholder: "至少6位", visibilityToggle: { visible: showPassword, onVisibleChange: setShowPassword }, onFocus: () => setFocusType("password"), onBlur: () => setFocusType("") })),
+              ),
+              h(
+                Space,
+                { wrap: true },
+                h(Button, { type: "primary", loading, onClick: submit, className: "auth-primary-button" }, isRegister ? "注册并登录" : "登录"),
+                h(Button, { onClick: () => onModeChange(isRegister ? "login" : "register") }, isRegister ? "已有账号，去登录" : "没有账号，去注册"),
+              ),
+            ),
+          ),
+        );
+      }
+
+      function ReportView({ report, markdown, artifact }) {
+        if (!report) return null;
+        const sections = report.sections || [];
+        return h(
+          Card,
+          {
+            bordered: false,
+            className: "report-card",
+            extra: h(
+              Button,
+              {
+                type: "primary",
+                onClick: async () => {
+                  await copyText(markdown || "");
+                  message.success("报告已复制");
+                },
+              },
+              "复制报告",
+            ),
+          },
+          h(Title, { level: 2, className: "report-title" }, report.title || "四季蝉AI复盘报告"),
+          h(Paragraph, null, report.executiveSummary || "暂无摘要。"),
+          artifact?.shareUrl
+            ? h(
+                Alert,
+                {
+                  type: "success",
+                  showIcon: true,
+                  message: "分享报告已生成",
+                  description: "可打开独立网页、下载SVG长图，或下载二维码扫码查看。",
+                  action: h(
+                    Space,
+                    { wrap: true },
+                    h(Button, { href: artifact.shareUrl, target: "_blank", type: "primary" }, "打开分享网页"),
+                    h(Button, { href: artifact.svgUrl, target: "_blank", download: true }, "下载SVG图片"),
+                    h(Button, { href: artifact.qrSvgUrl, target: "_blank", download: true }, "下载二维码"),
+                    artifact.excelUrl ? h(Button, { href: artifact.excelUrl, target: "_blank", download: true }, "下载Excel汇总") : null,
+                    h(Button, {
+                      onClick: async () => {
+                        await copyText(artifact.shareUrl);
+                        message.success("分享链接已复制");
+                      },
+                    }, "复制分享链接"),
+                  ),
+                },
+              )
+            : null,
+          h(
+            Row,
+            { gutter: [16, 16] },
+            h(
+              Col,
+              { xs: 24, md: 12 },
+              h(
+                "div",
+                { className: "report-section" },
+                h(Title, { level: 4 }, "核心亮点"),
+                h("ul", null, (report.highlights || []).map((item) => h("li", { key: item }, item))),
+              ),
+            ),
+            h(
+              Col,
+              { xs: 24, md: 12 },
+              h(
+                "div",
+                { className: "report-section" },
+                h(Title, { level: 4 }, "风险与短板"),
+                h("ul", null, (report.risks || []).map((item) => h("li", { key: item }, item))),
+              ),
+            ),
+          ),
+          sections.map((section) =>
+            h(
+              "div",
+              { className: "report-section", key: section.heading },
+              h(Title, { level: 4 }, section.heading),
+              h("ul", null, (section.bullets || []).map((item) => h("li", { key: item }, item))),
+            ),
+          ),
+          h(
+            "div",
+            { className: "report-section" },
+            h(Title, { level: 4 }, "下一步动作"),
+            h("ul", null, (report.nextActions || []).map((item) => h("li", { key: item }, item))),
+          ),
+        );
+      }
+
+      function AIReviewPage({ auth, onLogin, onRegister }) {
+        if (!auth?.user) {
+          return h(GateCard, {
+            title: "登录后生成AI复盘报告",
+            text: "登录后可上传Excel或通过登录获取客户复盘数据，生成的报告会自动进入历史报告。",
+            onLogin,
+            onRegister,
+          });
+        }
+        return h(AIReviewWorkspace, { auth });
+      }
+
+      function AIReviewWorkspace({ auth }) {
+        const [sourceType, setSourceType] = React.useState("excel");
+        const [sourceForm] = Form.useForm();
+        const [status, setStatus] = React.useState(null);
+        const [file, setFile] = React.useState(null);
+        const [loading, setLoading] = React.useState(false);
+        const [error, setError] = React.useState("");
+        const [summary, setSummary] = React.useState(null);
+        const [report, setReport] = React.useState(null);
+        const [markdown, setMarkdown] = React.useState("");
+        const [artifact, setArtifact] = React.useState(null);
+        const [reviewProgress, setReviewProgress] = React.useState(null);
+        const progressTimersRef = React.useRef([]);
+
+        const loadStatus = React.useCallback(async () => {
+          const response = await fetch("/api/ai-config/status");
+          setStatus(await response.json());
+        }, []);
+
+        React.useEffect(() => {
+          loadStatus().catch(() => setStatus({ configured: false }));
+        }, [loadStatus]);
+
+        React.useEffect(() => () => {
+          progressTimersRef.current.forEach((timer) => clearTimeout(timer));
+          progressTimersRef.current = [];
+        }, []);
+
+        const resetReport = () => {
+          setError("");
+          setReport(null);
+          setMarkdown("");
+          setSummary(null);
+          setArtifact(null);
+          setReviewProgress(null);
+          progressTimersRef.current.forEach((timer) => clearTimeout(timer));
+          progressTimersRef.current = [];
+        };
+
+        const startReviewProgress = (type) => {
+          progressTimersRef.current.forEach((timer) => clearTimeout(timer));
+          const steps =
+            type === "excel"
+              ? [
+                  { title: "校验模板", description: "正在检查Excel文件格式与模板结构。" },
+                  { title: "上传数据", description: "正在安全上传客户复盘数据。" },
+                  { title: "AI分析", description: "正在识别品种增长、奖励闭环和下期建议。" },
+                  { title: "生成报告", description: "正在生成分享网页、SVG长图和二维码。" },
+                ]
+              : [
+                  { title: "登录中", description: "正在登录四季蝉后台并获取授权。" },
+                  { title: "读取销售数据", description: "正在读取销售汇总、上月对比和半年对比数据。" },
+                  { title: "读取奖励活动", description: "正在读取奖励统计、活动汇总和概览校验数据。" },
+                  { title: "读取培训打赏", description: "正在读取培训情况和厂家打赏数据。" },
+                  { title: "生成报告", description: "正在生成AI报告、Excel汇总、分享网页、SVG长图和二维码。" },
+                ];
+          setReviewProgress({ steps, current: 0, status: "process", text: steps[0].description });
+          [
+            [700, 1],
+            [2200, 2],
+            [5200, 3],
+            [7600, 4],
+          ].forEach(([delay, current]) => {
+            const timer = setTimeout(() => {
+              setReviewProgress((prev) => {
+                if (!prev || prev.status !== "process") return prev;
+                return { ...prev, current, text: prev.steps[current].description };
+              });
+            }, delay);
+            progressTimersRef.current.push(timer);
+          });
+        };
+
+        const finishReviewProgress = (ok, text) => {
+          progressTimersRef.current.forEach((timer) => clearTimeout(timer));
+          progressTimersRef.current = [];
+          setReviewProgress((prev) => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              current: ok ? prev.steps.length - 1 : Math.max(prev.current, 0),
+              status: ok ? "finish" : "error",
+              text: text || (ok ? "复盘报告已生成，可打开分享页或下载长图。" : "生成失败，请检查数据或稍后重试。"),
+            };
+          });
+        };
+
+        const generateReport = async () => {
+          if (!file) {
+            message.warning("请先上传xlsx文件");
+            return;
+          }
+          if (!status?.configured) {
+            message.warning("请先完成AI配置");
+            return;
+          }
+          setLoading(true);
+          setError("");
+          setReport(null);
+          setMarkdown("");
+          setArtifact(null);
+          startReviewProgress("excel");
+          try {
+            const formData = new FormData();
+            formData.append("file", file);
+            const response = await fetch("/api/review-report", { method: "POST", body: formData });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              setSummary(data.summary || null);
+              throw new Error(data.error || "复盘报告生成失败。");
+            }
+            setSummary(data.summary);
+            setReport(data.report);
+            setMarkdown(data.markdown || "");
+            setArtifact({ reportId: data.reportId, shareUrl: data.shareUrl, svgUrl: data.svgUrl, qrSvgUrl: data.qrSvgUrl, excelUrl: data.excelUrl });
+            finishReviewProgress(true);
+            message.success("AI复盘报告已生成");
+          } catch (err) {
+            setError(err.message || "复盘报告生成失败。");
+            finishReviewProgress(false, err.message || "复盘报告生成失败。");
+          } finally {
+            setLoading(false);
+          }
+        };
+
+        const generateFromSijichan = async () => {
+          if (!status?.configured) {
+            message.warning("请先完成AI配置");
+            return;
+          }
+          const values = await sourceForm.validateFields();
+          setLoading(true);
+          resetReport();
+          startReviewProgress("sijichan");
+          try {
+            const response = await fetch("/api/sijichan-review-report", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(values),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              setSummary(data.summary || null);
+              throw new Error(data.error || "接口数据导入失败。");
+            }
+            setSummary(data.summary);
+            setReport(data.report);
+            setMarkdown(data.markdown || "");
+            setArtifact({ reportId: data.reportId, shareUrl: data.shareUrl, svgUrl: data.svgUrl, qrSvgUrl: data.qrSvgUrl, excelUrl: data.excelUrl });
+            finishReviewProgress(true);
+            message.success("接口数据复盘报告已生成");
+          } catch (err) {
+            setError(err.message || "接口数据导入失败。");
+            finishReviewProgress(false, err.message || "接口数据导入失败。");
+          } finally {
+            setLoading(false);
+          }
+        };
+
+        return h(
+          "div",
+          { className: "ai-shell" },
+          h(
+            "div",
+            { className: "ai-grid" },
+            h(
+              Card,
+              { bordered: false, className: "ai-card" },
+              h(Tag, { color: "blue", className: "hero-platform-tag" }, "AI复盘报告"),
+              h(Title, { level: 2, className: "june-title" }, "上传客户数据，生成四季蝉复盘报告"),
+              h(Paragraph, null, "支持Excel模板上传，也支持通过登录获取客户复盘数据。系统会读取销售变化、活动商品、店员提现、激励玩法、晒单打赏等明细，再由AI生成品种动销复盘。"),
+              h(Alert, {
+                type: status?.configured ? "success" : "warning",
+                showIcon: true,
+                message: status?.configured ? "AI服务已配置" : "AI服务未配置",
+                description: status?.configured ? `当前模型：${status.model}` : "请先到“AI配置”页签保存API Key和模型。",
+              }),
+              h(Divider, null),
+              h(
+                Radio.Group,
+                {
+                  value: sourceType,
+                  onChange: (event) => {
+                    setSourceType(event.target.value);
+                    resetReport();
+                  },
+                  optionType: "button",
+                  buttonStyle: "solid",
+                  style: { marginBottom: 16 },
+                },
+                h(Radio.Button, { value: "excel" }, "Excel模板上传"),
+                h(Radio.Button, { value: "sijichan" }, "登录获取"),
+              ),
+              sourceType === "excel"
+                ? h(
+                    React.Fragment,
+                    null,
+              h(
+                Space,
+                { style: { marginBottom: 14 }, wrap: true },
+                h(Button, { href: "协议文件/四季蝉复盘数据标准模板.xlsx", download: true }, "下载四季蝉复盘数据模板"),
+                h(Text, { type: "secondary" }, "请先下载模板，按标准页签整理数据后上传。"),
+              ),
+              h(
+                Upload.Dragger,
+                {
+                  className: "ai-upload",
+                  accept: ".xlsx",
+                  maxCount: 1,
+                  fileList: file ? [file] : [],
+                  beforeUpload: (nextFile) => {
+                    if (!/\.xlsx$/i.test(nextFile.name)) {
+                      message.error("仅支持xlsx文件");
+                      return Upload.LIST_IGNORE;
+                    }
+                    setFile(nextFile);
+                    setError("");
+                    setReport(null);
+                    setSummary(null);
+                    return false;
+                  },
+                  onRemove: () => {
+                    setFile(null);
+                    setReport(null);
+                    setSummary(null);
+                  },
+                },
+                h(Paragraph, { strong: true }, "点击或拖拽上传客户复盘数据Excel"),
+                h(Text, { type: "secondary" }, "仅支持 .xlsx，建议使用“四季蝉复盘数据标准模板”。"),
+              ),
+              h(
+                Space,
+                { style: { marginTop: 16 }, wrap: true },
+                h(Button, { type: "primary", loading, onClick: generateReport }, "生成AI复盘报告"),
+                h(Button, { onClick: () => loadStatus().then(() => message.success("配置状态已刷新")) }, "刷新配置状态"),
+              ),
+                    )
+                : h(
+                    React.Fragment,
+                    null,
+                    h(Alert, {
+                      type: "info",
+                      showIcon: true,
+                      message: "数据来源：登录获取",
+                      description: "填写四季蝉账号和密码后，系统会临时获取客户复盘数据并生成AI复盘报告；客户名称和客户编码可用于区分报告归属。",
+                    }),
+                    h(
+                      Form,
+                      { form: sourceForm, layout: "vertical", style: { marginTop: 16 } },
+                      h(
+                        Row,
+                        { gutter: [12, 0] },
+                        h(
+                          Col,
+                          { xs: 24, md: 12 },
+                          h(Form.Item, { label: "四季蝉账号", name: "username", rules: [{ required: true, message: "请输入四季蝉账号" }] }, h(Input, { placeholder: "请输入四季蝉账号" })),
+                        ),
+                        h(
+                          Col,
+                          { xs: 24, md: 12 },
+                          h(Form.Item, { label: "四季蝉密码", name: "password", rules: [{ required: true, message: "请输入四季蝉密码" }] }, h(Input.Password, { placeholder: "请输入四季蝉密码" })),
+                        ),
+                      ),
+                      h(
+                        Row,
+                        { gutter: [12, 0] },
+                        h(Col, { xs: 24, md: 12 }, h(Form.Item, { label: "客户名称（选填）", name: "merName" }, h(Input, { placeholder: "用于报告标题或归属标记" }))),
+                        h(Col, { xs: 24, md: 12 }, h(Form.Item, { label: "客户编码（选填）", name: "merCode" }, h(Input, { placeholder: "用于区分客户数据" }))),
+                      ),
+                    ),
+                    h(
+                      Space,
+                      { style: { marginTop: 4 }, wrap: true },
+                      h(Button, { type: "primary", loading, onClick: generateFromSijichan }, "登录获取并生成报告"),
+                      h(Button, { onClick: () => loadStatus().then(() => message.success("配置状态已刷新")) }, "刷新配置状态"),
+                    ),
+                  ),
+              error ? h(Alert, { style: { marginTop: 16 }, type: "error", showIcon: true, message: error }) : null,
+              reviewProgress
+                ? h(
+                    Card,
+                    { size: "small", bordered: false, className: "gate-card", style: { marginTop: 16 } },
+                    h(Steps, {
+                      size: "small",
+                      current: reviewProgress.current,
+                      status: reviewProgress.status,
+                      items: reviewProgress.steps.map((item) => ({ title: item.title, description: item.description })),
+                    }),
+                    h(Alert, {
+                      style: { marginTop: 14 },
+                      type: reviewProgress.status === "error" ? "error" : reviewProgress.status === "finish" ? "success" : "info",
+                      showIcon: true,
+                      message: reviewProgress.status === "finish" ? "处理完成" : reviewProgress.status === "error" ? "处理失败" : "正在处理",
+                      description: reviewProgress.text,
+                    }),
+                  )
+                : null,
+              h(SheetStatusTags, { summary }),
+              h(DatasetStatusTags, { summary }),
+            ),
+            h(
+              Card,
+              { bordered: false, className: "ai-card" },
+              h(Title, { level: 4 }, "复盘范围"),
+              h(
+                Space,
+                { direction: "vertical", size: 12 },
+                h(Text, null, "1. 品种增长与下滑复盘"),
+                h(Text, null, "2. 活动商品销售与奖励闭环"),
+                h(Text, null, "3. 激励方式已使用与未释放价值"),
+                h(Text, null, "4. 店员提现参与度"),
+                h(Text, null, "5. 厂家晒单打赏与协同动作"),
+                h(Text, null, "6. 下期品种与激励动作建议"),
+              ),
+              h(Divider, null),
+              h(Alert, {
+                type: "info",
+                showIcon: true,
+                message: "数据安全说明",
+                description: "上传文件和登录获取的数据只用于本次解析和AI生成，不在服务器落盘保存。API Key只保存在服务器本地配置文件中，不进入网页代码和GitHub。",
+              }),
+            ),
+          ),
+          h(ReportView, { report, markdown, artifact }),
+        );
+      }
+
+      function AIConfigPage({ auth, onLogin, onRegister }) {
+        if (!auth?.user) {
+          return h(GateCard, { title: "登录后管理AI配置", text: "AI配置仅管理员可维护，请先登录管理员账号。", onLogin, onRegister });
+        }
+        if (auth.user.role !== "admin") {
+          return h(
+            Card,
+            { bordered: false, className: "gate-card" },
+            h(Tag, { color: "gold", className: "hero-platform-tag" }, "权限不足"),
+            h(Title, { level: 3 }, "AI配置仅管理员可见"),
+            h(Paragraph, null, "普通客户账号可以生成和查看复盘报告，但不能维护平台AI接口配置。"),
+          );
+        }
+        return h(AIConfigWorkspace, { auth });
+      }
+
+      function AIConfigWorkspace({ auth }) {
+        const [form] = Form.useForm();
+        const [status, setStatus] = React.useState(null);
+        const [saving, setSaving] = React.useState(false);
+        const [testing, setTesting] = React.useState(false);
+
+        const loadStatus = React.useCallback(async () => {
+          const response = await fetch("/api/ai-config/status");
+          const data = await response.json();
+          setStatus(data);
+          form.setFieldsValue({
+            baseUrl: data.baseUrl || "https://api.deepseek.com",
+            model: data.model || "deepseek-v4-flash",
+            protocol: data.protocol || "chat_completions",
+          });
+        }, [form]);
+
+        React.useEffect(() => {
+          loadStatus().catch(() => setStatus({ configured: false }));
+        }, [loadStatus]);
+
+        const saveConfig = async () => {
+          const values = await form.validateFields();
+          setSaving(true);
+          try {
+            const response = await fetch("/api/ai-config", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(values),
+            });
+            const data = await readApiJson(response);
+            setStatus(data.status);
+            form.setFieldsValue({ apiKey: "", newAdminPassword: "" });
+            message.success("AI配置已保存");
+          } catch (err) {
+            message.error(err.message || "保存失败");
+          } finally {
+            setSaving(false);
+          }
+        };
+
+        const testConfig = async () => {
+          const values = await form.validateFields();
+          setTesting(true);
+          try {
+            const response = await fetch("/api/ai-config/test", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(values),
+            });
+            const data = await readApiJson(response);
+            message.success(data.message || "连接成功");
+          } catch (err) {
+            message.error(err.message || "连接失败");
+          } finally {
+            setTesting(false);
+          }
+        };
+
+        return h(
+          "div",
+          { className: "ai-shell" },
+          h(
+            "div",
+            { className: "ai-grid" },
+            h(
+              Card,
+              { bordered: false, className: "ai-card" },
+              h(Tag, { color: "blue", className: "hero-platform-tag" }, "AI配置"),
+              h(Title, { level: 2, className: "june-title" }, "配置AI接口和模型"),
+              h(Paragraph, null, "管理员可在这里配置AI API Key、接口地址、模型名称和调用协议。保存后，AI复盘报告页面会自动使用该配置。"),
+              h(Alert, {
+                type: status?.configured ? "success" : "warning",
+                showIcon: true,
+                message: status?.configured ? "AI接口已配置" : "尚未完成AI接口配置",
+                description: status?.configured ? `当前模型：${status.model}；接口：${status.baseUrl}；协议：${status.protocol}` : "首次保存时，输入的管理密码会成为后续管理密码。",
+              }),
+              h(Divider, null),
+              h(
+                Form,
+                { form, layout: "vertical" },
+                h(
+                  Form.Item,
+                  { label: "AI API Key", name: "apiKey" },
+                  h(Input.Password, { placeholder: status?.hasApiKey ? "已保存，留空则继续沿用" : "请输入 DeepSeek 或 OpenAI-compatible API Key" }),
+                ),
+                h(
+                  Form.Item,
+                  { label: "Base URL", name: "baseUrl", rules: [{ required: true, message: "请输入Base URL" }] },
+                  h(Input, { placeholder: "https://api.deepseek.com" }),
+                ),
+                h(
+                  Form.Item,
+                  { label: "模型名称", name: "model", rules: [{ required: true, message: "请输入模型名称" }] },
+                  h(Input, { placeholder: "deepseek-v4-flash" }),
+                ),
+                h(
+                  Form.Item,
+                  { label: "调用协议", name: "protocol", rules: [{ required: true, message: "请选择调用协议" }] },
+                  h(
+                    Radio.Group,
+                    { optionType: "button", buttonStyle: "solid" },
+                    h(Radio.Button, { value: "chat_completions" }, "Chat Completions"),
+                    h(Radio.Button, { value: "responses" }, "OpenAI Responses"),
+                  ),
+                ),
+              ),
+              h(
+                Space,
+                { wrap: true },
+                h(Button, { type: "primary", loading: saving, onClick: saveConfig }, "保存配置"),
+                h(Button, { loading: testing, onClick: testConfig }, "测试连接"),
+                h(Button, { onClick: loadStatus }, "刷新状态"),
+              ),
+            ),
+            h(
+              Card,
+              { bordered: false, className: "ai-card" },
+              h(Title, { level: 4 }, "配置说明"),
+              h(Paragraph, null, "API Key不会显示在页面上，也不会提交到GitHub。服务器只返回“是否已配置”的状态。"),
+              h(Paragraph, { className: "config-mask" }, "DeepSeek推荐接口：https://api.deepseek.com"),
+              h(Paragraph, { className: "config-mask" }, "DeepSeek推荐模型：deepseek-v4-flash，调用协议选择 Chat Completions。"),
+              h(Alert, {
+                type: "info",
+                showIcon: true,
+                message: "权限策略",
+                description: `当前登录账号：${auth.user.name}。AI配置仅管理员可保存和测试，API Key不会回显。`,
+              }),
+            ),
+          ),
+        );
+      }
+
+      function HistoryPage({ auth, onLogin, onRegister }) {
+        if (!auth?.user) {
+          return h(GateCard, { title: "登录后查看历史复盘报告", text: "每次AI复盘生成后都会保存到历史报告，方便再次打开分享页、下载SVG或二维码。", onLogin, onRegister });
+        }
+        const [loading, setLoading] = React.useState(false);
+        const [reports, setReports] = React.useState([]);
+        const loadReports = React.useCallback(async () => {
+          setLoading(true);
+          try {
+            const data = await apiJson("/api/review-reports");
+            setReports(data.reports || []);
+          } catch (err) {
+            message.error(err.message || "历史报告加载失败");
+          } finally {
+            setLoading(false);
+          }
+        }, []);
+        React.useEffect(() => {
+          loadReports();
+        }, [loadReports]);
+
+        const columns = [
+          { title: "报告标题", dataIndex: "reportTitle", render: (text, row) => h("a", { href: row.shareUrl, target: "_blank", rel: "noreferrer" }, text) },
+          { title: "来源", dataIndex: "sourceName", width: 140 },
+          { title: "生成时间", dataIndex: "createdAt", width: 190, render: (value) => value ? dayjs(value).format("YYYY-MM-DD HH:mm") : "" },
+          {
+            title: "操作",
+            width: 360,
+            render: (_, row) =>
+              h(
+                Space,
+                { wrap: true },
+                h(Button, { href: row.shareUrl, target: "_blank" }, "打开分享页"),
+                h(Button, { href: row.svgUrl, target: "_blank" }, "下载SVG"),
+                h(Button, { href: row.qrSvgUrl, target: "_blank" }, "二维码"),
+                row.excelUrl ? h(Button, { href: row.excelUrl, target: "_blank" }, "Excel汇总") : null,
+                h(Button, { onClick: () => copyText(row.shareUrl).then(() => message.success("分享链接已复制")) }, "复制链接"),
+              ),
+          },
+        ];
+
+        return h(
+          "div",
+          { className: "history-shell" },
+          h(
+            Card,
+            { bordered: false, className: "history-card" },
+            h(Tag, { color: "blue", className: "hero-platform-tag" }, auth.user.role === "admin" ? "全部报告" : "我的报告"),
+            h(Title, { level: 2, className: "june-title" }, "历史复盘报告"),
+            h(Paragraph, null, auth.user.role === "admin" ? "管理员可查看平台生成过的复盘报告。" : "这里保存你生成过的AI复盘报告和分享产物。"),
+            h(Table, { rowKey: "id", loading, columns, dataSource: reports, pagination: { pageSize: 8 }, scroll: { x: 900 } }),
+          ),
+        );
+      }
+
+      function HomePage({ onOpenCalendar }) {
+        const stakeholderCards = [
+          ["连锁总部", "提升重点品、高毛利品动销，把活动过程、费用核算和执行结果集中管理。"],
+          ["门店店员", "清楚知道今天重点卖什么、怎么卖、卖了能赚多少、奖励什么时候到账。"],
+          ["工业厂家", "把市场费用真正打到门店执行层，用门店和员工数据判断活动投入效果。"],
+          ["运营团队", "减少红包群、Excel对账和人工统计，形成活动上线、跟踪、复盘的标准动作。"],
+        ];
+        const painPoints = [
+          ["重点品种管理难", "店员记不住重点品、政策、奖励算法和产品卖点。"],
+          ["激励反馈不及时", "传统方式依赖月底工资、微信群红包和人工统计，奖励感知弱。"],
+          ["总部统计慢", "销量、完成率、员工表现和费用核算依赖Excel，慢且容易错。"],
+          ["厂家落地难", "厂家有费用和政策，却难以看到门店是否执行、哪里有效。"],
+          ["培训销售脱节", "培训学完不等于卖出去，知识和销售结果没有形成闭环。"],
+          ["过程管理靠人盯", "排行榜、重点提醒、大单分享、激励通知缺少自动化触达。"],
+        ];
+        const modules = [
+          ["员工端小程序", "看活动、看收益、看排行榜、看培训内容、查产品卖点。"],
+          ["活动配置", "支持单品突破、关联销售、黄金单品、任务品、培训奖励等活动。"],
+          ["培训考试", "产品知识培训、题库考试、考试奖励与销售目标联动。"],
+          ["AI机器人/社群运营", "自动推送排行榜、重点通知、大单分享、激励提醒和产品问答。"],
+          ["数据看板", "总部、门店、厂家查看活动销量、执行情况、员工表现和费用使用。"],
+          ["资金与提现", "奖励可实时到账/提现，资金在连锁账户中流转，流程更可控。"],
+        ];
+
+        return h(
+          "div",
+          { className: "home-shell" },
+          h(
+            "section",
+            { className: "hero-panel" },
+            h(
+              "div",
+              { className: "hero-copy" },
+              h(Tag, { color: "blue", className: "hero-platform-tag" }, "医药连锁重点品种数字化动销平台"),
+              h(Title, { level: 1 }, "把厂家资源、重点品培训、店员激励和销售数据打通"),
+              h(
+                Paragraph,
+                { className: "hero-lede" },
+                "四季蝉不是单纯的培训工具，也不是单纯的提成/红包工具。它围绕重点品、高毛利品、任务品，打通选品、培训、激励、销售、提现、统计和复盘，让动销动作被看见、被执行、被结算。",
+              ),
+              h(
+                Space,
+                { size: 12, wrap: true },
+                h(Button, { type: "primary", size: "large", onClick: onOpenCalendar }, "查看对接行事历"),
+                h(Button, { size: "large" }, "重点品动销闭环"),
+              ),
+            ),
+            h(
+              "div",
+              { className: "hero-board" },
+              h("div", { className: "board-header" }, h(Text, { strong: true }, "今日运营看板"), h(Tag, { color: "cyan" }, "SOP READY")),
+              h(
+                Row,
+                { gutter: [12, 12] },
+                ["重点品任务:选品", "店员激励:实时", "销售归因:自动", "活动复盘:可视"].map((item) => {
+                  const [title, value] = item.split(":");
+                  return h(Col, { span: 12, key: item }, h(Statistic, { title, value }));
+                }),
+              ),
+            ),
+          ),
+          h(
+            Row,
+            { gutter: [16, 16], className: "stakeholder-row" },
+            stakeholderCards.map(([title, text], index) =>
+              h(
+                Col,
+                { xs: 24, md: 12, xl: 6, key: title },
+                h(
+                  Card,
+                  { className: "stakeholder-card", bordered: false },
+                  h("div", { className: "card-icon" }, String(index + 1).padStart(2, "0")),
+                  h(Title, { level: 4 }, title),
+                  h(Paragraph, null, text),
+                ),
+              ),
+            ),
+          ),
+          h(
+            Card,
+            { className: "section-card", bordered: false },
+            h(
+              "div",
+              { className: "section-title-row" },
+              h(Title, { level: 2 }, "一条可结算的动销闭环"),
+              h(Paragraph, null, "把“卖重点品”变成店员可感知、总部可追踪、厂家可复盘的运营动作。"),
+            ),
+            h(Steps, {
+              current: 5,
+              responsive: true,
+              items: [
+                { title: "配置活动", description: "重点品、任务政策、培训内容和激励规则" },
+                { title: "店员学习", description: "小程序查看卖点、培训、考试和奖励" },
+                { title: "门店销售", description: "系统基于销售数据自动归因" },
+                { title: "奖励计算", description: "形成及时豆或延时豆" },
+                { title: "收益提现", description: "满足规则后可提现到账" },
+                { title: "看板复盘", description: "查看销量、完成率、表现和费用" },
+              ],
+            }),
+          ),
+          h(
+            Row,
+            { gutter: [16, 16] },
+            h(
+              Col,
+              { xs: 24, lg: 11 },
+              h(
+                Card,
+                { className: "section-card tall-card", bordered: false },
+                h(Title, { level: 2 }, "主要解决的痛点"),
+                h(Timeline, {
+                  items: painPoints.map(([title, children]) => ({
+                    color: "blue",
+                    children: h("div", null, h(Text, { strong: true }, title), h(Paragraph, null, children)),
+                  })),
+                }),
+              ),
+            ),
+            h(
+              Col,
+              { xs: 24, lg: 13 },
+              h(
+                Card,
+                { className: "section-card tall-card", bordered: false },
+                h(Title, { level: 2 }, "核心能力模块"),
+                h(
+                  Row,
+                  { gutter: [12, 12] },
+                  modules.map(([title, text], index) =>
+                    h(
+                      Col,
+                      { xs: 24, md: 12, key: title },
+                      h(
+                        Card,
+                        { className: "module-card", size: "small" },
+                        h(Space, { align: "start" }, h("span", { className: "module-icon" }, index + 1), h("div", null, h(Text, { strong: true }, title), h(Paragraph, null, text))),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+
+      const incentiveModes = [
+        {
+          title: "按固定金额",
+          text: "卖出指定品种后按固定金额给奖励，适合店员容易理解、需要快速启动的活动。",
+        },
+        {
+          title: "按百分比%",
+          text: "按销售额或成交区间计算奖励，可配合最低成交价、不同价格区间、不同奖励规则。",
+        },
+      ];
+
+      const incentiveTypes = [
+        {
+          type: "1、单品激励",
+          plays: [
+            ["无阶梯", "卖出一盒给固定奖励", "黄金单品、动销爆破"],
+            ["有阶梯 ★★★", "按活动周期或单个订单设置阶梯奖励，如第1-20件、21-30件不同奖励", "季节热卖品、短期冲量"],
+            ["批号奖励 ★", "指定批号或排除批号设置激励", "效期品种、库存挤压品种"],
+          ],
+        },
+        {
+          type: "2、疗程激励",
+          plays: [["多件一单激励 ★★", "一次性卖出多件设置不同激励，如3件奖励5元、5件奖励10元", "慢病、长期用药品种动销"]],
+        },
+        {
+          type: "3、关联销售激励",
+          plays: [
+            ["固定品种关联 ★★★", "A+2B+3C 等固定组合奖励", "降低一单一品率，提高店员专业度"],
+            ["高频带低频/系列", "（A/B/C）+（D/E/F）+（X/Y/Z）任意组合", "病种搭配、系列化销售"],
+            ["任意品种关联", "多个品种中任意3种奖励5元，任意5种奖励10元，可加阶梯", "关联销售、客单提升"],
+          ],
+        },
+        {
+          type: "4、目标达成奖励",
+          plays: [
+            ["店员目标", "设置未达成、已达成、超额达成不同激励，支持销量或销售额目标", "内部目标PK、冲销量拿返利"],
+            ["门店目标", "按门店目标完成情况设置奖励", "门店团队目标管理"],
+            ["片区目标", "按片区目标完成情况设置奖励", "区域协同与片区PK"],
+          ],
+        },
+        {
+          type: "5、销售排名奖励",
+          plays: [
+            ["每日早鸟奖励 ★★", "设置排名激励，如某品种前3名额外奖励50、30、20元", "提高店员荣誉感"],
+            ["周排名奖励", "按周统计排名并发放奖励", "持续拉动销售节奏"],
+            ["月度排名奖励", "按月统计排名并发放奖励", "长期目标牵引"],
+            ["单品排名奖励", "围绕单一品种设置排名奖励", "重点品爆破"],
+          ],
+        },
+        {
+          type: "6、晒单打赏激励",
+          plays: [["店员晒单，厂家打赏 ★★★", "晒单内容连锁全员可见，厂家手机端额外打赏", "提高员工品种关注度"]],
+        },
+        {
+          type: "7、学习考试激励",
+          plays: [["领取固定/随机金额奖励", "课程学习完或考试及格后发放；可设置总预算、随机2-5元或固定5元", "提高员工学习主动性"]],
+        },
+      ];
+
+      const positionMappings = [
+        ["月度战略品", "目标管理"],
+        ["重点爆破品", "阶梯奖励"],
+        ["慢病消耗品", "疗程奖励"],
+        ["病种搭配品", "关联奖励"],
+        ["新进推广品", "晒单打赏"],
+        ["批号效期品", "批号激励"],
+      ];
+
+      const selectionLevels = [
+        {
+          level: "A",
+          name: "当月核心战略品",
+          stars: "★★★★★",
+          count: "10-15个",
+          position: ["连锁主推品", "厂家战略品"],
+          play: ["目标/排名", "单品阶梯/疗程"],
+          purpose: ["爆量", "标杆"],
+          incentive: "及时激励（双向奔赴）",
+        },
+        {
+          level: "B",
+          name: "阶段性重点品",
+          stars: "★★★",
+          count: "15-80个",
+          position: ["品类报告", "AAA重点品", "通用名热卖榜"],
+          play: ["单品", "疗程", "关联"],
+          purpose: ["用20%品带动80%销售额"],
+          incentive: "及时激励",
+        },
+        {
+          level: "C",
+          name: "常规代金品",
+          stars: "★★",
+          count: "不限",
+          position: ["近效期", "新品", "库存积压", "厂家普通挂金品", "常规提成品种"],
+          play: ["单品等基础玩法"],
+          purpose: ["常规带动"],
+          incentive: "及时/延时激励",
+        },
+      ];
+
+      const selectionSources = [
+        "当季热卖品：季节性需求较高、热销期短的品种。",
+        "厂家战略品、返利品种：用于冲击高销售，拿到返利。",
+        "通用名热卖榜：关注企业排名低于省份的品种。",
+        "重点3A品种：来自随心看重点品种经营报告中的3A品种。",
+        "近效期品种：近90天近效期品种，用随心看近效期催销。",
+        "新品突破：连锁新品，需要培训并做新品突破。",
+        "组合关联品种：按照病种梳理，设计关联销售组合。",
+        "门店活动组合品种：如买二赠一，既能激励顾客，也可对店员双向激励。",
+      ];
+
+      const juneCalendarNodes = [
+        {
+          date: "6/7-6/8",
+          title: "高考营养补给",
+          scene: "补脑、营养、维矿，重点做家长端的安心补充。",
+          products: ["葡萄糖酸钙锌", "维生素C", "维生素D", "多维元素", "葡萄糖酸锌"],
+          play: "培训考试 + 单品突破 + 员工排行榜",
+        },
+        {
+          date: "6/18",
+          title: "618健康品推广",
+          scene: "用健康品做客单提升，适合线上线下同推。",
+          products: ["碳酸钙片", "碳酸钙D3", "复方阿胶浆", "气血康", "补中益气"],
+          play: "阶梯奖励 + 满额目标 + 晒单打赏",
+        },
+        {
+          date: "6/19-6/21",
+          title: "端午回娘家礼品",
+          scene: "浙江地区回娘家礼品需求，主推营养礼盒和补益品。",
+          products: ["阿胶类", "维矿同步类", "蛋白粉类", "葡萄糖酸钙锌", "多维元素"],
+          play: "组合销售 + 门店目标 + 陈列晒单",
+        },
+        {
+          date: "6月中下旬",
+          title: "蚊虫叮咬与皮肤",
+          scene: "蚊虫、湿热、脚气和皮肤瘙痒场景开始抬头。",
+          products: ["炉甘石洗剂", "硝酸益康唑喷雾", "丁酸氢化可的松", "尿素维E", "复方醋酸氯己定"],
+          play: "关联销售 + 陈列晒单 + 专业问答",
+        },
+        {
+          date: "6月下旬",
+          title: "夏季肠胃专项",
+          scene: "冷饮、夜宵、出行增加，肠胃类可做场景组合。",
+          products: ["乳酸菌素片", "胶体果胶铋", "奥美拉唑", "地衣芽孢杆菌", "保和颗粒"],
+          play: "疗程激励 + 多件一单 + 关联销售",
+        },
+      ];
+
+      const juneCategoryPlays = [
+        {
+          category: "补益品种",
+          focus: "端午礼品、618健康品、高考营养补充",
+          products: ["葡萄糖酸钙锌", "碳酸钙/D3", "维生素C/D", "多维元素", "复方阿胶浆", "气血康", "补中益气"],
+          play: "黄金单品 + 组合礼盒 + 目标达成",
+        },
+        {
+          category: "肠胃类品种",
+          focus: "6月下旬胃肠病场景，兼顾家庭常备",
+          products: ["乳酸菌素片", "胶体果胶铋", "奥美拉唑", "地衣芽孢杆菌", "保和颗粒", "藿香清胃"],
+          play: "疗程奖励 + 多件一单 + 关联销售",
+        },
+        {
+          category: "真菌类品种",
+          focus: "脚气、湿热、皮肤瘙痒和外用护理",
+          products: ["硝酸益康唑喷雾", "炉甘石", "丁酸氢化可的松", "尿素维E", "皮肤外用乳膏"],
+          play: "陈列晒单 + 关联销售 + 培训考试",
+        },
+        {
+          category: "解热镇痛类",
+          focus: "空调感冒、退热疼痛、暑期出行常备",
+          products: ["布洛芬缓释", "复方感冒灵", "复方氨酚烷胺", "感冒清热", "强力枇杷露"],
+          play: "单品突破 + 阶梯奖励 + 排行榜",
+        },
+      ];
+
+      const juneActivityPacks = [
+        {
+          rank: "A",
+          title: "核心赚钱品稳动销",
+          products: ["葡萄糖酸钙锌", "乳酸菌素片", "布洛芬缓释", "复方感冒灵", "碳酸钙/维C"],
+          rule: "优先从AAA里选，AAA代表销售额、毛利额、客流量都进入核心贡献区间。",
+          play: "单品突破、阶梯奖励、员工排行榜",
+        },
+        {
+          rank: "B",
+          title: "节点场景品冲销量",
+          products: ["阿胶/营养礼盒", "多维元素", "炉甘石", "硝酸益康唑", "藿香正气"],
+          rule: "围绕端午、高考、618、蚊虫叮咬和肠胃节点做短周期冲刺。",
+          play: "门店目标、陈列晒单、培训考试",
+        },
+        {
+          rank: "C",
+          title: "组合关联品提客单",
+          products: ["胃肠三件套", "皮肤止痒组合", "端午营养礼盒", "咽喉护理组合"],
+          rule: "把单品卖点变成场景组合，降低一单一品率。",
+          play: "关联销售、疗程奖励、多件一单",
+        },
+      ];
+
+      function JuneMarketingPage() {
+        return h(
+          "div",
+          { className: "june-shell" },
+          h(
+            "section",
+            { className: "june-hero" },
+            h(
+              Card,
+              { bordered: false },
+              h(Tag, { color: "blue", className: "hero-platform-tag" }, "6月品种营销推荐"),
+              h(Title, { className: "june-title" }, "把节点、品类和AAA主力品种串成活动"),
+              h(
+                Paragraph,
+                { className: "incentive-lede" },
+                "6月不只做季节品，还要把高考、618、端午回娘家、蚊虫叮咬和肠胃高发场景串起来。四季蝉更适合把这些节点拆成可配置、可激励、可复盘的店员任务。",
+              ),
+            ),
+            h(
+              Card,
+              { bordered: false, className: "aaa-definition" },
+              h(Title, { level: 4 }, "AAA口径"),
+              h(Statistic, { title: "核心贡献", value: "销售额 / 毛利额 / 客流量" }),
+              h(Paragraph, null, "AAA品种是三项都进入核心贡献区间的主力赚钱品种，应优先用于稳定动销和重点维护。"),
+              h(Space, { wrap: true, size: [8, 8] }, h(Tag, { color: "blue" }, "卖得动"), h(Tag, { color: "orange" }, "赚得多"), h(Tag, { color: "purple" }, "带客流")),
+            ),
+          ),
+          h(
+            Card,
+            { className: "section-card", bordered: false },
+            h(
+              "div",
+              { className: "section-title-row" },
+              h(Title, { level: 2 }, "6月营销节点及日历"),
+              h(Paragraph, null, "每个节点对应一批品种和一种四季蝉玩法，方便直接拆活动。"),
+            ),
+            h(
+              Row,
+              { gutter: [12, 12] },
+              juneCalendarNodes.map((item) =>
+                h(
+                  Col,
+                  { xs: 24, md: 12, xl: 8, key: item.title },
+                  h(
+                    Card,
+                    { className: "calendar-node-card", bordered: false },
+                    h("span", { className: "node-date" }, item.date),
+                    h(Title, { level: 4 }, item.title),
+                    h(Paragraph, null, item.scene),
+                    h("div", { className: "node-products" }, item.products.map((name) => h(Tag, { key: name, color: "blue" }, name))),
+                    h(Text, { strong: true }, item.play),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          h(
+            Row,
+            { gutter: [16, 16] },
+            juneCategoryPlays.map((item) =>
+              h(
+                Col,
+                { xs: 24, lg: 12, key: item.category },
+                h(
+                  Card,
+                  { className: "category-play-card", bordered: false },
+                  h(Title, { level: 3 }, item.category),
+                  h(Paragraph, null, item.focus),
+                  h("div", { className: "category-products" }, item.products.map((name) => h(Tag, { key: name, color: "geekblue" }, name))),
+                  h(Tag, { color: "orange", className: "work-tag" }, item.play),
+                ),
+              ),
+            ),
+          ),
+          h(
+            Card,
+            { className: "section-card", bordered: false },
+            h(
+              "div",
+              { className: "section-title-row" },
+              h(Title, { level: 2 }, "四季蝉活动分层"),
+              h(Paragraph, null, "A档稳住核心赚钱品，B档抓节点爆发，C档做组合客单。"),
+            ),
+            h(
+              Row,
+              { gutter: [12, 12] },
+              juneActivityPacks.map((item) =>
+                h(
+                  Col,
+                  { xs: 24, lg: 8, key: item.rank },
+                  h(
+                    Card,
+                    { className: "activity-pack-card", bordered: false },
+                    h("span", { className: "pack-rank" }, item.rank),
+                    h(Title, { level: 3 }, item.title),
+                    h(Paragraph, null, item.rule),
+                    h("div", { className: "category-products" }, item.products.map((name) => h(Tag, { key: name }, name))),
+                    h(Text, { strong: true }, item.play),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+
+      function SelectionPage() {
+        return h(
+          "div",
+          { className: "selection-shell" },
+          h(
+            "section",
+            { className: "selection-hero" },
+            h(
+              Card,
+              { bordered: false },
+              h(Tag, { color: "blue", className: "hero-platform-tag" }, "选品思路总结"),
+              h(Title, { className: "selection-title" }, "重点品种要突出，主次要分明"),
+              h(
+                Paragraph,
+                { className: "incentive-lede" },
+                "选品不是把所有厂家政策都塞进活动里，而是先把品种分层：当月核心战略品负责爆量和标杆，阶段性重点品负责结构带动，常规代金品负责日常覆盖。分级越清楚，培训、激励和复盘越容易落地。",
+              ),
+            ),
+            h(
+              Card,
+              { bordered: false },
+              h(Title, { level: 4 }, "选品判断"),
+              h(Paragraph, null, "优先选择能形成清晰任务、清晰卖点、清晰奖励感知的品种。"),
+              h(Space, { wrap: true, size: [8, 8] }, h(Tag, { color: "blue" }, "重点突出"), h(Tag, { color: "orange" }, "主次分明"), h(Tag, { color: "purple" }, "动销可追踪")),
+            ),
+          ),
+          h(
+            Row,
+            { gutter: [16, 16] },
+            selectionLevels.map((item) =>
+              h(
+                Col,
+                { xs: 24, lg: 8, key: item.level },
+                h(
+                  Card,
+                  { className: "selection-level-card", bordered: false },
+                  h(
+                    "div",
+                    { className: "level-card-top" },
+                    h("div", null, h("span", { className: "level-badge" }, item.level), h(Title, { level: 3 }, item.name)),
+                    h("span", { className: "level-stars" }, item.stars),
+                  ),
+                  h(Text, { type: "secondary" }, `建议数量：${item.count}`),
+                  h(
+                    "div",
+                    { className: "level-meta-grid" },
+                    h("div", { className: "level-meta" }, h("label", null, "选品定位"), h(Space, { wrap: true, size: [6, 6] }, item.position.map((tag) => h(Tag, { key: tag, color: "blue", className: "selection-tag" }, tag)))),
+                    h("div", { className: "level-meta" }, h("label", null, "激励玩法"), h(Space, { wrap: true, size: [6, 6] }, item.play.map((tag) => h(Tag, { key: tag, className: "selection-tag" }, tag)))),
+                    h("div", { className: "level-meta" }, h("label", null, "选品目的"), h(Space, { wrap: true, size: [6, 6] }, item.purpose.map((tag) => h(Tag, { key: tag, color: "orange", className: "selection-tag" }, tag)))),
+                    h("div", { className: "level-meta" }, h("label", null, "激励类型"), h(Text, { strong: true }, item.incentive)),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          h(
+            Card,
+            { className: "section-card", bordered: false },
+            h(
+              "div",
+              { className: "section-title-row" },
+              h(Title, { level: 2 }, "8类优先选品来源"),
+              h(Paragraph, null, "从季节、厂家资源、排名差异、效期、新品和组合活动中寻找更容易推动的重点品。"),
+            ),
+            h(
+              Row,
+              { gutter: [12, 12] },
+              selectionSources.map((text, index) =>
+                h(
+                  Col,
+                  { xs: 24, md: 12, xl: 6, key: text },
+                  h(Card, { className: "selection-source-card", bordered: false }, h("span", { className: "source-index" }, String(index + 1).padStart(2, "0")), h(Paragraph, null, text)),
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+
+      function IncentivePage() {
+        const flatRows = incentiveTypes.flatMap((group) =>
+          group.plays.map(([play, rule, effect], index) => ({
+            key: `${group.type}-${play}`,
+            type: index === 0 ? group.type : "",
+            play,
+            rule,
+            effect,
+          })),
+        );
+
+        const columns = [
+          { title: "七种类型", dataIndex: "type", width: 170, render: (value) => (value ? h(Text, { strong: true, className: "project-name" }, value) : "") },
+          { title: "玩法", dataIndex: "play", width: 220, render: (value) => h(Tag, { color: "blue", className: "work-tag" }, value) },
+          { title: "规则说明", dataIndex: "rule", width: 430 },
+          { title: "适用作用", dataIndex: "effect", width: 260 },
+        ];
+
+        return h(
+          "div",
+          { className: "incentive-shell" },
+          h(
+            "section",
+            { className: "incentive-hero" },
+            h(
+              Card,
+              { bordered: false },
+              h(Tag, { color: "blue", className: "hero-platform-tag" }, "激励玩法总结"),
+              h(Title, { className: "incentive-title" }, "两大模式、七种类型、二十种玩法"),
+              h(
+                Paragraph,
+                { className: "incentive-lede" },
+                "四季蝉支持固定金额或百分比奖励，并可围绕单品、疗程、关联销售、目标达成、销售排名、晒单打赏、学习考试等场景配置激励，让重点品动销从“政策设计”落到“店员行为”。",
+              ),
+              h(Button, { href: "协议文件/激励玩法总结.png", download: true, type: "primary" }, "下载：激励玩法总结图片"),
+            ),
+            h(
+              Row,
+              { gutter: [12, 12] },
+              incentiveModes.map((item) =>
+                h(
+                  Col,
+                  { span: 24, key: item.title },
+                  h(Card, { className: "mode-card", bordered: false }, h(Title, { level: 4 }, item.title), h(Paragraph, null, item.text)),
+                ),
+              ),
+            ),
+          ),
+          h(
+            Row,
+            { gutter: [16, 16] },
+            incentiveTypes.map((group) =>
+              h(
+                Col,
+                { xs: 24, md: 12, xl: 8, key: group.type },
+                h(
+                  Card,
+                  { className: "play-card", title: group.type },
+                  group.plays.map(([play, rule, effect]) =>
+                    h(
+                      "div",
+                      { className: "play-meta", key: play },
+                      h(Tag, { color: "blue", className: "work-tag" }, play),
+                      h(Paragraph, null, rule),
+                      h(Text, { type: "secondary" }, effect),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          h(
+            Card,
+            { className: "section-card", bordered: false },
+            h(
+              "div",
+              { className: "section-title-row" },
+              h(Title, { level: 2 }, "月度品种定位分级"),
+              h(Paragraph, null, "把品种定位和激励玩法对应起来，便于活动设计时快速选规则。"),
+            ),
+            h(
+              Row,
+              { gutter: [12, 12] },
+              positionMappings.map(([product, method]) =>
+                h(
+                  Col,
+                  { xs: 24, md: 12, xl: 8, key: product },
+                  h(Card, { className: "position-card", bordered: false }, h("strong", null, product), h(Tag, { color: "cyan", className: "work-tag" }, method)),
+                ),
+              ),
+            ),
+          ),
+          h(
+            Card,
+            { className: "section-card incentive-table", bordered: false },
+            h(Title, { level: 2 }, "玩法明细表"),
+            h(Table, { columns, dataSource: flatRows, pagination: false, scroll: { x: 1080 } }),
+          ),
+        );
+      }
+
+      function CalendarPage({ dates }) {
+        const rows = [
+          {
+            key: 1,
+            index: 1,
+            project: "汇付账户开通",
+            property: "一次性",
+            propertyColor: "gold",
+            content: "填写两份协议，用于申请开通汇付账户。",
+            tasks: ["《汇付-斗拱平台综合支付协议》", "《药店与店员激励协议》"],
+            notes: h(
+              "div",
+              { className: "notes-block" },
+              h(Text, { strong: true }, "斗拱平台协议："),
+              h("ul", null, h("li", null, "02斗拱平台协议：打印两份。"), h("li", null, `第三页合同日期：${dates.rangeText}。`), h("li", null, `盖章、签字，日期手写为${dates.todayText}。`), h("li", null, "额外侧面加盖骑缝章，最后扫描成A4大小的PDF文件。")),
+              h(Text, { strong: true }, "药店与店员激励协议："),
+              h("ul", null, h("li", null, "03药店与店员激励协议：打印一份。"), h("li", null, `签字、盖章，乙方按手印，日期手写为${dates.todayText}。`), h("li", null, "最后扫描成A4大小的PDF文件。")),
+              h(Paragraph, null, "按文档说明操作。法人和联系人身份证可以直接上传身份证原件；如使用复印件，需要盖公章。"),
+            ),
+            materialItems: materials.payment,
+            people: ["财务", "信息"],
+          },
+          { key: 2, index: 2, project: "基础信息维护", property: "一次性", propertyColor: "gold", content: "维护员工信息、门店信息。", tasks: ["Excel表格维护至新零售后台。"], notes: "暂无", materialItems: materials.baseInfo, people: ["信息"] },
+          { key: 3, index: 3, project: "工业信息收集", property: "及时更新", propertyColor: "cyan", content: "收集厂家信息，开通厂家账号，用于充值及建活动。", tasks: ["按模板填写《四季蝉供应商信息收集表》。"], notes: "暂无", materialItems: materials.industry, people: ["运营", "采购"] },
+          { key: 4, index: 4, project: "活动商品创建", property: "每月更新", propertyColor: "cyan", content: "确认活动品种和活动政策。", tasks: ["按模板填写《品种政策收集模板表》。"], notes: "暂无", materialItems: [], people: ["运营", "采购"] },
+          { key: 5, index: 5, project: "操作培训", property: "一次性", propertyColor: "gold", content: "连锁培训。", tasks: ["参与在线会议。"], notes: "暂无", materialItems: [], people: ["运营", "采购", "财务", "信息"] },
+          { key: 6, index: 6, project: "订单测试", property: "一次性", propertyColor: "gold", content: "完成正向、逆向订单的奖励生成收回测试。", tasks: ["零售测试。"], notes: "暂无", materialItems: [], people: ["信息"] },
+          { key: 7, index: 7, project: "店员培训上线", property: "一次性", propertyColor: "gold", content: "员工手机端培训：登录、认证；如何确认销售与奖励获得情况。", tasks: ["发送视频操作说明，可给店员集中线上培训。"], notes: "暂无", materialItems: [], people: ["店员"] },
+        ];
+
+        const columns = [
+          { title: "序号", dataIndex: "index", width: 64, fixed: "left", align: "center", render: (value) => h(Text, { strong: true }, value) },
+          { title: "项目", dataIndex: "project", width: 140, fixed: "left", render: (value) => h(Text, { strong: true, className: "project-name" }, value) },
+          { title: "工作属性", dataIndex: "property", width: 112, render: (value, row) => h(Tag, { color: row.propertyColor, className: "work-tag" }, value) },
+          { title: "对接内容", dataIndex: "content", width: 190 },
+          {
+            title: "处理事务",
+            dataIndex: "tasks",
+            width: 180,
+            render: (tasks) => h(Space, { direction: "vertical", size: 8 }, tasks.map((task) => h(Tag, { className: "task-tag", key: task }, task))),
+          },
+          { title: "注意事项", dataIndex: "notes", width: 360, render: (notes) => (notes === "暂无" ? h(Text, { type: "secondary" }, "暂无") : notes) },
+          { title: "材料下载", dataIndex: "materialItems", width: 230, render: (items) => h(MaterialButtons, { items }) },
+          {
+            title: "连锁配合人员（建议）",
+            dataIndex: "people",
+            width: 180,
+            render: (people) => h(Space, { wrap: true, size: [6, 6] }, people.map((person) => h(Tag, { color: "blue", className: "people-tag", key: person }, person))),
+          },
+        ];
+
+        return h(
+          "div",
+          { className: "calendar-shell" },
+          h(Alert, { showIcon: true, type: "success", message: "对接行事历", description: "海典指导，连锁配合。材料下载列中的文件可直接提供给客户使用。" }),
+          h(
+            Row,
+            { gutter: [16, 16], className: "summary-row" },
+            [["总事项", 7], ["一次性工作", 5], ["每月更新", 1], ["及时更新", 1]].map(([title, value]) => h(Col, { xs: 12, md: 6, key: title }, h(Card, { bordered: false }, h(Statistic, { title, value })))),
+          ),
+          h(Card, { bordered: false, className: "table-card" }, h(Table, { columns, dataSource: rows, pagination: false, scroll: { x: 1500 }, sticky: true })),
+        );
+      }
+
+      function App() {
+        const [activeKey, setActiveKey] = React.useState("home");
+        const [auth, setAuth] = React.useState({ user: null, profile: null, loading: true });
+        const initialAuthPage = new URLSearchParams(window.location.search).get("page");
+        const [authPage, setAuthPage] = React.useState(initialAuthPage === "register" ? "register" : initialAuthPage === "login" ? "login" : "");
+        const dates = React.useMemo(getDynamicDates, []);
+        const loadMe = React.useCallback(async () => {
+          try {
+            const data = await apiJson("/api/auth/me");
+            setAuth({ user: data.user || null, profile: data.profile || null, database: data.database, loading: false });
+          } catch {
+            setAuth({ user: null, profile: null, loading: false });
+          }
+        }, []);
+        React.useEffect(() => {
+          loadMe();
+        }, [loadMe]);
+
+        const onAuthed = (data) => {
+          setAuth({ user: data.user || null, profile: data.profile || null, loading: false });
+          setAuthPage("");
+          window.history.replaceState(null, "", `${window.location.pathname}?v=auth-portal`);
+          setActiveKey("aiReview");
+        };
+        const logout = async () => {
+          await apiJson("/api/auth/logout", { method: "POST", body: "{}" }).catch(() => null);
+          setAuth({ user: null, profile: null, loading: false });
+          setAuthPage("");
+          window.history.replaceState(null, "", `${window.location.pathname}?v=auth-portal`);
+          setActiveKey("home");
+          message.success("已退出登录");
+        };
+        const openAuthPage = (mode) => {
+          setAuthPage(mode);
+          window.history.pushState(null, "", `${window.location.pathname}?page=${mode}`);
+        };
+        const openLogin = () => openAuthPage("login");
+        const openRegister = () => openAuthPage("register");
+        const authProps = { auth, onLogin: openLogin, onRegister: openRegister };
+        const tabItems = [
+          { key: "home", label: "首页", children: h(HomePage, { onOpenCalendar: () => setActiveKey("calendar") }) },
+          { key: "calendar", label: "对接行事历", children: h(CalendarPage, { dates }) },
+          { key: "incentive", label: "激励玩法", children: h(IncentivePage) },
+          { key: "selection", label: "选品思路", children: h(SelectionPage) },
+          { key: "june", label: "6月营销推荐", children: h(JuneMarketingPage) },
+          { key: "aiReview", label: "AI复盘报告", children: h(AIReviewPage, authProps) },
+          { key: "history", label: "历史报告", children: h(HistoryPage, authProps) },
+          ...(auth.user?.role === "admin" ? [{ key: "aiConfig", label: "AI配置", children: h(AIConfigPage, authProps) }] : []),
+        ];
+
+        if (authPage && !auth.user) {
+          return h(
+            ConfigProvider,
+            {
+              theme: {
+                token: {
+                  colorPrimary: "#2a4bff",
+                  borderRadius: 8,
+                  colorInfo: "#2a4bff",
+                  fontFamily: '"Segoe UI", "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif',
+                },
+              },
+            },
+            h("main", { className: "auth-route-shell" }, h(AuthPage, { mode: authPage, onModeChange: openAuthPage, onAuthed })),
+          );
+        }
+
+        return h(
+          ConfigProvider,
+          {
+            theme: {
+              token: {
+                colorPrimary: "#2a4bff",
+                borderRadius: 8,
+                colorInfo: "#2a4bff",
+                fontFamily: '"Segoe UI", "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif',
+              },
+            },
+          },
+          h(
+            "main",
+            { className: "app-shell" },
+            h(
+              "header",
+              { className: "app-header" },
+              h(
+                "div",
+                { className: "brand-lockup" },
+                h("img", { src: "assets/四季蝉.png", alt: "四季蝉logo", className: "brand-logo" }),
+                h(
+                  "div",
+                  { className: "brand-copy" },
+                  h(Text, { className: "brand-kicker" }, "It is like an all-season cicada; you can hear its song even in winter."),
+                  h(Title, null, "海典四季蝉"),
+                  h(Paragraph, null, "帮助连锁重点品动销加速的运营数字化解决方案"),
+                ),
+              ),
+              h(
+                "div",
+                { className: "user-panel" },
+                auth.user
+                  ? [
+                      h(Tag, { color: auth.user.role === "admin" ? "gold" : "blue", key: "role" }, auth.user.role === "admin" ? "管理员" : "客户"),
+                      h(Text, { strong: true, key: "name" }, auth.user.name),
+                      h(Button, { key: "history", onClick: () => setActiveKey("history") }, "历史报告"),
+                      h(Button, { key: "logout", onClick: logout }, "退出登录"),
+                    ]
+                  : [
+                      h(Button, { key: "login", onClick: openLogin }, "登录"),
+                      h(Button, { key: "register", type: "primary", onClick: openRegister }, "注册"),
+                    ],
+              ),
+            ),
+            h(Tabs, {
+              activeKey,
+              className: "main-tabs",
+              onChange: setActiveKey,
+              items: tabItems,
+            }),
+          ),
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById("root")).render(h(App));
+    </script>
+  </body>
+</html>
