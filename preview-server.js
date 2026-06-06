@@ -6,6 +6,7 @@ const os = require("os");
 const { spawn } = require("child_process");
 const Busboy = require("busboy");
 const JSZip = require("jszip");
+const QRCode = require("qrcode");
 
 const root = __dirname;
 const host = process.env.HOST || "0.0.0.0";
@@ -16,6 +17,8 @@ const serverDir = path.join(root, ".server");
 const configPath = path.join(serverDir, "ai-config.json");
 const sijichanRepoDir = path.join(serverDir, "sijichan-shuju");
 const sijichanRepoUrl = "https://github.com/oldxianyu/sijichan-shuju.git";
+const reportsDir = path.join(serverDir, "reports");
+const publicReportBaseUrl = (process.env.PUBLIC_REPORT_BASE_URL || `http://localhost:${configuredPort}`).replace(/\/+$/, "");
 
 const mime = {
   ".html": "text/html; charset=utf-8",
@@ -26,6 +29,7 @@ const mime = {
   ".jpeg": "image/jpeg",
   ".webp": "image/webp",
   ".svg": "image/svg+xml; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ".doc": "application/msword",
@@ -47,6 +51,41 @@ function ensureServerDir() {
 function sendJson(res, status, payload) {
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(payload));
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function escapeXml(value) {
+  return escapeHtml(value);
+}
+
+function stripMarkdown(value) {
+  return String(value ?? "").replace(/[#*_`>~-]/g, "").trim();
+}
+
+function wrapText(text, maxChars) {
+  const source = stripMarkdown(text);
+  const lines = [];
+  let current = "";
+  for (const char of source) {
+    const charWidth = /[A-Za-z0-9.,;:!?()/%+\- ]/.test(char) ? 0.55 : 1;
+    const currentWidth = [...current].reduce((sum, item) => sum + (/[A-Za-z0-9.,;:!?()/%+\- ]/.test(item) ? 0.55 : 1), 0);
+    if (current && currentWidth + charWidth > maxChars) {
+      lines.push(current);
+      current = char.trimStart();
+    } else {
+      current += char;
+    }
+  }
+  if (current) lines.push(current);
+  return lines.length ? lines : [""];
 }
 
 function readJsonBody(req, maxBytes = 1024 * 1024) {
@@ -138,6 +177,7 @@ function publicConfigStatus(config = loadConfig()) {
     hasApiKey: Boolean(config.apiKey),
     baseUrl: config.baseUrl || "https://api.openai.com/v1",
     model: config.model || "gpt-5.2",
+    protocol: config.protocol || (String(config.baseUrl || "").includes("deepseek") ? "chat_completions" : "responses"),
   };
 }
 
@@ -544,6 +584,67 @@ async function callOpenAI(config, input, useSchema = true) {
   return extractOutputText(data);
 }
 
+async function callChatCompletions(config, input) {
+  const endpoint = `${normalizeBaseUrl(config.baseUrl)}/chat/completions`;
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: config.model,
+      messages: [
+        {
+          role: "system",
+          content: "你是严谨的医药连锁重点品数字化动销复盘顾问。请严格输出JSON对象，不要输出Markdown代码块。",
+        },
+        {
+          role: "user",
+          content: `${input}\n\n请输出JSON对象，字段必须包含：title、executiveSummary、highlights、risks、sections、nextActions。sections数组每项包含heading和bullets。`,
+        },
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.2,
+      max_tokens: 2600,
+    }),
+  });
+
+  const text = await response.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = { raw: text };
+  }
+
+  if (!response.ok) {
+    const message = data?.error?.message || text || `AI接口返回 ${response.status}`;
+    const error = new Error(message);
+    error.status = response.status;
+    error.data = data;
+    throw error;
+  }
+
+  return data?.choices?.[0]?.message?.content || "";
+}
+
+async function callConfiguredAI(config, prompt) {
+  const protocol = config.protocol || (String(config.baseUrl || "").includes("deepseek") ? "chat_completions" : "responses");
+  if (protocol === "chat_completions") {
+    return callChatCompletions(config, prompt);
+  }
+
+  try {
+    return await callOpenAI(config, prompt, true);
+  } catch (error) {
+    if (error.status === 400) {
+      return callOpenAI(config, `${prompt}\n请按JSON对象返回，字段包含title、executiveSummary、highlights、risks、sections、nextActions。`, false);
+    }
+    throw error;
+  }
+}
+
 function parseReportJson(text) {
   const clean = String(text || "").replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/i, "").trim();
   return JSON.parse(clean);
@@ -566,6 +667,177 @@ function reportToMarkdown(report) {
   return lines.filter((line, index) => line !== "" || lines[index - 1] !== "").join("\n");
 }
 
+function renderList(items = []) {
+  return items.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+}
+
+function renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUrl }) {
+  const sections = (report.sections || [])
+    .map(
+      (section) => `
+        <section class="report-section">
+          <h2>${escapeHtml(section.heading)}</h2>
+          <ul>${renderList(section.bullets)}</ul>
+        </section>
+      `,
+    )
+    .join("");
+
+  const sourceName = summary?.source || summary?.filename || "四季蝉复盘数据";
+  const generatedAt = new Date().toLocaleString("zh-CN", { hour12: false });
+
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${escapeHtml(report.title || "四季蝉AI复盘报告")}</title>
+  <style>
+    :root { --blue:#2a4bff; --navy:#1f3f95; --ink:#172033; --muted:#63708a; --line:#dbe4ff; --warm:#ff7a2f; --soft:#f5f7ff; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:"Segoe UI","Microsoft YaHei",sans-serif; color:var(--ink); background:linear-gradient(135deg,#f8fbff,#eef2ff 48%,#fff7f0); }
+    .page { width:min(1120px, calc(100% - 32px)); margin:0 auto; padding:32px 0 46px; }
+    .hero { position:relative; overflow:hidden; border:1px solid var(--line); border-radius:22px; padding:34px; background:linear-gradient(135deg,rgba(255,255,255,.96),rgba(239,244,255,.92)); box-shadow:0 24px 60px rgba(31,63,149,.12); }
+    .hero:after { content:""; position:absolute; right:-120px; top:-160px; width:360px; height:360px; border-radius:50%; background:radial-gradient(circle,rgba(42,75,255,.18),transparent 68%); }
+    .kicker { display:inline-flex; align-items:center; gap:8px; padding:8px 14px; border:1px solid #9eb7ff; color:var(--blue); background:#fff; border-radius:999px; font-weight:800; }
+    h1 { max-width:850px; margin:18px 0 14px; color:var(--navy); font-size:44px; line-height:1.12; letter-spacing:0; }
+    .summary { max-width:860px; color:#3f4b62; font-size:18px; line-height:1.8; }
+    .meta { display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; color:var(--muted); }
+    .meta span { padding:8px 12px; border-radius:999px; background:#fff; border:1px solid var(--line); }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:22px; }
+    .card, .report-section { border:1px solid var(--line); border-radius:18px; background:rgba(255,255,255,.94); box-shadow:0 14px 34px rgba(24,52,126,.07); }
+    .card { padding:22px; }
+    .card h2, .report-section h2 { margin:0 0 12px; color:var(--navy); font-size:24px; }
+    ul { margin:0; padding-left:22px; line-height:1.75; }
+    li + li { margin-top:7px; }
+    .report-section { margin-top:18px; padding:24px; }
+    .actions { display:grid; grid-template-columns:1fr 260px; gap:18px; align-items:center; margin-top:22px; padding:22px; border-radius:18px; border:1px solid var(--line); background:#fff; }
+    .buttons { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }
+    a.button { display:inline-flex; align-items:center; justify-content:center; min-height:40px; padding:0 16px; border-radius:10px; text-decoration:none; color:#fff; background:var(--blue); font-weight:800; }
+    a.button.secondary { color:var(--navy); background:#fff; border:1px solid var(--line); }
+    .qr { width:220px; height:220px; padding:12px; border-radius:16px; border:1px solid var(--line); background:#fff; justify-self:end; }
+    .markdown { white-space:pre-wrap; display:none; }
+    @media (max-width:760px){ h1{font-size:32px}.grid,.actions{grid-template-columns:1fr}.qr{justify-self:start;width:180px;height:180px}.hero{padding:24px} }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div class="kicker">四季蝉 AI DATA REVIEW</div>
+      <h1>${escapeHtml(report.title || "四季蝉AI复盘报告")}</h1>
+      <p class="summary">${escapeHtml(report.executiveSummary || "")}</p>
+      <div class="meta"><span>数据来源：${escapeHtml(sourceName)}</span><span>生成时间：${escapeHtml(generatedAt)}</span></div>
+    </section>
+    <section class="grid">
+      <div class="card"><h2>核心亮点</h2><ul>${renderList(report.highlights)}</ul></div>
+      <div class="card"><h2>风险与短板</h2><ul>${renderList(report.risks)}</ul></div>
+    </section>
+    ${sections}
+    <section class="report-section"><h2>下一步动作</h2><ul>${renderList(report.nextActions)}</ul></section>
+    <section class="actions">
+      <div>
+        <h2>扫码查看与导出</h2>
+        <p>此页面可直接分享给客户查看，也可下载SVG长图用于汇报材料。</p>
+        <div class="buttons">
+          <a class="button" href="${escapeHtml(svgUrl)}" download>下载SVG长图</a>
+          <a class="button secondary" href="${escapeHtml(qrSvgUrl)}" download>下载二维码</a>
+          <a class="button secondary" href="${escapeHtml(shareUrl)}">刷新报告页</a>
+        </div>
+      </div>
+      <img class="qr" src="${escapeHtml(qrSvgUrl)}" alt="报告二维码" />
+    </section>
+    <pre class="markdown">${escapeHtml(markdown)}</pre>
+  </main>
+</body>
+</html>`;
+}
+
+function svgText(lines, x, y, options = {}) {
+  const size = options.size || 28;
+  const fill = options.fill || "#172033";
+  const weight = options.weight || 500;
+  const lineHeight = options.lineHeight || Math.round(size * 1.55);
+  return lines
+    .map((line, index) => `<text x="${x}" y="${y + index * lineHeight}" font-size="${size}" font-weight="${weight}" fill="${fill}">${escapeXml(line)}</text>`)
+    .join("");
+}
+
+function renderReportSvg({ report, summary, shareUrl }) {
+  const width = 1200;
+  let y = 92;
+  const parts = [];
+  const addBlock = (title, items) => {
+    parts.push(`<rect x="60" y="${y - 38}" width="1080" height="${Math.max(120, 74 + items.length * 54)}" rx="22" fill="#ffffff" stroke="#dbe4ff"/>`);
+    parts.push(svgText([title], 88, y, { size: 30, weight: 900, fill: "#1f3f95" }));
+    y += 52;
+    for (const item of items) {
+      const wrapped = wrapText(item, 46);
+      parts.push(`<circle cx="96" cy="${y - 10}" r="5" fill="#ff7a2f"/>`);
+      parts.push(svgText(wrapped, 114, y, { size: 23, fill: "#273349", lineHeight: 34 }));
+      y += wrapped.length * 34 + 16;
+    }
+    y += 32;
+  };
+
+  const titleLines = wrapText(report.title || "四季蝉AI复盘报告", 18);
+  const summaryLines = wrapText(report.executiveSummary || "", 38);
+  parts.push(`<rect x="0" y="0" width="${width}" height="100%" fill="#f5f7ff"/>`);
+  parts.push(`<rect x="36" y="36" width="1128" height="320" rx="28" fill="url(#hero)" stroke="#cfdcff"/>`);
+  parts.push(`<text x="76" y="${y}" font-size="24" font-weight="900" fill="#2a4bff">四季蝉 AI DATA REVIEW</text>`);
+  y += 62;
+  parts.push(svgText(titleLines, 76, y, { size: 52, weight: 900, fill: "#1f3f95", lineHeight: 62 }));
+  y += titleLines.length * 62 + 22;
+  parts.push(svgText(summaryLines.slice(0, 4), 76, y, { size: 25, fill: "#3f4b62", lineHeight: 40 }));
+  y = 430;
+
+  addBlock("核心亮点", report.highlights || []);
+  addBlock("风险与短板", report.risks || []);
+  for (const section of report.sections || []) addBlock(section.heading, section.bullets || []);
+  addBlock("下一步动作", report.nextActions || []);
+
+  parts.push(`<rect x="60" y="${y - 30}" width="1080" height="130" rx="22" fill="#1f3f95"/>`);
+  parts.push(svgText(["扫码查看完整网页报告", shareUrl], 88, y + 24, { size: 25, weight: 800, fill: "#ffffff", lineHeight: 38 }));
+  y += 150;
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${y}" viewBox="0 0 ${width} ${y}">
+  <defs>
+    <linearGradient id="hero" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="55%" stop-color="#eef2ff"/>
+      <stop offset="100%" stop-color="#fff7f0"/>
+    </linearGradient>
+  </defs>
+  ${parts.join("\n")}
+</svg>`;
+}
+
+async function persistReportArtifact({ report, markdown, summary }) {
+  ensureServerDir();
+  fs.mkdirSync(reportsDir, { recursive: true });
+  const reportId = `${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${crypto.randomBytes(8).toString("hex")}`;
+  const reportDir = path.join(reportsDir, reportId);
+  fs.mkdirSync(reportDir, { recursive: true });
+
+  const shareUrl = `${publicReportBaseUrl}/reports/${reportId}/`;
+  const svgUrl = `${shareUrl}report.svg`;
+  const qrSvgUrl = `${shareUrl}qr.svg`;
+  const qrSvg = await QRCode.toString(shareUrl, {
+    type: "svg",
+    errorCorrectionLevel: "M",
+    margin: 1,
+    color: { dark: "#1f3f95", light: "#ffffff" },
+  });
+  const reportSvg = renderReportSvg({ report, summary, shareUrl });
+  const html = renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUrl });
+
+  fs.writeFileSync(path.join(reportDir, "report.json"), JSON.stringify({ report, markdown, summary, shareUrl, svgUrl, qrSvgUrl }, null, 2), "utf8");
+  fs.writeFileSync(path.join(reportDir, "index.html"), html, "utf8");
+  fs.writeFileSync(path.join(reportDir, "report.svg"), reportSvg, "utf8");
+  fs.writeFileSync(path.join(reportDir, "qr.svg"), qrSvg, "utf8");
+
+  return { reportId, shareUrl, svgUrl, qrSvgUrl };
+}
+
 async function generateReportFromSummary(summary) {
   const config = loadConfig();
   if (!config.apiKey || !config.model) {
@@ -575,19 +847,11 @@ async function generateReportFromSummary(summary) {
   }
 
   const prompt = buildPrompt(summary);
-  let reportText;
-  try {
-    reportText = await callOpenAI(config, prompt, true);
-  } catch (error) {
-    if (error.status === 400) {
-      reportText = await callOpenAI(config, `${prompt}\n请按JSON对象返回，字段包含title、executiveSummary、highlights、risks、sections、nextActions。`, false);
-    } else {
-      throw error;
-    }
-  }
-
+  const reportText = await callConfiguredAI(config, prompt);
   const report = parseReportJson(reportText);
-  return { report, markdown: reportToMarkdown(report) };
+  const markdown = reportToMarkdown(report);
+  const artifact = await persistReportArtifact({ report, markdown, summary });
+  return { report, markdown, ...artifact };
 }
 
 async function ensureSijichanRepo() {
@@ -809,6 +1073,7 @@ async function handleSaveConfig(req, res) {
     apiKey: body.apiKey ? String(body.apiKey).trim() : current.apiKey,
     baseUrl: normalizeBaseUrl(body.baseUrl || current.baseUrl),
     model: String(body.model || current.model || "gpt-5.2").trim(),
+    protocol: String(body.protocol || current.protocol || "responses").trim(),
     updatedAt: new Date().toISOString(),
   };
 
@@ -840,7 +1105,9 @@ async function handleTestConfig(req, res) {
     return;
   }
 
-  const output = await callOpenAI(config, "请只回复“连接成功”。", false);
+  const output = (config.protocol || "").includes("chat")
+    ? await callChatCompletions(config, "请只回复JSON：{\"message\":\"连接成功\"}")
+    : await callOpenAI(config, "请只回复“连接成功”。", false);
   sendJson(res, 200, { ok: true, message: output || "连接成功" });
 }
 
@@ -857,12 +1124,16 @@ async function handleReviewReport(req, res) {
     return;
   }
 
-  const { report, markdown } = await generateReportFromSummary(summary);
+  const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl } = await generateReportFromSummary(summary);
   sendJson(res, 200, {
     ok: true,
     summary,
     report,
     markdown,
+    reportId,
+    shareUrl,
+    svgUrl,
+    qrSvgUrl,
   });
 }
 
@@ -881,8 +1152,8 @@ async function handleSijichanReviewReport(req, res) {
       sendJson(res, 422, { error: "接口已返回数据包，但没有可用于复盘的明细数据。", summary });
       return;
     }
-    const { report, markdown } = await generateReportFromSummary(summary);
-    sendJson(res, 200, { ok: true, summary, report, markdown });
+    const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl } = await generateReportFromSummary(summary);
+    sendJson(res, 200, { ok: true, summary, report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl });
   } finally {
     fs.rmSync(outDir, { recursive: true, force: true });
   }
@@ -890,6 +1161,30 @@ async function handleSijichanReviewReport(req, res) {
 
 function serveStatic(req, res) {
   const url = new URL(req.url, "http://localhost");
+  if (url.pathname.startsWith("/reports/")) {
+    const decodedReportPath = decodeURIComponent(url.pathname.replace(/^\/reports\/?/, ""));
+    const safeReportPath = path.normalize(decodedReportPath).replace(/^([/\\])+/, "");
+    let reportPath = path.resolve(reportsDir, safeReportPath);
+    if (reportPath !== reportsDir && !reportPath.startsWith(reportsDir + path.sep)) {
+      res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("Forbidden");
+      return;
+    }
+    if (fs.existsSync(reportPath) && fs.statSync(reportPath).isDirectory()) {
+      reportPath = path.join(reportPath, "index.html");
+    }
+    fs.readFile(reportPath, (err, data) => {
+      if (err) {
+        res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end("Report not found");
+        return;
+      }
+      res.writeHead(200, { "Content-Type": mime[path.extname(reportPath).toLowerCase()] || "application/octet-stream" });
+      res.end(data);
+    });
+    return;
+  }
+
   const decoded = decodeURIComponent(url.pathname);
   const safe = path.normalize(decoded).replace(/^([/\\])+/, "");
   let filePath = path.resolve(root, safe || "index.html");

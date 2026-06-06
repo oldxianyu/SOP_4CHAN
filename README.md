@@ -9,8 +9,8 @@
 - 激励玩法：四季蝉激励类型说明。
 - 选品思路：重点品分层和选品来源。
 - 6月营销推荐：品种营销建议页。
-- AI复盘报告：上传四季蝉复盘数据标准模板 `.xlsx`，或通过 `oldxianyu/sijichan-shuju` 接口导入数据，生成AI复盘报告并支持复制。
-- AI配置：管理员配置 OpenAI API Key、Base URL 和模型。
+- AI复盘报告：上传四季蝉复盘数据标准模板 `.xlsx`，或通过 `oldxianyu/sijichan-shuju` 接口导入数据，生成AI复盘报告并支持复制、分享、SVG导出和二维码查看。
+- AI配置：管理员配置 AI API Key、Base URL、模型和调用协议。
 
 ## 本地运行
 
@@ -31,8 +31,8 @@ http://localhost:8765/
 
 1. 输入管理密码，首次保存会创建该管理密码。
 2. 输入 OpenAI API Key。
-3. 保持默认 Base URL `https://api.openai.com/v1`，或填写兼容接口地址。
-4. 填写账号可用模型，例如 `gpt-5.2`。
+3. DeepSeek 推荐 Base URL `https://api.deepseek.com`。
+4. DeepSeek 推荐模型 `deepseek-v4-flash`，调用协议选择 `Chat Completions`。
 5. 点击“测试连接”，确认可用后保存。
 
 配置会保存到服务器本地 `.server/ai-config.json`，该目录已加入 `.gitignore`，不会提交到 GitHub。
@@ -45,6 +45,27 @@ AI复盘报告支持两种来源：
 2. sijichan-shuju接口导入：使用 `oldxianyu/sijichan-shuju` 仓库中的 `sijichan_data_export.js`，临时拉取标准 `dataset/` 数据包后生成报告。
 
 接口导入时，四季蝉账号、密码或Token只会传给服务器用于本次导出，不会写入GitHub。临时导出的数据包在报告生成后会删除。
+
+## 分享报告
+
+AI复盘成功后，系统会在 `.server/reports/{reportId}/` 生成：
+
+- `index.html`：独立数据分析网页。
+- `report.json`：结构化报告数据。
+- `report.svg`：整份报告SVG长图。
+- `qr.svg`：扫码查看二维码。
+
+服务器部署时可设置：
+
+```bash
+PUBLIC_REPORT_BASE_URL=http://134.185.125.3:8765
+```
+
+二维码会指向：
+
+```text
+http://134.185.125.3:8765/reports/{reportId}/
+```
 
 ## 服务器运行
 

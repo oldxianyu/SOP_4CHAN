@@ -857,7 +857,7 @@
         );
       }
 
-      function ReportView({ report, markdown }) {
+      function ReportView({ report, markdown, artifact }) {
         if (!report) return null;
         const sections = report.sections || [];
         return h(
@@ -879,6 +879,30 @@
           },
           h(Title, { level: 2, className: "report-title" }, report.title || "四季蝉AI复盘报告"),
           h(Paragraph, null, report.executiveSummary || "暂无摘要。"),
+          artifact?.shareUrl
+            ? h(
+                Alert,
+                {
+                  type: "success",
+                  showIcon: true,
+                  message: "分享报告已生成",
+                  description: "可打开独立网页、下载SVG长图，或下载二维码扫码查看。",
+                  action: h(
+                    Space,
+                    { wrap: true },
+                    h(Button, { href: artifact.shareUrl, target: "_blank", type: "primary" }, "打开分享网页"),
+                    h(Button, { href: artifact.svgUrl, target: "_blank", download: true }, "下载SVG图片"),
+                    h(Button, { href: artifact.qrSvgUrl, target: "_blank", download: true }, "下载二维码"),
+                    h(Button, {
+                      onClick: async () => {
+                        await copyText(artifact.shareUrl);
+                        message.success("分享链接已复制");
+                      },
+                    }, "复制分享链接"),
+                  ),
+                },
+              )
+            : null,
           h(
             Row,
             { gutter: [16, 16] },
@@ -930,6 +954,7 @@
         const [summary, setSummary] = React.useState(null);
         const [report, setReport] = React.useState(null);
         const [markdown, setMarkdown] = React.useState("");
+        const [artifact, setArtifact] = React.useState(null);
 
         const loadStatus = React.useCallback(async () => {
           const response = await fetch("/api/ai-config/status");
@@ -945,6 +970,7 @@
           setReport(null);
           setMarkdown("");
           setSummary(null);
+          setArtifact(null);
         };
 
         const generateReport = async () => {
@@ -960,6 +986,7 @@
           setError("");
           setReport(null);
           setMarkdown("");
+          setArtifact(null);
           try {
             const formData = new FormData();
             formData.append("file", file);
@@ -972,6 +999,7 @@
             setSummary(data.summary);
             setReport(data.report);
             setMarkdown(data.markdown || "");
+            setArtifact({ reportId: data.reportId, shareUrl: data.shareUrl, svgUrl: data.svgUrl, qrSvgUrl: data.qrSvgUrl });
             message.success("AI复盘报告已生成");
           } catch (err) {
             setError(err.message || "复盘报告生成失败。");
@@ -1002,6 +1030,7 @@
             setSummary(data.summary);
             setReport(data.report);
             setMarkdown(data.markdown || "");
+            setArtifact({ reportId: data.reportId, shareUrl: data.shareUrl, svgUrl: data.svgUrl, qrSvgUrl: data.qrSvgUrl });
             message.success("接口数据复盘报告已生成");
           } catch (err) {
             setError(err.message || "接口数据导入失败。");
@@ -1152,7 +1181,7 @@
               }),
             ),
           ),
-          h(ReportView, { report, markdown }),
+          h(ReportView, { report, markdown, artifact }),
         );
       }
 
@@ -1167,8 +1196,9 @@
           const data = await response.json();
           setStatus(data);
           form.setFieldsValue({
-            baseUrl: data.baseUrl || "https://api.openai.com/v1",
-            model: data.model || "gpt-5.2",
+            baseUrl: data.baseUrl || "https://api.deepseek.com",
+            model: data.model || "deepseek-v4-flash",
+            protocol: data.protocol || "chat_completions",
           });
         }, [form]);
 
@@ -1225,12 +1255,12 @@
               { bordered: false, className: "ai-card" },
               h(Tag, { color: "blue", className: "hero-platform-tag" }, "AI配置"),
               h(Title, { level: 2, className: "june-title" }, "配置AI接口和模型"),
-              h(Paragraph, null, "管理员可在这里配置OpenAI API Key、接口地址和模型名称。保存后，AI复盘报告页面会自动使用该配置。"),
+              h(Paragraph, null, "管理员可在这里配置AI API Key、接口地址、模型名称和调用协议。保存后，AI复盘报告页面会自动使用该配置。"),
               h(Alert, {
                 type: status?.configured ? "success" : "warning",
                 showIcon: true,
                 message: status?.configured ? "AI接口已配置" : "尚未完成AI接口配置",
-                description: status?.configured ? `当前模型：${status.model}；接口：${status.baseUrl}` : "首次保存时，输入的管理密码会成为后续管理密码。",
+                description: status?.configured ? `当前模型：${status.model}；接口：${status.baseUrl}；协议：${status.protocol}` : "首次保存时，输入的管理密码会成为后续管理密码。",
               }),
               h(Divider, null),
               h(
@@ -1243,18 +1273,28 @@
                 ),
                 h(
                   Form.Item,
-                  { label: "API Key", name: "apiKey" },
-                  h(Input.Password, { placeholder: status?.hasApiKey ? "已保存，留空则继续沿用" : "请输入OpenAI API Key" }),
+                  { label: "AI API Key", name: "apiKey" },
+                  h(Input.Password, { placeholder: status?.hasApiKey ? "已保存，留空则继续沿用" : "请输入 DeepSeek 或 OpenAI-compatible API Key" }),
                 ),
                 h(
                   Form.Item,
                   { label: "Base URL", name: "baseUrl", rules: [{ required: true, message: "请输入Base URL" }] },
-                  h(Input, { placeholder: "https://api.openai.com/v1" }),
+                  h(Input, { placeholder: "https://api.deepseek.com" }),
                 ),
                 h(
                   Form.Item,
                   { label: "模型名称", name: "model", rules: [{ required: true, message: "请输入模型名称" }] },
-                  h(Input, { placeholder: "gpt-5.2" }),
+                  h(Input, { placeholder: "deepseek-v4-flash" }),
+                ),
+                h(
+                  Form.Item,
+                  { label: "调用协议", name: "protocol", rules: [{ required: true, message: "请选择调用协议" }] },
+                  h(
+                    Radio.Group,
+                    { optionType: "button", buttonStyle: "solid" },
+                    h(Radio.Button, { value: "chat_completions" }, "Chat Completions"),
+                    h(Radio.Button, { value: "responses" }, "OpenAI Responses"),
+                  ),
                 ),
                 h(
                   Form.Item,
@@ -1275,8 +1315,8 @@
               { bordered: false, className: "ai-card" },
               h(Title, { level: 4 }, "配置说明"),
               h(Paragraph, null, "API Key不会显示在页面上，也不会提交到GitHub。服务器只返回“是否已配置”的状态。"),
-              h(Paragraph, { className: "config-mask" }, "默认接口：https://api.openai.com/v1"),
-              h(Paragraph, { className: "config-mask" }, "默认模型：gpt-5.2，可按账号可用模型调整。"),
+              h(Paragraph, { className: "config-mask" }, "DeepSeek推荐接口：https://api.deepseek.com"),
+              h(Paragraph, { className: "config-mask" }, "DeepSeek推荐模型：deepseek-v4-flash，调用协议选择 Chat Completions。"),
               h(Alert, {
                 type: "info",
                 showIcon: true,
