@@ -1663,6 +1663,8 @@
         const [report, setReport] = React.useState(null);
         const [markdown, setMarkdown] = React.useState("");
         const [artifact, setArtifact] = React.useState(null);
+        const [reviewProgress, setReviewProgress] = React.useState(null);
+        const progressTimersRef = React.useRef([]);
 
         const loadStatus = React.useCallback(async () => {
           const response = await fetch("/api/ai-config/status");
@@ -1673,12 +1675,66 @@
           loadStatus().catch(() => setStatus({ configured: false }));
         }, [loadStatus]);
 
+        React.useEffect(() => () => {
+          progressTimersRef.current.forEach((timer) => clearTimeout(timer));
+          progressTimersRef.current = [];
+        }, []);
+
         const resetReport = () => {
           setError("");
           setReport(null);
           setMarkdown("");
           setSummary(null);
           setArtifact(null);
+          setReviewProgress(null);
+          progressTimersRef.current.forEach((timer) => clearTimeout(timer));
+          progressTimersRef.current = [];
+        };
+
+        const startReviewProgress = (type) => {
+          progressTimersRef.current.forEach((timer) => clearTimeout(timer));
+          const steps =
+            type === "excel"
+              ? [
+                  { title: "校验模板", description: "正在检查Excel文件格式与模板结构。" },
+                  { title: "上传数据", description: "正在安全上传客户复盘数据。" },
+                  { title: "AI分析", description: "正在识别品种增长、奖励闭环和下期建议。" },
+                  { title: "生成报告", description: "正在生成分享网页、SVG长图和二维码。" },
+                ]
+              : [
+                  { title: "校验账号", description: "正在校验四季蝉账号信息。" },
+                  { title: "获取数据", description: "正在获取客户复盘数据。" },
+                  { title: "AI分析", description: "正在识别品种增长、奖励闭环和下期建议。" },
+                  { title: "生成报告", description: "正在生成分享网页、SVG长图和二维码。" },
+                ];
+          setReviewProgress({ steps, current: 0, status: "process", text: steps[0].description });
+          [
+            [700, 1],
+            [2200, 2],
+            [5200, 3],
+          ].forEach(([delay, current]) => {
+            const timer = setTimeout(() => {
+              setReviewProgress((prev) => {
+                if (!prev || prev.status !== "process") return prev;
+                return { ...prev, current, text: prev.steps[current].description };
+              });
+            }, delay);
+            progressTimersRef.current.push(timer);
+          });
+        };
+
+        const finishReviewProgress = (ok, text) => {
+          progressTimersRef.current.forEach((timer) => clearTimeout(timer));
+          progressTimersRef.current = [];
+          setReviewProgress((prev) => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              current: ok ? prev.steps.length - 1 : Math.max(prev.current, 0),
+              status: ok ? "finish" : "error",
+              text: text || (ok ? "复盘报告已生成，可打开分享页或下载长图。" : "生成失败，请检查数据或稍后重试。"),
+            };
+          });
         };
 
         const generateReport = async () => {
@@ -1695,6 +1751,7 @@
           setReport(null);
           setMarkdown("");
           setArtifact(null);
+          startReviewProgress("excel");
           try {
             const formData = new FormData();
             formData.append("file", file);
@@ -1708,9 +1765,11 @@
             setReport(data.report);
             setMarkdown(data.markdown || "");
             setArtifact({ reportId: data.reportId, shareUrl: data.shareUrl, svgUrl: data.svgUrl, qrSvgUrl: data.qrSvgUrl });
+            finishReviewProgress(true);
             message.success("AI复盘报告已生成");
           } catch (err) {
             setError(err.message || "复盘报告生成失败。");
+            finishReviewProgress(false, err.message || "复盘报告生成失败。");
           } finally {
             setLoading(false);
           }
@@ -1724,6 +1783,7 @@
           const values = await sourceForm.validateFields();
           setLoading(true);
           resetReport();
+          startReviewProgress("sijichan");
           try {
             const response = await fetch("/api/sijichan-review-report", {
               method: "POST",
@@ -1739,9 +1799,11 @@
             setReport(data.report);
             setMarkdown(data.markdown || "");
             setArtifact({ reportId: data.reportId, shareUrl: data.shareUrl, svgUrl: data.svgUrl, qrSvgUrl: data.qrSvgUrl });
+            finishReviewProgress(true);
             message.success("接口数据复盘报告已生成");
           } catch (err) {
             setError(err.message || "接口数据导入失败。");
+            finishReviewProgress(false, err.message || "接口数据导入失败。");
           } finally {
             setLoading(false);
           }
@@ -1785,6 +1847,12 @@
                 ? h(
                     React.Fragment,
                     null,
+              h(
+                Space,
+                { style: { marginBottom: 14 }, wrap: true },
+                h(Button, { href: "协议文件/四季蝉复盘数据标准模板.xlsx", download: true }, "下载四季蝉复盘数据模板"),
+                h(Text, { type: "secondary" }, "请先下载模板，按标准页签整理数据后上传。"),
+              ),
               h(
                 Upload.Dragger,
                 {
@@ -1860,6 +1928,25 @@
                     ),
                   ),
               error ? h(Alert, { style: { marginTop: 16 }, type: "error", showIcon: true, message: error }) : null,
+              reviewProgress
+                ? h(
+                    Card,
+                    { size: "small", bordered: false, className: "gate-card", style: { marginTop: 16 } },
+                    h(Steps, {
+                      size: "small",
+                      current: reviewProgress.current,
+                      status: reviewProgress.status,
+                      items: reviewProgress.steps.map((item) => ({ title: item.title, description: item.description })),
+                    }),
+                    h(Alert, {
+                      style: { marginTop: 14 },
+                      type: reviewProgress.status === "error" ? "error" : reviewProgress.status === "finish" ? "success" : "info",
+                      showIcon: true,
+                      message: reviewProgress.status === "finish" ? "处理完成" : reviewProgress.status === "error" ? "处理失败" : "正在处理",
+                      description: reviewProgress.text,
+                    }),
+                  )
+                : null,
               h(SheetStatusTags, { summary }),
               h(DatasetStatusTags, { summary }),
             ),
