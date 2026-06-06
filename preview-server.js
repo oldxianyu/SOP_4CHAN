@@ -215,9 +215,16 @@ function readJsonBody(req, maxBytes = 1024 * 1024) {
 
 function runCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
+    const baseEnv = options.env || process.env;
+    const nodeBinDir = path.dirname(process.execPath);
+    const pathKey = Object.keys(baseEnv).find((key) => key.toLowerCase() === "path") || "PATH";
+    const env = {
+      ...baseEnv,
+      [pathKey]: [nodeBinDir, baseEnv[pathKey] || ""].filter(Boolean).join(path.delimiter),
+    };
     const child = spawn(command, args, {
       cwd: options.cwd || root,
-      env: options.env || process.env,
+      env,
       shell: false,
       windowsHide: true,
     });
@@ -1688,7 +1695,7 @@ async function runSijichanExport(body) {
   }
 
   try {
-    await runCommand("node", args, { cwd: sijichanRepoDir, env, timeoutMs: 180000 });
+    await runCommand(process.execPath, args, { cwd: sijichanRepoDir, env, timeoutMs: 180000 });
     return { outDir, summary: summarizeSijichanDataset(outDir, {
       asOf: body.asOf || "",
       merCode: body.merCode || "",
