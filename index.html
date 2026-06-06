@@ -1826,7 +1826,7 @@
                       type: "info",
                       showIcon: true,
                       message: "数据来源：登录获取",
-                      description: "使用会话 019e990b-bed6-7fa0-9aaf-02058375c7f0 中沉淀的四季蝉接口导出器，临时拉取dataset数据包后直接生成AI复盘报告。",
+                      description: "填写四季蝉账号和密码后，系统会临时获取客户复盘数据并生成AI复盘报告；客户名称和客户编码可用于区分报告归属。",
                     }),
                     h(
                       Form,
@@ -1837,22 +1837,19 @@
                         h(
                           Col,
                           { xs: 24, md: 12 },
-                          h(Form.Item, { label: "四季蝉账号", name: "username" }, h(Input, { placeholder: "使用账号密码时填写" })),
+                          h(Form.Item, { label: "四季蝉账号", name: "username", rules: [{ required: true, message: "请输入四季蝉账号" }] }, h(Input, { placeholder: "请输入四季蝉账号" })),
                         ),
                         h(
                           Col,
                           { xs: 24, md: 12 },
-                          h(Form.Item, { label: "四季蝉密码", name: "password" }, h(Input.Password, { placeholder: "使用账号密码时填写" })),
+                          h(Form.Item, { label: "四季蝉密码", name: "password", rules: [{ required: true, message: "请输入四季蝉密码" }] }, h(Input.Password, { placeholder: "请输入四季蝉密码" })),
                         ),
                       ),
-                      h(Form.Item, { label: "已有Token（可选）", name: "token" }, h(Input.Password, { placeholder: "如果已有Token，可只填Token" })),
                       h(
                         Row,
                         { gutter: [12, 0] },
-                        h(Col, { xs: 24, md: 12 }, h(Form.Item, { label: "统计日期 as-of", name: "asOf" }, h(Input, { placeholder: "如 2026-06-01" }))),
-                        h(Col, { xs: 24, md: 12 }, h(Form.Item, { label: "操作人", name: "operator" }, h(Input, { placeholder: "可选" }))),
-                        h(Col, { xs: 24, md: 12 }, h(Form.Item, { label: "商户编码", name: "merCode" }, h(Input, { placeholder: "可选" }))),
-                        h(Col, { xs: 24, md: 12 }, h(Form.Item, { label: "商户名称", name: "merName" }, h(Input, { placeholder: "可选" }))),
+                        h(Col, { xs: 24, md: 12 }, h(Form.Item, { label: "客户名称（选填）", name: "merName" }, h(Input, { placeholder: "用于报告标题或归属标记" }))),
+                        h(Col, { xs: 24, md: 12 }, h(Form.Item, { label: "客户编码（选填）", name: "merCode" }, h(Input, { placeholder: "用于区分客户数据" }))),
                       ),
                     ),
                     h(
