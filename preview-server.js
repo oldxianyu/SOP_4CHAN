@@ -7,6 +7,8 @@ const { spawn } = require("child_process");
 const Busboy = require("busboy");
 const JSZip = require("jszip");
 const QRCode = require("qrcode");
+const dotenv = require("dotenv");
+const { Pool } = require("pg");
 
 const root = __dirname;
 const host = process.env.HOST || "0.0.0.0";
@@ -14,11 +16,29 @@ const configuredPort = Number(process.env.PORT || 8765);
 const ports = [configuredPort, 8766, 8767, 8768].filter((value, index, list) => value && list.indexOf(value) === index);
 const uploadLimitBytes = Number(process.env.UPLOAD_LIMIT_BYTES || 10 * 1024 * 1024);
 const serverDir = path.join(root, ".server");
+dotenv.config({ path: path.join(serverDir, ".env") });
 const configPath = path.join(serverDir, "ai-config.json");
+const localDataPath = path.join(serverDir, "portal-data.json");
+const sessionSecretPath = path.join(serverDir, "session-secret");
 const sijichanRepoDir = path.join(serverDir, "sijichan-shuju");
 const sijichanRepoUrl = "https://github.com/oldxianyu/sijichan-shuju.git";
 const reportsDir = path.join(serverDir, "reports");
 const publicReportBaseUrl = (process.env.PUBLIC_REPORT_BASE_URL || `http://localhost:${configuredPort}`).replace(/\/+$/, "");
+const supabaseProjectRef = "gqinewwwnfdxwqtnapjl";
+const dbConfig = {
+  connectionString: process.env.DATABASE_URL || "",
+  host: process.env.DB_HOST || `db.${supabaseProjectRef}.supabase.co`,
+  port: Number(process.env.DB_PORT || 5432),
+  database: process.env.DB_NAME || "postgres",
+  user: process.env.DB_USER || "sijichan",
+  password: process.env.DB_PASSWORD || "",
+  ssl: process.env.DB_SSL === "false" ? false : { rejectUnauthorized: false },
+};
+const cookieName = "sop_session";
+const sessionMaxAgeMs = Number(process.env.SESSION_MAX_AGE_MS || 1000 * 60 * 60 * 24 * 7);
+let pool = null;
+let dbReady = false;
+let dbChecked = false;
 
 const mime = {
   ".html": "text/html; charset=utf-8",
@@ -51,6 +71,83 @@ function ensureServerDir() {
 function sendJson(res, status, payload) {
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(payload));
+}
+
+function sendNoContent(res, headers = {}) {
+  res.writeHead(204, headers);
+  res.end();
+}
+
+function parseCookies(req) {
+  const header = req.headers.cookie || "";
+  return Object.fromEntries(
+    header
+      .split(";")
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((part) => {
+        const index = part.indexOf("=");
+        return [decodeURIComponent(part.slice(0, index)), decodeURIComponent(part.slice(index + 1))];
+      }),
+  );
+}
+
+function getSessionSecret() {
+  ensureServerDir();
+  if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
+  if (!fs.existsSync(sessionSecretPath)) {
+    fs.writeFileSync(sessionSecretPath, crypto.randomBytes(32).toString("hex"), "utf8");
+  }
+  return fs.readFileSync(sessionSecretPath, "utf8").trim();
+}
+
+function signSession(payload) {
+  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const signature = crypto.createHmac("sha256", getSessionSecret()).update(body).digest("base64url");
+  return `${body}.${signature}`;
+}
+
+function verifySessionToken(token) {
+  if (!token || !token.includes(".")) return null;
+  const [body, signature] = token.split(".");
+  const expected = crypto.createHmac("sha256", getSessionSecret()).update(body).digest("base64url");
+  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+  const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+  if (!payload.exp || payload.exp < Date.now()) return null;
+  return payload;
+}
+
+function setSessionCookie(res, user) {
+  const token = signSession({ userId: user.id, role: user.role, exp: Date.now() + sessionMaxAgeMs });
+  res.setHeader("Set-Cookie", `${cookieName}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(sessionMaxAgeMs / 1000)}`);
+}
+
+function clearSessionCookie(res) {
+  res.setHeader("Set-Cookie", `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+}
+
+function readLocalData() {
+  if (!fs.existsSync(localDataPath)) {
+    return { users: [], customerProfiles: [], aiConfigs: [], customerDatasets: [], reviewReports: [] };
+  }
+  try {
+    return JSON.parse(fs.readFileSync(localDataPath, "utf8"));
+  } catch {
+    return { users: [], customerProfiles: [], aiConfigs: [], customerDatasets: [], reviewReports: [] };
+  }
+}
+
+function writeLocalData(data) {
+  ensureServerDir();
+  fs.writeFileSync(localDataPath, JSON.stringify(data, null, 2), "utf8");
+}
+
+function createId(prefix = "id") {
+  return `${prefix}_${crypto.randomBytes(12).toString("hex")}`;
+}
+
+function jsonClone(value) {
+  return JSON.parse(JSON.stringify(value ?? null));
 }
 
 function escapeHtml(value) {
@@ -144,6 +241,130 @@ function runCommand(command, args, options = {}) {
   });
 }
 
+function shouldUseDatabase() {
+  return Boolean(dbConfig.connectionString || dbConfig.password);
+}
+
+async function getPool() {
+  if (!shouldUseDatabase()) return null;
+  if (!pool) {
+    pool = new Pool(
+      dbConfig.connectionString
+        ? { connectionString: dbConfig.connectionString, ssl: dbConfig.ssl, max: 8 }
+        : {
+            host: dbConfig.host,
+            port: dbConfig.port,
+            database: dbConfig.database,
+            user: dbConfig.user,
+            password: dbConfig.password,
+            ssl: dbConfig.ssl,
+            max: 8,
+          },
+    );
+  }
+  return pool;
+}
+
+async function queryDb(text, params = []) {
+  const activePool = await getPool();
+  if (!activePool) throw new Error("数据库未配置。");
+  await ensureDatabase();
+  return activePool.query(text, params);
+}
+
+async function ensureDatabase() {
+  if (dbReady) return true;
+  if (dbChecked) return dbReady;
+  dbChecked = true;
+  const activePool = await getPool();
+  if (!activePool) return false;
+  try {
+    await activePool.query("create extension if not exists pgcrypto");
+  } catch {
+    // Some Supabase roles may not be allowed to create extensions; fallback schemas use text ids.
+  }
+  try {
+    await activePool.query(`
+      create table if not exists users (
+      id text primary key default gen_random_uuid()::text,
+      name text not null,
+      phone text unique,
+      email text unique,
+      password_hash text not null,
+      role text not null default 'customer',
+      status text not null default 'active',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists customer_profiles (
+      id text primary key default gen_random_uuid()::text,
+      user_id text not null references users(id) on delete cascade,
+      company_name text,
+      contact_name text,
+      contact_phone text,
+      notes text,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      unique(user_id)
+    );
+    create table if not exists ai_configs (
+      id text primary key default gen_random_uuid()::text,
+      base_url text not null,
+      model text not null,
+      protocol text not null,
+      api_key_encrypted text not null,
+      updated_by text references users(id),
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists customer_datasets (
+      id text primary key default gen_random_uuid()::text,
+      user_id text references users(id),
+      source_type text not null,
+      filename text,
+      row_counts_json jsonb,
+      sheet_status_json jsonb,
+      metadata_json jsonb,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists review_reports (
+      id text primary key default gen_random_uuid()::text,
+      user_id text references users(id),
+      customer_profile_id text references customer_profiles(id),
+      source_type text not null,
+      source_name text,
+      summary_json jsonb not null,
+      report_json jsonb not null,
+      markdown text,
+      report_id text unique not null,
+      share_url text,
+      svg_url text,
+      qr_svg_url text,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create index if not exists idx_review_reports_user_created on review_reports(user_id, created_at desc);
+    create index if not exists idx_customer_datasets_user_created on customer_datasets(user_id, created_at desc);
+  `);
+    dbReady = true;
+    return true;
+  } catch (error) {
+    dbChecked = false;
+    throw error;
+  }
+}
+
+async function isDbAvailable() {
+  try {
+    return await ensureDatabase();
+  } catch (error) {
+    console.warn(`Database unavailable, using local fallback: ${error.message}`);
+    dbReady = false;
+    return false;
+  }
+}
+
 function loadConfig() {
   if (!fs.existsSync(configPath)) return {};
   try {
@@ -170,14 +391,203 @@ function verifyPassword(password, stored) {
   return crypto.timingSafeEqual(Buffer.from(actual, "hex"), Buffer.from(expected, "hex"));
 }
 
-function publicConfigStatus(config = loadConfig()) {
+function publicUser(user) {
+  if (!user) return null;
   return {
-    configured: Boolean(config.apiKey && config.model),
-    adminReady: Boolean(config.adminHash),
-    hasApiKey: Boolean(config.apiKey),
-    baseUrl: config.baseUrl || "https://api.openai.com/v1",
-    model: config.model || "gpt-5.2",
-    protocol: config.protocol || (String(config.baseUrl || "").includes("deepseek") ? "chat_completions" : "responses"),
+    id: user.id,
+    name: user.name,
+    phone: user.phone || "",
+    email: user.email || "",
+    role: user.role,
+    status: user.status,
+  };
+}
+
+function normalizeUserRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    phone: row.phone || "",
+    email: row.email || "",
+    password_hash: row.password_hash || row.passwordHash,
+    role: row.role || "customer",
+    status: row.status || "active",
+    created_at: row.created_at || row.createdAt,
+    updated_at: row.updated_at || row.updatedAt,
+  };
+}
+
+async function getUserCount() {
+  if (await isDbAvailable()) {
+    const result = await queryDb("select count(*)::int as count from users");
+    return result.rows[0].count;
+  }
+  return readLocalData().users.length;
+}
+
+async function findUserByLogin(login) {
+  const value = String(login || "").trim();
+  if (!value) return null;
+  if (await isDbAvailable()) {
+    const result = await queryDb("select * from users where lower(coalesce(email,'')) = lower($1) or phone = $1 limit 1", [value]);
+    return normalizeUserRow(result.rows[0]);
+  }
+  const data = readLocalData();
+  return normalizeUserRow(data.users.find((user) => String(user.email || "").toLowerCase() === value.toLowerCase() || user.phone === value));
+}
+
+async function getUserById(id) {
+  if (!id) return null;
+  if (await isDbAvailable()) {
+    const result = await queryDb("select * from users where id = $1 limit 1", [id]);
+    return normalizeUserRow(result.rows[0]);
+  }
+  return normalizeUserRow(readLocalData().users.find((user) => user.id === id));
+}
+
+async function createUser({ name, phone, email, password, companyName }) {
+  const firstUser = (await getUserCount()) === 0;
+  const role = firstUser ? "admin" : "customer";
+  const passwordHash = hashPassword(password);
+  if (await isDbAvailable()) {
+    const result = await queryDb(
+      "insert into users(name, phone, email, password_hash, role, status) values($1,$2,$3,$4,$5,'active') returning *",
+      [name, phone || null, email || null, passwordHash, role],
+    );
+    const user = normalizeUserRow(result.rows[0]);
+    await queryDb(
+      "insert into customer_profiles(user_id, company_name, contact_name, contact_phone) values($1,$2,$3,$4) on conflict(user_id) do update set company_name=excluded.company_name, contact_name=excluded.contact_name, contact_phone=excluded.contact_phone, updated_at=now()",
+      [user.id, companyName || "", name || "", phone || ""],
+    );
+    return user;
+  }
+
+  const data = readLocalData();
+  const user = {
+    id: createId("usr"),
+    name,
+    phone: phone || "",
+    email: email || "",
+    passwordHash,
+    role,
+    status: "active",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  data.users.push(user);
+  data.customerProfiles.push({
+    id: createId("cpr"),
+    userId: user.id,
+    companyName: companyName || "",
+    contactName: name || "",
+    contactPhone: phone || "",
+    notes: "",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+  writeLocalData(data);
+  return normalizeUserRow(user);
+}
+
+async function getCustomerProfile(userId) {
+  if (await isDbAvailable()) {
+    const result = await queryDb("select * from customer_profiles where user_id = $1 limit 1", [userId]);
+    const row = result.rows[0];
+    return row
+      ? { id: row.id, userId: row.user_id, companyName: row.company_name || "", contactName: row.contact_name || "", contactPhone: row.contact_phone || "", notes: row.notes || "" }
+      : null;
+  }
+  const row = readLocalData().customerProfiles.find((profile) => profile.userId === userId);
+  return row || null;
+}
+
+async function saveCustomerProfile(userId, body) {
+  const next = {
+    companyName: String(body.companyName || "").trim(),
+    contactName: String(body.contactName || "").trim(),
+    contactPhone: String(body.contactPhone || "").trim(),
+    notes: String(body.notes || "").trim(),
+  };
+  if (await isDbAvailable()) {
+    const result = await queryDb(
+      `insert into customer_profiles(user_id, company_name, contact_name, contact_phone, notes)
+       values($1,$2,$3,$4,$5)
+       on conflict(user_id) do update set company_name=excluded.company_name, contact_name=excluded.contact_name, contact_phone=excluded.contact_phone, notes=excluded.notes, updated_at=now()
+       returning *`,
+      [userId, next.companyName, next.contactName, next.contactPhone, next.notes],
+    );
+    const row = result.rows[0];
+    return { id: row.id, userId: row.user_id, companyName: row.company_name || "", contactName: row.contact_name || "", contactPhone: row.contact_phone || "", notes: row.notes || "" };
+  }
+  const data = readLocalData();
+  let row = data.customerProfiles.find((profile) => profile.userId === userId);
+  if (!row) {
+    row = { id: createId("cpr"), userId, createdAt: new Date().toISOString() };
+    data.customerProfiles.push(row);
+  }
+  Object.assign(row, next, { updatedAt: new Date().toISOString() });
+  writeLocalData(data);
+  return row;
+}
+
+function encryptSecret(value) {
+  const secret = crypto.createHash("sha256").update(getSessionSecret()).digest();
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", secret, iv);
+  const encrypted = Buffer.concat([cipher.update(String(value), "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `${iv.toString("base64url")}.${tag.toString("base64url")}.${encrypted.toString("base64url")}`;
+}
+
+function decryptSecret(value) {
+  if (!value || !String(value).includes(".")) return "";
+  const [ivText, tagText, encryptedText] = String(value).split(".");
+  const secret = crypto.createHash("sha256").update(getSessionSecret()).digest();
+  const decipher = crypto.createDecipheriv("aes-256-gcm", secret, Buffer.from(ivText, "base64url"));
+  decipher.setAuthTag(Buffer.from(tagText, "base64url"));
+  return Buffer.concat([decipher.update(Buffer.from(encryptedText, "base64url")), decipher.final()]).toString("utf8");
+}
+
+async function loadAiConfig() {
+  if (await isDbAvailable()) {
+    const result = await queryDb("select * from ai_configs order by updated_at desc limit 1");
+    const row = result.rows[0];
+    if (row) {
+      return {
+        apiKey: decryptSecret(row.api_key_encrypted),
+        baseUrl: row.base_url,
+        model: row.model,
+        protocol: row.protocol,
+        updatedAt: row.updated_at,
+      };
+    }
+  }
+  return loadConfig();
+}
+
+async function saveAiConfig(next, userId) {
+  if (await isDbAvailable()) {
+    await queryDb(
+      "insert into ai_configs(base_url, model, protocol, api_key_encrypted, updated_by) values($1,$2,$3,$4,$5)",
+      [next.baseUrl, next.model, next.protocol, encryptSecret(next.apiKey), userId || null],
+    );
+    return next;
+  }
+  saveConfig(next);
+  return next;
+}
+
+async function publicConfigStatus(config = null) {
+  const activeConfig = config || (await loadAiConfig());
+  return {
+    configured: Boolean(activeConfig.apiKey && activeConfig.model),
+    adminReady: true,
+    hasApiKey: Boolean(activeConfig.apiKey),
+    baseUrl: activeConfig.baseUrl || "https://api.openai.com/v1",
+    model: activeConfig.model || "gpt-5.2",
+    protocol: activeConfig.protocol || (String(activeConfig.baseUrl || "").includes("deepseek") ? "chat_completions" : "responses"),
+    database: (await isDbAvailable()) ? "connected" : "local-fallback",
   };
 }
 
@@ -188,6 +598,157 @@ function normalizeBaseUrl(value) {
 function assertAdmin(config, adminPassword) {
   if (!config.adminHash) return true;
   return verifyPassword(adminPassword, config.adminHash);
+}
+
+async function getCurrentUser(req) {
+  const token = parseCookies(req)[cookieName];
+  const payload = verifySessionToken(token);
+  if (!payload?.userId) return null;
+  const user = await getUserById(payload.userId);
+  if (!user || user.status !== "active") return null;
+  return user;
+}
+
+async function requireUser(req, res) {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    sendJson(res, 401, { error: "请先登录后再使用该功能。" });
+    return null;
+  }
+  return user;
+}
+
+async function requireAdmin(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) return null;
+  if (user.role !== "admin") {
+    sendJson(res, 403, { error: "仅管理员可以执行该操作。" });
+    return null;
+  }
+  return user;
+}
+
+async function saveDatasetRecord(userId, sourceType, summary, filename = "") {
+  const rowCounts = summary.rowCounts || {};
+  const sheetStatus = summary.sheetStatus || summary.datasetFiles || [];
+  const metadata = {
+    source: summary.source || "",
+    generatedAt: summary.generatedAt || new Date().toISOString(),
+    sessionId: summary.sessionId || "",
+  };
+  if (await isDbAvailable()) {
+    const result = await queryDb(
+      `insert into customer_datasets(user_id, source_type, filename, row_counts_json, sheet_status_json, metadata_json)
+       values($1,$2,$3,$4,$5,$6) returning id`,
+      [userId, sourceType, filename, jsonClone(rowCounts), jsonClone(sheetStatus), jsonClone(metadata)],
+    );
+    return result.rows[0].id;
+  }
+  const data = readLocalData();
+  const record = {
+    id: createId("dat"),
+    userId,
+    sourceType,
+    filename,
+    rowCountsJson: rowCounts,
+    sheetStatusJson: sheetStatus,
+    metadataJson: metadata,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  data.customerDatasets.push(record);
+  writeLocalData(data);
+  return record.id;
+}
+
+async function saveReviewReportRecord(userId, sourceType, sourceName, summary, generated) {
+  const profile = await getCustomerProfile(userId);
+  if (await isDbAvailable()) {
+    const result = await queryDb(
+      `insert into review_reports(user_id, customer_profile_id, source_type, source_name, summary_json, report_json, markdown, report_id, share_url, svg_url, qr_svg_url)
+       values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning id`,
+      [
+        userId,
+        profile?.id || null,
+        sourceType,
+        sourceName,
+        jsonClone(summary),
+        jsonClone(generated.report),
+        generated.markdown || "",
+        generated.reportId,
+        generated.shareUrl,
+        generated.svgUrl,
+        generated.qrSvgUrl,
+      ],
+    );
+    return result.rows[0].id;
+  }
+  const data = readLocalData();
+  const record = {
+    id: createId("rep"),
+    userId,
+    customerProfileId: profile?.id || "",
+    sourceType,
+    sourceName,
+    summaryJson: summary,
+    reportJson: generated.report,
+    markdown: generated.markdown || "",
+    reportId: generated.reportId,
+    shareUrl: generated.shareUrl,
+    svgUrl: generated.svgUrl,
+    qrSvgUrl: generated.qrSvgUrl,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  data.reviewReports.push(record);
+  writeLocalData(data);
+  return record.id;
+}
+
+function normalizeReviewReportRow(row) {
+  return {
+    id: row.id,
+    userId: row.user_id || row.userId,
+    sourceType: row.source_type || row.sourceType,
+    sourceName: row.source_name || row.sourceName || "",
+    reportTitle: row.report_json?.title || row.reportJson?.title || "四季蝉AI复盘报告",
+    report: row.report_json || row.reportJson || null,
+    summary: row.summary_json || row.summaryJson || null,
+    markdown: row.markdown || "",
+    reportId: row.report_id || row.reportId,
+    shareUrl: row.share_url || row.shareUrl,
+    svgUrl: row.svg_url || row.svgUrl,
+    qrSvgUrl: row.qr_svg_url || row.qrSvgUrl,
+    createdAt: row.created_at || row.createdAt,
+  };
+}
+
+async function listReviewReports(user) {
+  if (await isDbAvailable()) {
+    const result =
+      user.role === "admin"
+        ? await queryDb("select * from review_reports order by created_at desc limit 100")
+        : await queryDb("select * from review_reports where user_id = $1 order by created_at desc limit 100", [user.id]);
+    return result.rows.map(normalizeReviewReportRow);
+  }
+  const data = readLocalData();
+  return data.reviewReports
+    .filter((report) => user.role === "admin" || report.userId === user.id)
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+    .slice(0, 100)
+    .map(normalizeReviewReportRow);
+}
+
+async function getReviewReport(user, id) {
+  if (await isDbAvailable()) {
+    const result =
+      user.role === "admin"
+        ? await queryDb("select * from review_reports where id = $1 limit 1", [id])
+        : await queryDb("select * from review_reports where id = $1 and user_id = $2 limit 1", [id, user.id]);
+    return normalizeReviewReportRow(result.rows[0]);
+  }
+  const report = readLocalData().reviewReports.find((item) => item.id === id && (user.role === "admin" || item.userId === user.id));
+  return report ? normalizeReviewReportRow(report) : null;
 }
 
 async function parseMultipartFile(req) {
@@ -839,7 +1400,7 @@ async function persistReportArtifact({ report, markdown, summary }) {
 }
 
 async function generateReportFromSummary(summary) {
-  const config = loadConfig();
+  const config = await loadAiConfig();
   if (!config.apiKey || !config.model) {
     const error = new Error("AI服务未配置，请先进入AI配置页面。");
     error.statusCode = 400;
@@ -1050,26 +1611,16 @@ async function runSijichanExport(body) {
 }
 
 async function handleConfigStatus(_req, res) {
-  sendJson(res, 200, publicConfigStatus());
+  sendJson(res, 200, await publicConfigStatus());
 }
 
 async function handleSaveConfig(req, res) {
+  const user = await requireAdmin(req, res);
+  if (!user) return;
   const body = await readJsonBody(req);
-  const current = loadConfig();
-  if (!assertAdmin(current, body.adminPassword)) {
-    sendJson(res, 401, { error: "管理密码不正确。" });
-    return;
-  }
-
-  const firstSetup = !current.adminHash;
-  const nextAdminPassword = body.newAdminPassword || (firstSetup ? body.adminPassword : "");
-  if (firstSetup && (!nextAdminPassword || String(nextAdminPassword).length < 6)) {
-    sendJson(res, 400, { error: "首次配置时，管理密码至少需要6位。" });
-    return;
-  }
+  const current = await loadAiConfig();
 
   const next = {
-    adminHash: nextAdminPassword ? hashPassword(nextAdminPassword) : current.adminHash,
     apiKey: body.apiKey ? String(body.apiKey).trim() : current.apiKey,
     baseUrl: normalizeBaseUrl(body.baseUrl || current.baseUrl),
     model: String(body.model || current.model || "gpt-5.2").trim(),
@@ -1082,22 +1633,21 @@ async function handleSaveConfig(req, res) {
     return;
   }
 
-  saveConfig(next);
-  sendJson(res, 200, { ok: true, status: publicConfigStatus(next) });
+  await saveAiConfig(next, user.id);
+  sendJson(res, 200, { ok: true, status: await publicConfigStatus(next) });
 }
 
 async function handleTestConfig(req, res) {
+  const user = await requireAdmin(req, res);
+  if (!user) return;
   const body = await readJsonBody(req);
-  const saved = loadConfig();
-  if (saved.adminHash && !assertAdmin(saved, body.adminPassword)) {
-    sendJson(res, 401, { error: "管理密码不正确。" });
-    return;
-  }
+  const saved = await loadAiConfig();
 
   const config = {
     apiKey: body.apiKey ? String(body.apiKey).trim() : saved.apiKey,
     baseUrl: normalizeBaseUrl(body.baseUrl || saved.baseUrl),
     model: String(body.model || saved.model || "gpt-5.2").trim(),
+    protocol: String(body.protocol || saved.protocol || "responses").trim(),
   };
 
   if (!config.apiKey) {
@@ -1112,6 +1662,8 @@ async function handleTestConfig(req, res) {
 }
 
 async function handleReviewReport(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) return;
   const { buffer, filename } = await parseMultipartFile(req);
   if (!/\.xlsx$/i.test(filename)) {
     sendJson(res, 400, { error: "仅支持上传 .xlsx 文件。" });
@@ -1124,9 +1676,12 @@ async function handleReviewReport(req, res) {
     return;
   }
 
+  await saveDatasetRecord(user.id, "excel", summary, filename);
   const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl } = await generateReportFromSummary(summary);
+  const dbReportId = await saveReviewReportRecord(user.id, "excel", filename, summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl });
   sendJson(res, 200, {
     ok: true,
+    id: dbReportId,
     summary,
     report,
     markdown,
@@ -1138,8 +1693,10 @@ async function handleReviewReport(req, res) {
 }
 
 async function handleSijichanReviewReport(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) return;
   const body = await readJsonBody(req, 1024 * 1024);
-  const config = loadConfig();
+  const config = await loadAiConfig();
   if (!config.apiKey || !config.model) {
     sendJson(res, 400, { error: "AI服务未配置，请先进入AI配置页面。" });
     return;
@@ -1152,11 +1709,95 @@ async function handleSijichanReviewReport(req, res) {
       sendJson(res, 422, { error: "接口已返回数据包，但没有可用于复盘的明细数据。", summary });
       return;
     }
+    await saveDatasetRecord(user.id, "login", summary, summary.source || "登录获取");
     const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl } = await generateReportFromSummary(summary);
-    sendJson(res, 200, { ok: true, summary, report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl });
+    const dbReportId = await saveReviewReportRecord(user.id, "login", "登录获取", summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl });
+    sendJson(res, 200, { ok: true, id: dbReportId, summary, report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl });
   } finally {
     fs.rmSync(outDir, { recursive: true, force: true });
   }
+}
+
+async function handleRegister(req, res) {
+  const body = await readJsonBody(req);
+  const name = String(body.name || "").trim();
+  const companyName = String(body.companyName || "").trim();
+  const phone = String(body.phone || "").trim();
+  const email = String(body.email || "").trim();
+  const password = String(body.password || "");
+  if (!name || !companyName || !password || (!phone && !email)) {
+    sendJson(res, 400, { error: "请填写姓名、公司名称、手机号或邮箱、密码。" });
+    return;
+  }
+  if (password.length < 6) {
+    sendJson(res, 400, { error: "密码至少需要6位。" });
+    return;
+  }
+  if (await findUserByLogin(email || phone)) {
+    sendJson(res, 409, { error: "该手机号或邮箱已注册。" });
+    return;
+  }
+  const user = await createUser({ name, phone, email, password, companyName });
+  setSessionCookie(res, user);
+  sendJson(res, 200, { ok: true, user: publicUser(user), profile: await getCustomerProfile(user.id) });
+}
+
+async function handleLogin(req, res) {
+  const body = await readJsonBody(req);
+  const login = String(body.login || "").trim();
+  const password = String(body.password || "");
+  const user = await findUserByLogin(login);
+  if (!user || !verifyPassword(password, user.password_hash)) {
+    sendJson(res, 401, { error: "账号或密码不正确。" });
+    return;
+  }
+  if (user.status !== "active") {
+    sendJson(res, 403, { error: "账号当前不可用，请联系管理员。" });
+    return;
+  }
+  setSessionCookie(res, user);
+  sendJson(res, 200, { ok: true, user: publicUser(user), profile: await getCustomerProfile(user.id) });
+}
+
+async function handleLogout(_req, res) {
+  clearSessionCookie(res);
+  sendJson(res, 200, { ok: true });
+}
+
+async function handleMe(req, res) {
+  const user = await getCurrentUser(req);
+  sendJson(res, 200, { user: publicUser(user), profile: user ? await getCustomerProfile(user.id) : null, database: (await isDbAvailable()) ? "connected" : "local-fallback" });
+}
+
+async function handleGetProfile(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  sendJson(res, 200, { profile: await getCustomerProfile(user.id) });
+}
+
+async function handleSaveProfile(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const body = await readJsonBody(req);
+  sendJson(res, 200, { ok: true, profile: await saveCustomerProfile(user.id, body) });
+}
+
+async function handleListReports(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const reports = await listReviewReports(user);
+  sendJson(res, 200, { reports });
+}
+
+async function handleGetReport(req, res, id) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const report = await getReviewReport(user, id);
+  if (!report) {
+    sendJson(res, 404, { error: "报告不存在或无权查看。" });
+    return;
+  }
+  sendJson(res, 200, { report });
 }
 
 function serveStatic(req, res) {
@@ -1214,11 +1855,20 @@ function createServer() {
   return http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, "http://localhost");
+      if (url.pathname === "/api/auth/register" && req.method === "POST") return await handleRegister(req, res);
+      if (url.pathname === "/api/auth/login" && req.method === "POST") return await handleLogin(req, res);
+      if (url.pathname === "/api/auth/logout" && req.method === "POST") return await handleLogout(req, res);
+      if (url.pathname === "/api/auth/me" && req.method === "GET") return await handleMe(req, res);
+      if (url.pathname === "/api/customer/profile" && req.method === "GET") return await handleGetProfile(req, res);
+      if (url.pathname === "/api/customer/profile" && req.method === "POST") return await handleSaveProfile(req, res);
       if (url.pathname === "/api/ai-config/status" && req.method === "GET") return handleConfigStatus(req, res);
       if (url.pathname === "/api/ai-config" && req.method === "POST") return await handleSaveConfig(req, res);
       if (url.pathname === "/api/ai-config/test" && req.method === "POST") return await handleTestConfig(req, res);
       if (url.pathname === "/api/review-report" && req.method === "POST") return await handleReviewReport(req, res);
       if (url.pathname === "/api/sijichan-review-report" && req.method === "POST") return await handleSijichanReviewReport(req, res);
+      if (url.pathname === "/api/review-reports" && req.method === "GET") return await handleListReports(req, res);
+      const reportMatch = url.pathname.match(/^\/api\/review-reports\/([^/]+)$/);
+      if (reportMatch && req.method === "GET") return await handleGetReport(req, res, decodeURIComponent(reportMatch[1]));
       return serveStatic(req, res);
     } catch (error) {
       const status = error.message && error.message.includes("超过10MB") ? 413 : 500;

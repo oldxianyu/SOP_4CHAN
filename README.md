@@ -1,6 +1,6 @@
 # SOP_4CHAN
 
-海典四季蝉业务对接与AI复盘门户，使用 React + Ant Design 单页应用，并由 Node.js 服务提供静态资源、Excel解析和AI复盘接口。
+海典四季蝉业务对接与AI复盘门户，使用 React + Ant Design 单页应用，并由 Node.js 服务提供用户登录注册、静态资源、Excel解析、AI复盘和 Supabase/Postgres 数据持久化能力。
 
 ## 功能
 
@@ -9,8 +9,10 @@
 - 激励玩法：四季蝉激励类型说明。
 - 选品思路：重点品分层和选品来源。
 - 6月营销推荐：品种营销建议页。
-- AI复盘报告：上传四季蝉复盘数据标准模板 `.xlsx`，或通过登录获取数据，生成AI复盘报告并支持复制、分享、SVG导出和二维码查看。
-- AI配置：管理员配置 AI API Key、Base URL、模型和调用协议。
+- 用户体系：开放注册、登录、退出，第一位注册用户自动成为管理员。
+- AI复盘报告：登录后上传四季蝉复盘数据标准模板 `.xlsx`，或通过登录获取数据，生成AI复盘报告并支持复制、分享、SVG导出和二维码查看。
+- 历史报告：保存解析摘要、AI报告和分享产物链接，用户可查看自己的历史报告，管理员可查看全部。
+- AI配置：仅管理员配置 AI API Key、Base URL、模型和调用协议。
 
 ## 本地运行
 
@@ -25,26 +27,79 @@ npm start
 http://localhost:8765/
 ```
 
-## AI配置
+## Supabase MCP
 
-首次进入“AI配置”页时：
+Codex 中可按以下方式接入 Supabase MCP：
 
-1. 输入管理密码，首次保存会创建该管理密码。
-2. 输入 OpenAI API Key。
-3. DeepSeek 推荐 Base URL `https://api.deepseek.com`。
-4. DeepSeek 推荐模型 `deepseek-v4-flash`，调用协议选择 `Chat Completions`。
-5. 点击“测试连接”，确认可用后保存。
+```bash
+codex mcp add supabase --url https://mcp.supabase.com/mcp?project_ref=gqinewwwnfdxwqtnapjl
+codex mcp login supabase
+```
 
-配置会保存到服务器本地 `.server/ai-config.json`，该目录已加入 `.gitignore`，不会提交到 GitHub。
+然后在 Codex 中运行 `/mcp` 验证连接。
+
+可选安装 Supabase Agent Skills：
+
+```bash
+npx skills add supabase/agent-skills
+```
+
+> 当前 Windows 环境里 `codex.exe` 可能被系统策略拦截，需要在可执行 Codex CLI 的终端完成 MCP 登录。
+
+## 数据库配置
+
+服务支持 Supabase/Postgres。数据库连接配置只放在服务器 `.server/.env` 或 PM2 环境变量，不提交 GitHub。
+
+```bash
+DB_HOST=db.gqinewwwnfdxwqtnapjl.supabase.co
+DB_PORT=5432
+DB_NAME=postgres
+DB_USER=sijichan
+DB_PASSWORD=********
+DB_SSL=true
+SESSION_SECRET=replace-with-random-secret
+PUBLIC_REPORT_BASE_URL=http://134.185.125.3:8765
+```
+
+如果本地没有配置数据库，服务会退回 `.server/portal-data.json` 本地兜底存储，便于开发调试。
+
+服务启动时会自动创建这些表：
+
+- `users`
+- `customer_profiles`
+- `ai_configs`
+- `customer_datasets`
+- `review_reports`
+
+## 用户与AI配置
+
+第一位注册用户自动成为管理员，后续注册用户默认为客户。
+
+管理员登录后进入“AI配置”页：
+
+1. 输入 AI API Key。
+2. DeepSeek 推荐 Base URL `https://api.deepseek.com`。
+3. DeepSeek 推荐模型 `deepseek-v4-flash`，调用协议选择 `Chat Completions`。
+4. 点击“测试连接”，确认可用后保存。
+
+AI API Key 会加密后保存到数据库；本地兜底模式下保存到 `.server/ai-config.json`。`.server/` 已加入 `.gitignore`，不会提交到 GitHub。
 
 ## 复盘数据来源
 
-AI复盘报告支持两种来源：
+AI复盘报告需要登录后使用，支持两种来源：
 
 1. Excel模板上传：上传“四季蝉复盘数据标准模板”的 `.xlsx` 文件。
 2. 登录获取：使用登录信息临时拉取标准 `dataset/` 数据包后生成报告。
 
 登录获取时，四季蝉账号、密码或Token只会传给服务器用于本次导出，不会写入GitHub。临时导出的数据包在报告生成后会删除。
+
+每次成功生成报告后，数据库会保存：
+
+- 数据来源和解析摘要。
+- AI结构化报告和 Markdown。
+- 分享网页、SVG长图和二维码链接。
+
+不会保存客户上传的原始 Excel 文件。
 
 ## 分享报告
 

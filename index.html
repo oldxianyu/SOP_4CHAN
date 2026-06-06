@@ -89,6 +89,38 @@
         line-height: 1.06;
       }
 
+      .user-panel {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        justify-content: flex-end;
+      }
+
+      .auth-shell,
+      .history-shell {
+        animation: pageIn 320ms ease both;
+      }
+
+      .auth-card,
+      .history-card {
+        border: 1px solid rgba(42, 75, 255, 0.14);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.9);
+        box-shadow: 0 18px 42px rgba(24, 52, 126, 0.08);
+      }
+
+      .auth-card {
+        max-width: 620px;
+      }
+
+      .gate-card {
+        border: 1px solid rgba(42, 75, 255, 0.18);
+        border-radius: 8px;
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(240, 244, 255, 0.9));
+        box-shadow: 0 18px 42px rgba(24, 52, 126, 0.08);
+      }
+
       .main-tabs > .ant-tabs-nav {
         margin-bottom: 18px;
         padding: 8px;
@@ -812,6 +844,17 @@
         return data;
       }
 
+      async function apiJson(url, options = {}) {
+        const response = await fetch(url, {
+          ...options,
+          headers: {
+            ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+            ...(options.headers || {}),
+          },
+        });
+        return readApiJson(response);
+      }
+
       async function copyText(text) {
         if (navigator.clipboard && window.isSecureContext) {
           await navigator.clipboard.writeText(text);
@@ -852,6 +895,77 @@
               Tag,
               { key: file.name, color: file.rowCount > 0 ? "blue" : "gold" },
               `${file.name}：${file.rowCount}行`,
+            ),
+          ),
+        );
+      }
+
+      function GateCard({ title, text, onLogin, onRegister }) {
+        return h(
+          Card,
+          { bordered: false, className: "gate-card" },
+          h(Tag, { color: "blue", className: "hero-platform-tag" }, "需要登录"),
+          h(Title, { level: 3 }, title || "请先登录后继续"),
+          h(Paragraph, null, text || "登录后即可上传客户数据、生成AI复盘报告，并查看历史报告。"),
+          h(
+            Space,
+            { wrap: true },
+            h(Button, { type: "primary", onClick: onLogin }, "登录"),
+            h(Button, { onClick: onRegister }, "注册账号"),
+          ),
+        );
+      }
+
+      function AuthPage({ mode, onModeChange, onAuthed }) {
+        const [form] = Form.useForm();
+        const [loading, setLoading] = React.useState(false);
+        const isRegister = mode === "register";
+        const submit = async () => {
+          const values = await form.validateFields();
+          setLoading(true);
+          try {
+            const data = await apiJson(isRegister ? "/api/auth/register" : "/api/auth/login", {
+              method: "POST",
+              body: JSON.stringify(values),
+            });
+            message.success(isRegister ? "注册成功，已自动登录" : "登录成功");
+            onAuthed(data);
+          } catch (err) {
+            message.error(err.message || "处理失败");
+          } finally {
+            setLoading(false);
+          }
+        };
+
+        return h(
+          "div",
+          { className: "auth-shell" },
+          h(
+            Card,
+            { bordered: false, className: "auth-card" },
+            h(Tag, { color: "blue", className: "hero-platform-tag" }, isRegister ? "开放注册" : "用户登录"),
+            h(Title, { level: 2, className: "june-title" }, isRegister ? "注册四季蝉客户门户账号" : "登录四季蝉客户门户"),
+            h(Paragraph, null, isRegister ? "注册后可直接上传客户数据、生成AI复盘报告并查看历史记录。" : "登录后可使用AI复盘报告、历史报告和客户资料能力。"),
+            h(
+              Form,
+              { form, layout: "vertical" },
+              isRegister
+                ? h(
+                    React.Fragment,
+                    null,
+                    h(Form.Item, { label: "姓名", name: "name", rules: [{ required: true, message: "请输入姓名" }] }, h(Input, { placeholder: "联系人姓名" })),
+                    h(Form.Item, { label: "公司名称", name: "companyName", rules: [{ required: true, message: "请输入公司名称" }] }, h(Input, { placeholder: "连锁或客户名称" })),
+                    h(Form.Item, { label: "手机号", name: "phone" }, h(Input, { placeholder: "手机号，可用于登录" })),
+                    h(Form.Item, { label: "邮箱", name: "email" }, h(Input, { placeholder: "邮箱，可用于登录" })),
+                  )
+                : h(Form.Item, { label: "手机号或邮箱", name: "login", rules: [{ required: true, message: "请输入手机号或邮箱" }] }, h(Input, { placeholder: "手机号或邮箱" })),
+              h(Form.Item, { label: "密码", name: "password", rules: [{ required: true, message: "请输入密码" }, { min: 6, message: "密码至少6位" }] }, h(Input.Password, { placeholder: "至少6位" })),
+            ),
+            h(
+              Space,
+              { wrap: true },
+              h(Button, { type: "primary", loading, onClick: submit }, isRegister ? "注册并登录" : "登录"),
+              h(Button, { onClick: () => onModeChange(isRegister ? "login" : "register") }, isRegister ? "已有账号，去登录" : "没有账号，去注册"),
             ),
           ),
         );
@@ -944,7 +1058,19 @@
         );
       }
 
-      function AIReviewPage() {
+      function AIReviewPage({ auth, onLogin, onRegister }) {
+        if (!auth?.user) {
+          return h(GateCard, {
+            title: "登录后生成AI复盘报告",
+            text: "登录后可上传Excel或通过登录获取客户复盘数据，生成的报告会自动进入历史报告。",
+            onLogin,
+            onRegister,
+          });
+        }
+        return h(AIReviewWorkspace, { auth });
+      }
+
+      function AIReviewWorkspace({ auth }) {
         const [sourceType, setSourceType] = React.useState("excel");
         const [sourceForm] = Form.useForm();
         const [status, setStatus] = React.useState(null);
@@ -1185,7 +1311,23 @@
         );
       }
 
-      function AIConfigPage() {
+      function AIConfigPage({ auth, onLogin, onRegister }) {
+        if (!auth?.user) {
+          return h(GateCard, { title: "登录后管理AI配置", text: "AI配置仅管理员可维护，请先登录管理员账号。", onLogin, onRegister });
+        }
+        if (auth.user.role !== "admin") {
+          return h(
+            Card,
+            { bordered: false, className: "gate-card" },
+            h(Tag, { color: "gold", className: "hero-platform-tag" }, "权限不足"),
+            h(Title, { level: 3 }, "AI配置仅管理员可见"),
+            h(Paragraph, null, "普通客户账号可以生成和查看复盘报告，但不能维护平台AI接口配置。"),
+          );
+        }
+        return h(AIConfigWorkspace, { auth });
+      }
+
+      function AIConfigWorkspace({ auth }) {
         const [form] = Form.useForm();
         const [status, setStatus] = React.useState(null);
         const [saving, setSaving] = React.useState(false);
@@ -1268,11 +1410,6 @@
                 { form, layout: "vertical" },
                 h(
                   Form.Item,
-                  { label: "管理密码", name: "adminPassword", rules: [{ required: true, message: "请输入管理密码" }] },
-                  h(Input.Password, { placeholder: status?.adminReady ? "输入已有管理密码" : "首次设置管理密码，至少6位" }),
-                ),
-                h(
-                  Form.Item,
                   { label: "AI API Key", name: "apiKey" },
                   h(Input.Password, { placeholder: status?.hasApiKey ? "已保存，留空则继续沿用" : "请输入 DeepSeek 或 OpenAI-compatible API Key" }),
                 ),
@@ -1296,11 +1433,6 @@
                     h(Radio.Button, { value: "responses" }, "OpenAI Responses"),
                   ),
                 ),
-                h(
-                  Form.Item,
-                  { label: "新管理密码（可选）", name: "newAdminPassword" },
-                  h(Input.Password, { placeholder: "需要修改管理密码时填写" }),
-                ),
               ),
               h(
                 Space,
@@ -1320,10 +1452,64 @@
               h(Alert, {
                 type: "info",
                 showIcon: true,
-                message: "首版权限策略",
-                description: "首次配置时创建管理密码；之后保存、测试或更改配置都需要输入管理密码。",
+                message: "权限策略",
+                description: `当前登录账号：${auth.user.name}。AI配置仅管理员可保存和测试，API Key不会回显。`,
               }),
             ),
+          ),
+        );
+      }
+
+      function HistoryPage({ auth, onLogin, onRegister }) {
+        if (!auth?.user) {
+          return h(GateCard, { title: "登录后查看历史复盘报告", text: "每次AI复盘生成后都会保存到历史报告，方便再次打开分享页、下载SVG或二维码。", onLogin, onRegister });
+        }
+        const [loading, setLoading] = React.useState(false);
+        const [reports, setReports] = React.useState([]);
+        const loadReports = React.useCallback(async () => {
+          setLoading(true);
+          try {
+            const data = await apiJson("/api/review-reports");
+            setReports(data.reports || []);
+          } catch (err) {
+            message.error(err.message || "历史报告加载失败");
+          } finally {
+            setLoading(false);
+          }
+        }, []);
+        React.useEffect(() => {
+          loadReports();
+        }, [loadReports]);
+
+        const columns = [
+          { title: "报告标题", dataIndex: "reportTitle", render: (text, row) => h("a", { href: row.shareUrl, target: "_blank", rel: "noreferrer" }, text) },
+          { title: "来源", dataIndex: "sourceName", width: 140 },
+          { title: "生成时间", dataIndex: "createdAt", width: 190, render: (value) => value ? dayjs(value).format("YYYY-MM-DD HH:mm") : "" },
+          {
+            title: "操作",
+            width: 360,
+            render: (_, row) =>
+              h(
+                Space,
+                { wrap: true },
+                h(Button, { href: row.shareUrl, target: "_blank" }, "打开分享页"),
+                h(Button, { href: row.svgUrl, target: "_blank" }, "下载SVG"),
+                h(Button, { href: row.qrSvgUrl, target: "_blank" }, "二维码"),
+                h(Button, { onClick: () => copyText(row.shareUrl).then(() => message.success("分享链接已复制")) }, "复制链接"),
+              ),
+          },
+        ];
+
+        return h(
+          "div",
+          { className: "history-shell" },
+          h(
+            Card,
+            { bordered: false, className: "history-card" },
+            h(Tag, { color: "blue", className: "hero-platform-tag" }, auth.user.role === "admin" ? "全部报告" : "我的报告"),
+            h(Title, { level: 2, className: "june-title" }, "历史复盘报告"),
+            h(Paragraph, null, auth.user.role === "admin" ? "管理员可查看平台生成过的复盘报告。" : "这里保存你生成过的AI复盘报告和分享产物。"),
+            h(Table, { rowKey: "id", loading, columns, dataSource: reports, pagination: { pageSize: 8 }, scroll: { x: 900 } }),
           ),
         );
       }
@@ -2027,7 +2213,48 @@
 
       function App() {
         const [activeKey, setActiveKey] = React.useState("home");
+        const [auth, setAuth] = React.useState({ user: null, profile: null, loading: true });
         const dates = React.useMemo(getDynamicDates, []);
+        const loadMe = React.useCallback(async () => {
+          try {
+            const data = await apiJson("/api/auth/me");
+            setAuth({ user: data.user || null, profile: data.profile || null, database: data.database, loading: false });
+          } catch {
+            setAuth({ user: null, profile: null, loading: false });
+          }
+        }, []);
+        React.useEffect(() => {
+          loadMe();
+        }, [loadMe]);
+
+        const onAuthed = (data) => {
+          setAuth({ user: data.user || null, profile: data.profile || null, loading: false });
+          setActiveKey("aiReview");
+        };
+        const logout = async () => {
+          await apiJson("/api/auth/logout", { method: "POST", body: "{}" }).catch(() => null);
+          setAuth({ user: null, profile: null, loading: false });
+          setActiveKey("home");
+          message.success("已退出登录");
+        };
+        const openLogin = () => setActiveKey("login");
+        const openRegister = () => setActiveKey("register");
+        const authProps = { auth, onLogin: openLogin, onRegister: openRegister };
+        const tabItems = [
+          { key: "home", label: "首页", children: h(HomePage, { onOpenCalendar: () => setActiveKey("calendar") }) },
+          { key: "calendar", label: "对接行事历", children: h(CalendarPage, { dates }) },
+          { key: "incentive", label: "激励玩法", children: h(IncentivePage) },
+          { key: "selection", label: "选品思路", children: h(SelectionPage) },
+          { key: "june", label: "6月营销推荐", children: h(JuneMarketingPage) },
+          { key: "aiReview", label: "AI复盘报告", children: h(AIReviewPage, authProps) },
+          { key: "history", label: "历史报告", children: h(HistoryPage, authProps) },
+          ...(auth.user?.role === "admin" ? [{ key: "aiConfig", label: "AI配置", children: h(AIConfigPage, authProps) }] : []),
+          ...(auth.user ? [] : [
+            { key: "login", label: "登录", children: h(AuthPage, { mode: "login", onModeChange: (mode) => setActiveKey(mode), onAuthed }) },
+            { key: "register", label: "注册", children: h(AuthPage, { mode: "register", onModeChange: (mode) => setActiveKey(mode), onAuthed }) },
+          ]),
+        ];
+
         return h(
           ConfigProvider,
           {
@@ -2058,20 +2285,27 @@
                   h(Paragraph, null, "面向医药连锁重点品动销的客户对接门户。"),
                 ),
               ),
+              h(
+                "div",
+                { className: "user-panel" },
+                auth.user
+                  ? [
+                      h(Tag, { color: auth.user.role === "admin" ? "gold" : "blue", key: "role" }, auth.user.role === "admin" ? "管理员" : "客户"),
+                      h(Text, { strong: true, key: "name" }, auth.user.name),
+                      h(Button, { key: "history", onClick: () => setActiveKey("history") }, "历史报告"),
+                      h(Button, { key: "logout", onClick: logout }, "退出登录"),
+                    ]
+                  : [
+                      h(Button, { key: "login", onClick: openLogin }, "登录"),
+                      h(Button, { key: "register", type: "primary", onClick: openRegister }, "注册"),
+                    ],
+              ),
             ),
             h(Tabs, {
               activeKey,
               className: "main-tabs",
               onChange: setActiveKey,
-              items: [
-                { key: "home", label: "首页", children: h(HomePage, { onOpenCalendar: () => setActiveKey("calendar") }) },
-                { key: "calendar", label: "对接行事历", children: h(CalendarPage, { dates }) },
-                { key: "incentive", label: "激励玩法", children: h(IncentivePage) },
-                { key: "selection", label: "选品思路", children: h(SelectionPage) },
-                { key: "june", label: "6月营销推荐", children: h(JuneMarketingPage) },
-                { key: "aiReview", label: "AI复盘报告", children: h(AIReviewPage) },
-                { key: "aiConfig", label: "AI配置", children: h(AIConfigPage) },
-              ],
+              items: tabItems,
             }),
           ),
         );
