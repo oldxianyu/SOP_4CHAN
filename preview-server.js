@@ -726,7 +726,25 @@ async function saveReviewReportRecord(userId, sourceType, sourceName, summary, g
   return record.id;
 }
 
+function normalizePublicArtifactUrl(value) {
+  if (!value) return "";
+  const text = String(value);
+  try {
+    const url = new URL(text, publicReportBaseUrl);
+    if (!url.pathname.startsWith("/reports/")) return text;
+    return `${publicReportBaseUrl}${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return text;
+  }
+}
+
+function reportArtifactUrl(shareUrl, filename) {
+  if (!shareUrl) return "";
+  return `${shareUrl.replace(/\/?$/, "/")}${filename}`;
+}
+
 function normalizeReviewReportRow(row) {
+  const shareUrl = normalizePublicArtifactUrl(row.share_url || row.shareUrl);
   return {
     id: row.id,
     userId: row.user_id || row.userId,
@@ -737,12 +755,12 @@ function normalizeReviewReportRow(row) {
     summary: row.summary_json || row.summaryJson || null,
     markdown: row.markdown || "",
     reportId: row.report_id || row.reportId,
-    shareUrl: row.share_url || row.shareUrl,
-    svgUrl: row.svg_url || row.svgUrl,
-    qrSvgUrl: row.qr_svg_url || row.qrSvgUrl,
-    excelUrl: row.excel_url || row.excelUrl || (row.share_url || row.shareUrl ? `${row.share_url || row.shareUrl}review.xlsx` : ""),
-    normalizedDataUrl: row.normalized_data_url || row.normalizedDataUrl || (row.share_url || row.shareUrl ? `${row.share_url || row.shareUrl}${encodeURIComponent("四季蝉登录获取标准化数据.json")}` : ""),
-    diagnosticsUrl: row.diagnostics_url || row.diagnosticsUrl || (row.share_url || row.shareUrl ? `${row.share_url || row.shareUrl}${encodeURIComponent("四季蝉接口诊断.json")}` : ""),
+    shareUrl,
+    svgUrl: normalizePublicArtifactUrl(row.svg_url || row.svgUrl || reportArtifactUrl(shareUrl, "report.svg")),
+    qrSvgUrl: normalizePublicArtifactUrl(row.qr_svg_url || row.qrSvgUrl || reportArtifactUrl(shareUrl, "qr.svg")),
+    excelUrl: normalizePublicArtifactUrl(row.excel_url || row.excelUrl || reportArtifactUrl(shareUrl, "review.xlsx")),
+    normalizedDataUrl: normalizePublicArtifactUrl(row.normalized_data_url || row.normalizedDataUrl || reportArtifactUrl(shareUrl, encodeURIComponent("四季蝉登录获取标准化数据.json"))),
+    diagnosticsUrl: normalizePublicArtifactUrl(row.diagnostics_url || row.diagnosticsUrl || reportArtifactUrl(shareUrl, encodeURIComponent("四季蝉接口诊断.json"))),
     createdAt: row.created_at || row.createdAt,
   };
 }

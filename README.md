@@ -63,7 +63,7 @@ DB_USER=sijichan
 DB_PASSWORD=********
 DB_SSL=true
 SESSION_SECRET=replace-with-random-secret
-PUBLIC_REPORT_BASE_URL=http://134.185.125.3:8765
+PUBLIC_REPORT_BASE_URL=https://sijichan.top
 ```
 
 如果本地没有配置数据库，服务会退回 `.server/portal-data.json` 本地兜底存储，便于开发调试。
@@ -119,13 +119,13 @@ AI复盘成功后，系统会在 `.server/reports/{reportId}/` 生成：
 服务器部署时可设置：
 
 ```bash
-PUBLIC_REPORT_BASE_URL=http://134.185.125.3:8765
+PUBLIC_REPORT_BASE_URL=https://sijichan.top
 ```
 
 二维码会指向：
 
 ```text
-http://134.185.125.3:8765/reports/{reportId}/
+https://sijichan.top/reports/{reportId}/
 ```
 
 ## 服务器运行
