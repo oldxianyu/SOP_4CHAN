@@ -1011,6 +1011,12 @@ function sumCandidates(rows, candidates) {
   }, 0);
 }
 
+function sumAllCandidateFields(rows, candidates) {
+  return (rows || []).reduce((sum, row) => {
+    return sum + candidates.reduce((rowSum, candidate) => rowSum + toNumber(row?.[candidate]), 0);
+  }, 0);
+}
+
 function uniqueCountCandidates(rows, candidates) {
   const values = new Set();
   for (const row of rows || []) {
@@ -2482,7 +2488,7 @@ function datasetStatus({ name, rows = [], metricRows = [], label = name, note = 
 
 function pickField(row, candidates) {
   for (const key of candidates) {
-    if (row && row[key] !== undefined && row[key] !== "") return row[key];
+    if (row && hasValue(row[key])) return row[key];
   }
   return "";
 }
@@ -2539,7 +2545,7 @@ function deriveOperationInsights({
   const rewardSkuCount = uniqueCountCandidates(rewardRows, productCodeCandidates);
   const totalSalesAmount = money(sumCandidates(salesRows, salesAmountCandidates));
   const activitySalesAmount = money(sumCandidates(activityRows, salesAmountCandidates));
-  const rewardRowsAmount = money(sumCandidates(rewardRows, rewardAmountCandidates));
+  const rewardRowsAmount = money(sumAllCandidateFields(rewardRows, rewardPlayFields.flatMap(([, ...fields]) => fields)));
   const activityRewardAmount = money(sumCandidates(activityRows, rewardAmountCandidates));
   const totalRewardAmount = rewardRowsAmount || activityRewardAmount;
   const rewardEfficiency = activitySalesAmount ? money((totalRewardAmount / activitySalesAmount) * 100) : 0;
@@ -2807,8 +2813,8 @@ function summarizeSijichanRaw(raw) {
     metricRows,
     rawData,
     operationInsights: deriveOperationInsights({
-      salesRows,
-      activityRows,
+      salesRows: withDataMeta(rowsFromPaged(raw.sales.nearHalf_vs_previousHalf.products), "sales.json", "nearHalf_vs_previousHalf.products"),
+      activityRows: withDataMeta(rowsFromPaged(raw.activitySummary.nearHalf.rows), "activity_summary.json", "nearHalf.rows"),
       rewardRows,
       trainingRows,
       tipsRows,
