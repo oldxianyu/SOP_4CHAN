@@ -537,6 +537,30 @@
         border-radius: 24px;
       }
 
+      .qr-modal-content {
+        display: grid;
+        gap: 14px;
+        justify-items: center;
+        padding-top: 8px;
+      }
+
+      .qr-modal-image {
+        width: min(220px, 72vw);
+        aspect-ratio: 1;
+        border: 1px solid rgba(42, 75, 255, 0.16);
+        border-radius: 8px;
+        background: #ffffff;
+        box-shadow: 0 14px 30px rgba(24, 52, 126, 0.12);
+      }
+
+      .qr-modal-link {
+        max-width: 100%;
+        margin: 0 !important;
+        color: #526071;
+        text-align: center;
+        overflow-wrap: anywhere;
+      }
+
       .auth-page-actions {
         display: flex;
         justify-content: flex-end;
@@ -1270,6 +1294,7 @@
         Divider,
         Form,
         Input,
+        Modal,
         Radio,
         Row,
         Space,
@@ -1359,6 +1384,56 @@
         textarea.select();
         document.execCommand("copy");
         textarea.remove();
+      }
+
+      function toCurrentOriginUrl(value) {
+        if (!value) return "";
+        try {
+          const url = new URL(String(value), window.location.origin);
+          if (!url.pathname.startsWith("/reports/")) return String(value);
+          return `${window.location.origin}${url.pathname}${url.search}${url.hash}`;
+        } catch {
+          return String(value);
+        }
+      }
+
+      function reportFileUrl(shareUrl, filename) {
+        const base = toCurrentOriginUrl(shareUrl);
+        return base ? `${base.replace(/\/?$/, "/")}${filename}` : "";
+      }
+
+      function normalizeReportArtifact(artifact = {}) {
+        const shareUrl = toCurrentOriginUrl(artifact.shareUrl || artifact.share_url);
+        return {
+          ...artifact,
+          shareUrl,
+          svgUrl: toCurrentOriginUrl(artifact.svgUrl || artifact.svg_url || reportFileUrl(shareUrl, "report.svg")),
+          qrSvgUrl: toCurrentOriginUrl(artifact.qrSvgUrl || artifact.qr_svg_url || reportFileUrl(shareUrl, "qr.svg")),
+          excelUrl: toCurrentOriginUrl(artifact.excelUrl || artifact.excel_url || reportFileUrl(shareUrl, "review.xlsx")),
+          diagnosticsUrl: toCurrentOriginUrl(artifact.diagnosticsUrl || artifact.diagnostics_url || reportFileUrl(shareUrl, encodeURIComponent("四季蝉接口诊断.json"))),
+          normalizedDataUrl: toCurrentOriginUrl(artifact.normalizedDataUrl || artifact.normalized_data_url || reportFileUrl(shareUrl, encodeURIComponent("四季蝉登录获取标准化数据.json"))),
+        };
+      }
+
+      function showQrModal(artifact) {
+        const item = normalizeReportArtifact(artifact);
+        if (!item.qrSvgUrl) {
+          message.warning("暂无二维码");
+          return;
+        }
+        Modal.info({
+          title: "扫码查看复盘报告",
+          icon: null,
+          width: 360,
+          centered: true,
+          content: h(
+            "div",
+            { className: "qr-modal-content" },
+            h("img", { src: item.qrSvgUrl, alt: "报告二维码", className: "qr-modal-image" }),
+            h(Paragraph, { copyable: { text: item.shareUrl }, className: "qr-modal-link" }, item.shareUrl),
+          ),
+          okText: "关闭",
+        });
       }
 
       function SheetStatusTags({ summary }) {
@@ -1596,6 +1671,7 @@
       function ReportView({ report, markdown, artifact }) {
         if (!report) return null;
         const sections = report.sections || [];
+        const shareArtifact = normalizeReportArtifact(artifact || {});
         return h(
           Card,
           {
@@ -1615,7 +1691,7 @@
           },
           h(Title, { level: 2, className: "report-title" }, report.title || "四季蝉AI复盘报告"),
           h(Paragraph, null, report.executiveSummary || "暂无摘要。"),
-          artifact?.shareUrl
+          shareArtifact.shareUrl
             ? h(
                 Alert,
                 {
@@ -1626,15 +1702,15 @@
                   action: h(
                     Space,
                     { wrap: true },
-                    h(Button, { href: artifact.shareUrl, target: "_blank", type: "primary" }, "打开分享网页"),
-                    h(Button, { href: artifact.svgUrl, target: "_blank", download: true }, "下载SVG图片"),
-                    h(Button, { href: artifact.qrSvgUrl, target: "_blank", download: true }, "下载二维码"),
-                    artifact.excelUrl ? h(Button, { href: artifact.excelUrl, target: "_blank", download: true }, "下载Excel汇总") : null,
-                    artifact.diagnosticsUrl ? h(Button, { href: artifact.diagnosticsUrl, target: "_blank", download: true }, "接口诊断") : null,
-                    artifact.normalizedDataUrl ? h(Button, { href: artifact.normalizedDataUrl, target: "_blank", download: true }, "标准化数据") : null,
+                    h(Button, { href: shareArtifact.shareUrl, target: "_blank", type: "primary" }, "打开分享网页"),
+                    h(Button, { href: shareArtifact.svgUrl, target: "_blank", download: true }, "下载SVG图片"),
+                    h(Button, { onClick: () => showQrModal(shareArtifact) }, "二维码"),
+                    shareArtifact.excelUrl ? h(Button, { href: shareArtifact.excelUrl, target: "_blank", download: true }, "下载Excel汇总") : null,
+                    shareArtifact.diagnosticsUrl ? h(Button, { href: shareArtifact.diagnosticsUrl, target: "_blank", download: true }, "接口诊断") : null,
+                    shareArtifact.normalizedDataUrl ? h(Button, { href: shareArtifact.normalizedDataUrl, target: "_blank", download: true }, "标准化数据") : null,
                     h(Button, {
                       onClick: async () => {
-                        await copyText(artifact.shareUrl);
+                        await copyText(shareArtifact.shareUrl);
                         message.success("分享链接已复制");
                       },
                     }, "复制分享链接"),
@@ -2193,24 +2269,29 @@
         }, [loadReports]);
 
         const columns = [
-          { title: "报告标题", dataIndex: "reportTitle", render: (text, row) => h("a", { href: row.shareUrl, target: "_blank", rel: "noreferrer" }, text) },
+          { title: "报告标题", dataIndex: "reportTitle", render: (text, row) => {
+            const item = normalizeReportArtifact(row);
+            return h("a", { href: item.shareUrl, target: "_blank", rel: "noreferrer" }, text);
+          } },
           { title: "来源", dataIndex: "sourceName", width: 140 },
           { title: "生成时间", dataIndex: "createdAt", width: 190, render: (value) => value ? dayjs(value).format("YYYY-MM-DD HH:mm") : "" },
           {
             title: "操作",
             width: 360,
-            render: (_, row) =>
-              h(
+            render: (_, row) => {
+              const item = normalizeReportArtifact(row);
+              return h(
                 Space,
                 { wrap: true },
-                h(Button, { href: row.shareUrl, target: "_blank" }, "打开分享页"),
-                h(Button, { href: row.svgUrl, target: "_blank" }, "下载SVG"),
-                h(Button, { href: row.qrSvgUrl, target: "_blank" }, "二维码"),
-                row.excelUrl ? h(Button, { href: row.excelUrl, target: "_blank" }, "Excel汇总") : null,
-                row.diagnosticsUrl ? h(Button, { href: row.diagnosticsUrl, target: "_blank" }, "接口诊断") : null,
-                row.normalizedDataUrl ? h(Button, { href: row.normalizedDataUrl, target: "_blank" }, "标准化数据") : null,
-                h(Button, { onClick: () => copyText(row.shareUrl).then(() => message.success("分享链接已复制")) }, "复制链接"),
-              ),
+                h(Button, { href: item.shareUrl, target: "_blank" }, "打开分享页"),
+                h(Button, { href: item.svgUrl, target: "_blank" }, "下载SVG"),
+                h(Button, { onClick: () => showQrModal(item) }, "二维码"),
+                item.excelUrl ? h(Button, { href: item.excelUrl, target: "_blank" }, "Excel汇总") : null,
+                item.diagnosticsUrl ? h(Button, { href: item.diagnosticsUrl, target: "_blank" }, "接口诊断") : null,
+                item.normalizedDataUrl ? h(Button, { href: item.normalizedDataUrl, target: "_blank" }, "标准化数据") : null,
+                h(Button, { onClick: () => copyText(item.shareUrl).then(() => message.success("分享链接已复制")) }, "复制链接"),
+              );
+            },
           },
         ];
 
