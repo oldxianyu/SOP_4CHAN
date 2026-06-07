@@ -1837,6 +1837,8 @@ function workbookSheets(summary, report) {
     { 指标: "销售明细行数", 明细值: summary.rowCounts?.["sales.json"] || 0, 校验结果: (summary.rowCounts?.["sales.json"] || 0) > 0 ? "有明细" : "无明细", 说明: "来自销售汇总接口" },
     { 指标: "活动汇总行数", 明细值: summary.rowCounts?.["activity_summary.json"] || 0, 校验结果: (summary.rowCounts?.["activity_summary.json"] || 0) > 0 ? "有明细" : "无明细", 说明: "来自活动汇总接口" },
     { 指标: "奖励统计行数", 明细值: summary.rowCounts?.["reward_statistics.json"] || 0, 校验结果: (summary.rowCounts?.["reward_statistics.json"] || 0) > 0 ? "有明细" : "无明细", 说明: "来自奖励统计接口" },
+    { 指标: "奖励发放明细行数", 明细值: summary.rowCounts?.["reward_distribution.json"] || 0, 校验结果: (summary.rowCounts?.["reward_distribution.json"] || 0) > 0 ? "有明细" : "看指标/诊断", 说明: "来自奖励发放明细页接口" },
+    { 指标: "员工豆豆账户/提现行数", 明细值: summary.rowCounts?.["employee_account.json"] || 0, 校验结果: (summary.rowCounts?.["employee_account.json"] || 0) > 0 ? "有明细" : "看指标/诊断", 说明: "来自员工账户、提现、核销与结算接口" },
     { 指标: "培训明细行数", 明细值: summary.rowCounts?.["training.json"] || 0, 校验结果: (summary.rowCounts?.["training.json"] || 0) > 0 ? "有明细" : "接口成功，业务值为0", 说明: "培训概览指标见“培训情况”页" },
     { 指标: "厂家打赏行数", 明细值: summary.rowCounts?.["manufacturer_tips.json"] || 0, 校验结果: (summary.rowCounts?.["manufacturer_tips.json"] || 0) > 0 ? "有明细" : "接口成功，业务值为0", 说明: "厂家打赏汇总见“厂家打赏”页" },
     ...((metrics.overview || []).map((row) => ({ 指标: row.数据路径, 明细值: row.指标值, 校验结果: "有指标", 说明: "来自四季蝉概览页指标接口" }))),
@@ -1851,6 +1853,16 @@ function workbookSheets(summary, report) {
   const manufacturerTipRows = [
     ...((metrics.manufacturerTips || []).map((row) => ({ 类型: "厂家打赏汇总", 指标路径: row.数据路径, 指标: row.指标, 指标值: row.指标值 }))),
     ...((raw.manufacturerTips?.rows || []).map((row) => ({ 类型: "厂家打赏明细", ...row }))),
+  ];
+  const rewardDistributionRows = [
+    ...((metrics.rewardDistribution || []).map((row) => ({ 类型: "奖励发放统计", 指标路径: row.数据路径, 指标: row.指标, 指标值: row.指标值 }))),
+    ...((raw.rewardDistribution?.nearHalf?.rows || []).map((row) => ({ 类型: "奖励发放明细", ...row }))),
+  ];
+  const employeeAccountRows = [
+    ...((metrics.employeeAccount || []).map((row) => ({ 类型: "员工账户指标", 指标路径: row.数据路径, 指标: row.指标, 指标值: row.指标值 }))),
+    ...((raw.employeeAccount?.withdrawRows || []).map((row) => ({ 类型: "提现明细", ...row }))),
+    ...((raw.employeeAccount?.writeOffRows || []).map((row) => ({ 类型: "延时豆核销明细", ...row }))),
+    ...((raw.employeeAccount?.settleRows || []).map((row) => ({ 类型: "结算明细", ...row }))),
   ];
   return [
     { name: "数据口径说明", rows: [
@@ -1880,6 +1892,8 @@ function workbookSheets(summary, report) {
     { name: "数据源状态", rows: statusRows },
     { name: "概览校验", rows: overviewRows },
     { name: "奖励统计-半年", rows: raw.rewardStatistics?.nearHalf?.rows || [] },
+    { name: "奖励发放明细", rows: rewardDistributionRows.length ? rewardDistributionRows : [{ 类型: "奖励发放", 说明: "当前口径未识别到奖励发放明细或指标，请查看接口诊断。" }] },
+    { name: "员工豆豆账户与提现", rows: employeeAccountRows.length ? employeeAccountRows : [{ 类型: "员工收益闭环", 说明: "当前口径未识别到员工账户、提现、核销或结算数据，请查看接口诊断。" }] },
     { name: "销售汇总-上月_vs_前两月", rows: raw.sales?.lastMonth_vs_priorTwoMonths?.rows || [] },
     { name: "销售汇总-近半年_vs_上期", rows: raw.sales?.nearHalf_vs_previousHalf?.rows || [] },
     { name: "活动汇总-5月_vs_4月", rows: [...(raw.activitySummary?.lastMonth?.rows || []), ...(raw.activitySummary?.previousMonth?.rows || [])] },
@@ -2200,10 +2214,11 @@ async function sijichanPagedPost(endpoint, baseBody, token, merCode, pageSize = 
     pages.push(result);
     const data = result.response?.data;
     if (currentPage === 1) {
-      totalCount = Number(data?.totalCount || 0);
-      totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+      totalCount = Number(data?.totalCount || data?.total || data?.count || 0);
+      const explicitPages = Number(data?.totalPages || data?.totalPage || data?.pages || 0);
+      totalPages = explicitPages || Math.max(1, Math.ceil(totalCount / pageSize));
     }
-    if (Array.isArray(data?.data)) rows.push(...data.data);
+    rows.push(...rowsFromPaged(data));
   }
   return { endpoint, baseRequest: baseBody, pageSize, totalCount, totalPages, rows, pages, fetchedAt: new Date().toISOString() };
 }
@@ -2520,14 +2535,16 @@ function deriveOperationInsights({
   cashoutRows = [],
   incentiveRows = [],
   shareRewardRows = [],
+  employeeAccountRows = [],
+  rewardDistributionRows = [],
   metricRows = {},
 } = {}) {
   const productCodeCandidates = ["commodityCode", "wareIspCode", "erpCode", "productCode", "goodsCode", "skuCode", "商品编码"];
   const productNameCandidates = ["commodityName", "productName", "goodsName", "skuName", "商品名称"];
   const salesAmountCandidates = ["saleCommodityAmount", "rewardCommodityAmount", "saleAmount", "salesAmount", "销售金额", "激励商品销售金额"];
-  const rewardAmountCandidates = ["rewardSaleAmount", "singleRewardMoney", "multiRewardMoney", "combineRewardMoney", "commodityTargetRewardMoney", "serialTargetRewardMoney", "combinationTargetRewardMoney", "dayRankRewardMoney", "rankingRewardMoney", "rewardAmount", "奖励金额", "激励总金额"];
+  const rewardAmountCandidates = ["rewardSaleAmount", "rewardMoney", "rewardBookingMoney", "rewardAmount", "singleRewardMoney", "multiRewardMoney", "combineRewardMoney", "commodityTargetRewardMoney", "serialTargetRewardMoney", "combinationTargetRewardMoney", "dayRankRewardMoney", "rankingRewardMoney", "amount", "奖励金额", "激励总金额"];
   const storeCandidates = ["saleStoreNum", "storeNum", "storeCode", "merCode", "门店编码", "动销门店数"];
-  const employeeCandidates = ["employeeCode", "empCode", "empId", "员工编码", "员工姓名", "empName"];
+  const employeeCandidates = ["employeeCode", "empCode", "empId", "employeeName", "empName", "clerkName", "员工编码", "员工姓名"];
   const employeeCountCandidates = ["saleEmpNum", "rewardEmpNum", "empNum", "employeeNum", "参与员工数", "奖励员工数"];
   const rewardPlayFields = [
     ["单品销售奖励", "singleRewardMoney", "单品奖励金额"],
@@ -2547,11 +2564,29 @@ function deriveOperationInsights({
   const activitySalesAmount = money(sumCandidates(activityRows, salesAmountCandidates));
   const rewardRowsAmount = money(sumAllCandidateFields(rewardRows, rewardPlayFields.flatMap(([, ...fields]) => fields)));
   const activityRewardAmount = money(sumCandidates(activityRows, rewardAmountCandidates));
-  const totalRewardAmount = rewardRowsAmount || activityRewardAmount;
+  const rewardDistributionAmount = money(sumCandidates(rewardDistributionRows, rewardAmountCandidates));
+  const employeeAccountMetricRows = metricRows.employeeAccount || [];
+  const rewardDistributionMetricRows = metricRows.rewardDistribution || [];
+  const metricObjects = (rows) => rows.map((row) => ({ [row.指标]: row.指标值 }));
+  const yuanFromBeanUnit = (value) => {
+    const amount = toNumber(value);
+    return Math.abs(amount) >= 10000 ? money(amount / 100) : money(amount);
+  };
+  const maxMetricCandidate = (rows, candidates) => {
+    const values = rows.flatMap((row) => candidates.map((candidate) => toNumber(row?.[candidate]))).filter((value) => value > 0);
+    return values.length ? Math.max(...values) : 0;
+  };
+  const employeeMetricObjects = metricObjects(employeeAccountMetricRows);
+  const totalWithdrawMoney = yuanFromBeanUnit(maxMetricCandidate(employeeMetricObjects, ["totalWithdrawMoney", "withdrawMoney", "withdrawAmount"]));
+  const availableMoney = yuanFromBeanUnit(maxMetricCandidate(employeeMetricObjects, ["availableMoney"]));
+  const totalPeas = yuanFromBeanUnit(maxMetricCandidate(employeeMetricObjects, ["totalPeas", "totalIntegral"]));
+  const writeOffIntegralMoney = yuanFromBeanUnit(maxMetricCandidate(employeeMetricObjects, ["writeOffIntegralMoney", "integralMoney"]));
+  const rewardDistributionMetricAmount = money(sumCandidates(metricObjects(rewardDistributionMetricRows), rewardAmountCandidates));
+  const totalRewardAmount = rewardRowsAmount || rewardDistributionAmount || rewardDistributionMetricAmount || activityRewardAmount;
   const rewardEfficiency = activitySalesAmount ? money((totalRewardAmount / activitySalesAmount) * 100) : 0;
   const activityCoverageRate = ratioPercent(activeSkuCount || rewardSkuCount, salesSkuCount || activeSkuCount || rewardSkuCount);
   const storeCoverage = uniqueCountCandidates([...salesRows, ...activityRows], storeCandidates);
-  const employeeCoverage = uniqueCountCandidates([...activityRows, ...cashoutRows, ...shareRewardRows], employeeCandidates);
+  const employeeCoverage = uniqueCountCandidates([...activityRows, ...cashoutRows, ...shareRewardRows, ...employeeAccountRows, ...rewardDistributionRows], employeeCandidates);
   const trainingMetricRows = metricRows.training || [];
   const trainingHasSignal = trainingRows.length > 0 || hasNonZeroMetric(trainingMetricRows);
   const shareRecordCount = (tipsRows.length || shareRewardRows.length);
@@ -2562,7 +2597,9 @@ function deriveOperationInsights({
     ? cashoutRows.filter((row) => toNumber(row["累计及时豆（元）"]) + toNumber(row["累计延时豆（元）"]) + toNumber(row["累计收益"]) > 0).length
     : 0;
   const cashoutRate = incomeEmployeeCount ? ratioPercent(cashoutEmployeeCount, incomeEmployeeCount) : 0;
-  const employeeParticipationSignal = employeeCoverage || money(sumCandidates(activityRows, employeeCountCandidates)) || cashoutRate;
+  const employeeAccountHasSignal = employeeAccountRows.length > 0 || hasNonZeroMetric(employeeAccountMetricRows);
+  const rewardDistributionHasSignal = rewardDistributionRows.length > 0 || hasNonZeroMetric(rewardDistributionMetricRows);
+  const employeeParticipationSignal = employeeCoverage || money(sumCandidates(activityRows, employeeCountCandidates)) || totalWithdrawMoney || totalPeas || cashoutRate || (employeeAccountHasSignal ? 1 : 0);
   const usedRewardPlays = rewardPlayFields
     .map(([name, ...fields]) => ({ name, amount: money(sumCandidates([...rewardRows, ...incentiveRows], fields)), skuCount: countRowsWithPositiveCandidate([...rewardRows, ...incentiveRows], fields) }))
     .filter((item) => item.amount > 0 || item.skuCount > 0);
@@ -2577,7 +2614,7 @@ function deriveOperationInsights({
   const scoreItems = [
     { key: "activityCoverage", label: "活动覆盖", value: activityCoverageRate, level: rateLevel(activityCoverageRate, 35, 15), explanation: `活动覆盖约 ${activityCoverageRate}% 的动销品种；覆盖越低，客户越容易把四季蝉理解成少数单品红包。` },
     { key: "rewardClosure", label: "激励闭环", value: rewardEfficiency, level: activitySalesAmount ? rateLevel(Math.min(rewardEfficiency, 100), 8, 2) : "risk", explanation: activitySalesAmount ? `每100元活动销售对应约 ${rewardEfficiency} 元奖励，需结合毛利判断激励效率。` : "当前没有识别到活动销售额，难以证明奖励带动销售。" },
-    { key: "employeeParticipation", label: "员工参与", value: employeeParticipationSignal, level: employeeParticipationSignal ? "watch" : "risk", explanation: employeeParticipationSignal ? `识别到员工/店员参与信号约 ${employeeParticipationSignal}。` : "缺少员工参与或提现信号，店员感知弱时客户续用风险会上升。" },
+    { key: "employeeParticipation", label: "员工参与", value: employeeParticipationSignal, level: employeeParticipationSignal ? (totalWithdrawMoney || employeeCoverage ? "healthy" : "watch") : "risk", explanation: employeeParticipationSignal ? `识别到店员参与/豆豆/提现信号约 ${employeeParticipationSignal}，提现金额约 ${totalWithdrawMoney}。` : "缺少员工参与或提现信号，店员感知弱时客户续用风险会上升。" },
     { key: "trainingConversion", label: "培训承接", value: trainingRows.length || trainingMetricRows.length, level: trainingHasSignal ? "watch" : "risk", explanation: trainingHasSignal ? "已有培训或学习指标，可进一步与销售结果绑定。" : "培训数据为空，建议把重点品培训、考试和激励任务连成闭环。" },
     { key: "factoryCollaboration", label: "厂家协同", value: shareRewardAmount || shareRecordCount, level: factoryCollaborationLevel, explanation: shareRecordCount || shareRewardAmount ? `厂家晒单/打赏已有 ${shareRecordCount} 条记录，金额约 ${shareRewardAmount}。` : "厂家打赏和晒单为空，厂家资源没有被充分转化为门店执行证据。" },
   ];
@@ -2588,6 +2625,8 @@ function deriveOperationInsights({
   const valueProofPoints = [
     totalSalesAmount ? `已识别重点品销售额约 ${totalSalesAmount}，可用于向客户证明重点品经营规模。` : "",
     activitySalesAmount ? `活动商品销售额约 ${activitySalesAmount}，奖励金额约 ${totalRewardAmount}，可沉淀为“费用换动销”的投入产出证据。` : "",
+    totalWithdrawMoney || totalPeas ? `店员豆豆账户/提现已有可复盘信号：累计豆豆约 ${totalPeas}，提现约 ${totalWithdrawMoney}，余额约 ${availableMoney}。` : "",
+    rewardDistributionHasSignal ? "奖励发放明细已接入，可向客户展示“销售产生奖励、奖励触达店员”的执行证据。" : "",
     usedRewardPlays.length ? `已使用 ${usedRewardPlays.length} 类激励玩法：${usedRewardPlays.map((item) => item.name).join("、")}。` : "",
     storeCoverage ? `识别到 ${storeCoverage} 个门店/机构相关覆盖信号，可用于做门店分层追踪。` : "",
   ].filter(Boolean);
@@ -2596,7 +2635,7 @@ function deriveOperationInsights({
     usedRewardPlays.length < 3 ? `释放玩法价值：优先补齐 ${unusedRewardPlays.slice(0, 3).join("、")}，让客户看到四季蝉不只是单品红包。` : "复用已跑通的激励玩法，沉淀为客户月度活动模板。",
     trainingHasSignal ? "把培训结果与活动销售做同屏复盘，证明学习能转化为店员推荐动作。" : "补齐培训考试：每个重点品至少配置卖点学习、考试奖励和销售任务。",
     factoryCollaborationLevel === "risk" ? "引入厂家协同：推动厂家提供晒单打赏或活动费用，用数据证明费用落到门店执行层。" : "把厂家打赏和晒单沉淀成大单分享、排行榜和厂家复投证据。",
-    employeeParticipationSignal ? "继续强化店员感知：复盘提现、排行榜和高收益员工案例。" : "补齐店员收益闭环：重点展示及时豆、延时豆、可提现收益和到账案例。",
+    employeeParticipationSignal ? "继续强化店员感知：复盘提现、排行榜、高收益员工案例，并用豆豆账户数据证明激励已触达店员。" : "补齐店员收益闭环：重点展示及时豆、延时豆、可提现收益和到账案例。",
   ];
 
   return {
@@ -2620,6 +2659,10 @@ function deriveOperationInsights({
       employeeCoverage,
       employeeParticipationSignal,
       cashoutRate,
+      totalWithdrawMoney,
+      availableMoney,
+      totalPeas,
+      writeOffIntegralMoney,
       usedRewardPlayCount: usedRewardPlays.length,
       unusedRewardPlays,
       shareRecordCount,
@@ -2631,7 +2674,15 @@ function deriveOperationInsights({
 }
 
 function rowsFromPaged(paged) {
-  return Array.isArray(paged?.rows) ? paged.rows : [];
+  if (Array.isArray(paged)) return paged;
+  if (!paged || typeof paged !== "object") return [];
+  if (Array.isArray(paged.rows)) return paged.rows;
+  if (Array.isArray(paged.data)) return paged.data;
+  if (Array.isArray(paged.list)) return paged.list;
+  if (Array.isArray(paged.records)) return paged.records;
+  if (Array.isArray(paged.result)) return paged.result;
+  if (paged.response?.data) return rowsFromPaged(paged.response.data);
+  return [];
 }
 
 function responseData(result) {
@@ -2669,6 +2720,8 @@ async function collectSijichanData(body) {
   const trainBase = withMerCode({ startTime: windows.nearHalf.start, endTime: windows.nearHalf.end, authorizeBusinessCode: "" });
   const activityBody = (w) => ({ timeType: 1, startTime: w.start, endTime: w.end, summaryType: 1 });
   const rewardBody = { timeType: 1, startTime: windows.nearHalf.start, endTime: windows.nearHalf.end };
+  const rewardDistributionBody = { timeType: 1, startTime: windows.nearHalf.start, endTime: windows.nearHalf.end };
+  const employeeAccountBody = withMerCode({ timeType: 1, startTime: windows.nearHalf.start, endTime: windows.nearHalf.end });
   const tipsBody = { startTime: windows.nearHalf.start, endTime: windows.nearHalf.end };
 
   return {
@@ -2686,6 +2739,12 @@ async function collectSijichanData(body) {
       nearHalf: {
         rows: await client.paged("奖励统计-近半年", "imActivityReward/commodity/rewardTypeStatistics", rewardBody),
         sum: await client.post("奖励统计合计-近半年", "imActivityReward/commodity/rewardTypeStatistics/sum", rewardBody),
+      },
+    },
+    rewardDistribution: {
+      nearHalf: {
+        statistics: await client.post("奖励发放统计-近半年", "imActivityReward/queryRewardStatistics", rewardDistributionBody),
+        rows: await client.paged("奖励发放明细-近半年", "imActivityReward/queryRewardList", rewardDistributionBody),
       },
     },
     activitySummary: {
@@ -2714,6 +2773,14 @@ async function collectSijichanData(body) {
       summary: await client.post("店员圈厂家打赏汇总", "orderShareMoment/shareRewardDetailSum", tipsBody),
       rows: await client.paged("店员圈厂家打赏明细", "orderShareMoment/queryShareRewardDetailList", tipsBody),
     },
+    employeeAccount: {
+      accountSummary: await client.post("员工豆豆账户汇总-近半年", "isp_account/emp/view/list/sum", employeeAccountBody),
+      withdrawSummary: await client.post("员工提现汇总-近半年", "isp_account/emp/view/withdraw/sum", employeeAccountBody),
+      withdrawRows: await client.paged("员工提现明细-近半年", "isp_account/emp/view/withdraw_list", employeeAccountBody),
+      writeOffRows: await client.paged("延时豆核销明细-近半年", "integral/reward/queryEmpWriteOffPage", employeeAccountBody),
+      settleSummary: await client.post("员工结算汇总-近半年", "account/emp/settle/page/sum", employeeAccountBody),
+      settleRows: await client.paged("员工结算明细-近半年", "account/emp/settle/page", employeeAccountBody),
+    },
     overview: {
       activityTopStatistic: await client.post("概览-活动奖励核心指标", "report/activityReward/queryTopStatisticData", withMerCode({})),
       rewardStat: await client.post("概览-员工奖励提现指标", "report/account/emp/overview/queryRewardStat", withMerCode({ startTime: windows.nearHalf.start, endTime: windows.nearHalf.end, timeType: 1 })),
@@ -2741,6 +2808,7 @@ function summarizeSijichanRaw(raw) {
     ...withDataMeta(rowsFromPaged(raw.activitySummary.nearHalf.rows), "activity_summary.json", "nearHalf.rows"),
   ];
   const rewardRows = withDataMeta(rowsFromPaged(raw.rewardStatistics.nearHalf.rows), "reward_statistics.json", "nearHalf.rows");
+  const rewardDistributionRows = withDataMeta(rowsFromPaged(raw.rewardDistribution?.nearHalf?.rows), "reward_distribution.json", "nearHalf.rows");
   const trainingRows = [
     ...withDataMeta(rowsFromPaged(raw.training.roleLearning), "training.json", "roleLearning"),
     ...withDataMeta(rowsFromPaged(raw.training.storeLearning), "training.json", "storeLearning"),
@@ -2748,11 +2816,17 @@ function summarizeSijichanRaw(raw) {
     ...withDataMeta(rowsFromPaged(raw.training.courseLearning), "training.json", "courseLearning"),
   ];
   const tipsRows = withDataMeta(rowsFromPaged(raw.manufacturerTips.rows), "manufacturer_tips.json", "rows");
+  const employeeAccountRows = [
+    ...withDataMeta(rowsFromPaged(raw.employeeAccount?.withdrawRows), "employee_account.json", "withdrawRows"),
+    ...withDataMeta(rowsFromPaged(raw.employeeAccount?.writeOffRows), "employee_account.json", "writeOffRows"),
+    ...withDataMeta(rowsFromPaged(raw.employeeAccount?.settleRows), "employee_account.json", "settleRows"),
+  ];
   const rawData = {
     meta: raw.meta,
     diagnostics: raw.diagnostics || [],
     sales: Object.fromEntries(Object.entries(raw.sales).map(([key, value]) => [key, { overview: responseData(value.overview), rows: rowsFromPaged(value.products) }])),
     rewardStatistics: { nearHalf: { rows: rowsFromPaged(raw.rewardStatistics.nearHalf.rows), sum: responseData(raw.rewardStatistics.nearHalf.sum) } },
+    rewardDistribution: { nearHalf: { statistics: responseData(raw.rewardDistribution?.nearHalf?.statistics), rows: rowsFromPaged(raw.rewardDistribution?.nearHalf?.rows) } },
     activitySummary: Object.fromEntries(Object.entries(raw.activitySummary).map(([key, value]) => [key, { rows: rowsFromPaged(value.rows), sum: responseData(value.sum) }])),
     training: {
       courseOverview: responseData(raw.training.courseOverview),
@@ -2763,6 +2837,14 @@ function summarizeSijichanRaw(raw) {
       courseLearning: rowsFromPaged(raw.training.courseLearning),
     },
     manufacturerTips: { summary: responseData(raw.manufacturerTips.summary), rows: rowsFromPaged(raw.manufacturerTips.rows) },
+    employeeAccount: {
+      accountSummary: responseData(raw.employeeAccount?.accountSummary),
+      withdrawSummary: responseData(raw.employeeAccount?.withdrawSummary),
+      withdrawRows: rowsFromPaged(raw.employeeAccount?.withdrawRows),
+      writeOffRows: rowsFromPaged(raw.employeeAccount?.writeOffRows),
+      settleSummary: responseData(raw.employeeAccount?.settleSummary),
+      settleRows: rowsFromPaged(raw.employeeAccount?.settleRows),
+    },
     overview: Object.fromEntries(Object.entries(raw.overview).map(([key, value]) => [key, responseData(value)])),
   };
   const trainingMetricRows = [
@@ -2774,20 +2856,30 @@ function summarizeSijichanRaw(raw) {
   const salesMetricRows = Object.entries(rawData.sales).flatMap(([key, value]) => metricRowsFromObject(value.overview, "sales.json", `${key}.overview`));
   const activityMetricRows = Object.entries(rawData.activitySummary).flatMap(([key, value]) => metricRowsFromObject(value.sum, "activity_summary.json", `${key}.sum`));
   const rewardMetricRows = metricRowsFromObject(rawData.rewardStatistics.nearHalf.sum, "reward_statistics.json", "nearHalf.sum");
+  const rewardDistributionMetricRows = metricRowsFromObject(rawData.rewardDistribution.nearHalf.statistics, "reward_distribution.json", "nearHalf.statistics");
+  const employeeAccountMetricRows = [
+    ...metricRowsFromObject(rawData.employeeAccount.accountSummary, "employee_account.json", "accountSummary"),
+    ...metricRowsFromObject(rawData.employeeAccount.withdrawSummary, "employee_account.json", "withdrawSummary"),
+    ...metricRowsFromObject(rawData.employeeAccount.settleSummary, "employee_account.json", "settleSummary"),
+  ];
   const metricRows = {
     sales: salesMetricRows,
     activitySummary: activityMetricRows,
     rewardStatistics: rewardMetricRows,
+    rewardDistribution: rewardDistributionMetricRows,
     training: trainingMetricRows,
     manufacturerTips: tipsMetricRows,
+    employeeAccount: employeeAccountMetricRows,
     overview: overviewMetricRows,
   };
   const files = [
     { name: "sales.json", label: "销售汇总", rows: salesRows, metricRows: salesMetricRows, note: "销售商品明细接口，同时包含销售概览指标。" },
     { name: "activity_summary.json", label: "活动汇总", rows: activityRows, metricRows: activityMetricRows, note: "活动商品明细接口，同时包含活动汇总合计。" },
     { name: "reward_statistics.json", label: "奖励统计", rows: rewardRows, metricRows: rewardMetricRows, note: "奖励统计明细接口，同时包含奖励金额合计。" },
+    { name: "reward_distribution.json", label: "奖励发放明细", rows: rewardDistributionRows, metricRows: rewardDistributionMetricRows, note: "奖励发放页接口，用于证明奖励从活动执行流向店员。" },
     { name: "training.json", label: "培训情况", rows: trainingRows, metricRows: trainingMetricRows, note: "培训接口成功返回；明细为0时以课程/资源概览判断是否有培训承接。" },
     { name: "manufacturer_tips.json", label: "厂家打赏", rows: tipsRows, metricRows: tipsMetricRows, note: "厂家打赏接口成功返回；金额和明细为0代表当前口径未发生厂家额外激励。" },
+    { name: "employee_account.json", label: "员工豆豆账户/提现", rows: employeeAccountRows, metricRows: employeeAccountMetricRows, note: "员工账户、提现、核销与结算接口，用于证明店员收益闭环。" },
     { name: "overview.json", label: "概览校验", rows: [], metricRows: overviewMetricRows, note: "首页概览是指标型数据，不产生明细行。" },
   ];
   const allRows = files.flatMap((file) => file.rows);
@@ -2818,6 +2910,8 @@ function summarizeSijichanRaw(raw) {
       rewardRows,
       trainingRows,
       tipsRows,
+      employeeAccountRows,
+      rewardDistributionRows,
       metricRows,
     }),
     salesChange: {
