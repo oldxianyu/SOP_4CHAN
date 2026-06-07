@@ -530,6 +530,87 @@
         box-shadow: 0 18px 42px rgba(24, 52, 126, 0.08);
       }
 
+      .mobile-only {
+        display: none;
+      }
+
+      .desktop-only {
+        display: block;
+      }
+
+      .mobile-card-list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .mobile-report-card,
+      .mobile-calendar-card {
+        border: 1px solid rgba(42, 75, 255, 0.14);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: 0 12px 26px rgba(24, 52, 126, 0.07);
+      }
+
+      .mobile-card-head {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        justify-content: space-between;
+        margin-bottom: 10px;
+      }
+
+      .mobile-card-title {
+        min-width: 0;
+        color: #1f3f95;
+        font-weight: 850;
+        line-height: 1.45;
+        overflow-wrap: anywhere;
+      }
+
+      .mobile-meta-grid {
+        display: grid;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .mobile-meta-item {
+        display: grid;
+        gap: 3px;
+      }
+
+      .mobile-meta-label {
+        color: #64748b;
+        font-size: 12px;
+        font-weight: 750;
+      }
+
+      .mobile-meta-value {
+        color: #27364a;
+        line-height: 1.55;
+        overflow-wrap: anywhere;
+      }
+
+      .mobile-action-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .mobile-action-grid .ant-btn {
+        width: 100%;
+        min-height: 38px;
+        padding-inline: 8px;
+        white-space: normal;
+        line-height: 1.25;
+      }
+
+      .report-action-inline {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
       .auth-card {
         width: min(460px, 100%);
         max-width: 460px;
@@ -1275,6 +1356,306 @@
           text-align: left;
         }
       }
+
+      @media (max-width: 640px) {
+        body {
+          min-width: 320px;
+          background:
+            radial-gradient(circle at 16% 4%, rgba(47, 77, 255, 0.12), transparent 24%),
+            linear-gradient(180deg, #f6f8ff 0%, #fbfcff 54%, #f8fafc 100%);
+        }
+
+        .app-shell {
+          width: calc(100% - 24px);
+          padding: 10px 0 28px;
+        }
+
+        .app-header {
+          padding: 10px;
+          gap: 10px;
+        }
+
+        .brand-lockup {
+          gap: 10px;
+        }
+
+        .brand-logo {
+          flex: 0 0 auto;
+          width: 42px;
+          height: 42px;
+          padding: 6px;
+          border-radius: 14px;
+        }
+
+        .brand-kicker {
+          max-width: none;
+          margin-bottom: 1px;
+          color: #7a8797;
+          font-size: 11px;
+          line-height: 1.25;
+        }
+
+        .app-header h1.ant-typography {
+          font-size: 24px;
+          line-height: 1.08;
+        }
+
+        .brand-copy .ant-typography {
+          font-size: 13px;
+          line-height: 1.45;
+        }
+
+        .user-panel {
+          width: 100%;
+        }
+
+        .user-panel .ant-btn,
+        .user-panel .ant-tag {
+          min-height: 34px;
+        }
+
+        .main-tabs > .ant-tabs-nav {
+          position: sticky;
+          top: 0;
+          z-index: 9;
+          margin: 0 -12px 12px;
+          padding: 6px 12px;
+          border-inline: 0;
+          border-radius: 0;
+          backdrop-filter: blur(12px);
+        }
+
+        .main-tabs > .ant-tabs-nav .ant-tabs-nav-wrap {
+          overflow-x: auto;
+          scrollbar-width: none;
+        }
+
+        .main-tabs > .ant-tabs-nav .ant-tabs-nav-wrap::-webkit-scrollbar {
+          display: none;
+        }
+
+        .main-tabs .ant-tabs-tab {
+          padding: 10px 12px;
+          font-size: 15px;
+          line-height: 1.15;
+        }
+
+        .main-tabs .ant-tabs-tab + .ant-tabs-tab {
+          margin-left: 6px;
+        }
+
+        .main-tabs .ant-tabs-tab-btn {
+          min-width: auto;
+          white-space: nowrap;
+        }
+
+        .hero-platform-tag.ant-tag {
+          margin-bottom: 12px;
+          padding: 7px 10px;
+          font-size: 16px;
+          white-space: normal;
+        }
+
+        .hero-panel,
+        .section-card,
+        .table-card,
+        .history-card,
+        .ai-card.ant-card,
+        .report-card.ant-card {
+          border-radius: 8px;
+        }
+
+        .hero-panel {
+          min-height: 0;
+          padding: 20px 14px;
+        }
+
+        .hero-copy h1.ant-typography {
+          font-size: 31px;
+          line-height: 1.08;
+        }
+
+        .hero-lede.ant-typography {
+          font-size: 15px;
+          line-height: 1.7;
+        }
+
+        .hero-board {
+          padding: 12px;
+        }
+
+        .hero-board .ant-statistic {
+          min-height: 92px;
+          padding: 12px;
+        }
+
+        .section-title-row {
+          margin-bottom: 12px;
+        }
+
+        .section-title-row h2.ant-typography,
+        .june-title.ant-typography,
+        .report-title.ant-typography {
+          font-size: 26px;
+          line-height: 1.16;
+        }
+
+        .stakeholder-card .ant-card-body,
+        .section-card .ant-card-body,
+        .table-card .ant-card-body,
+        .history-card .ant-card-body,
+        .ai-card .ant-card-body,
+        .report-card .ant-card-body {
+          padding: 16px;
+        }
+
+        .main-tabs .ant-steps {
+          display: block;
+        }
+
+        .main-tabs .ant-steps-item {
+          padding-bottom: 12px;
+        }
+
+        .task-tag,
+        .work-tag.ant-tag,
+        .people-tag.ant-tag,
+        .ant-tag {
+          max-width: 100%;
+          white-space: normal;
+          overflow-wrap: anywhere;
+        }
+
+        .download-list .ant-btn,
+        .ant-btn {
+          min-height: 36px;
+        }
+
+        .ai-grid,
+        .incentive-hero,
+        .selection-hero,
+        .june-hero {
+          gap: 12px;
+        }
+
+        .ai-card .ant-radio-group {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          width: 100%;
+        }
+
+        .ai-card .ant-radio-button-wrapper {
+          text-align: center;
+          padding-inline: 8px;
+        }
+
+        .ai-upload .ant-upload-drag {
+          padding: 16px 10px;
+        }
+
+        .report-card .ant-alert-action {
+          width: 100%;
+        }
+
+        .report-card .ant-alert-action .ant-space,
+        .report-action-inline {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 8px !important;
+        }
+
+        .report-card .ant-alert-action .ant-btn,
+        .report-action-inline .ant-btn {
+          width: 100%;
+          white-space: normal;
+          line-height: 1.25;
+        }
+
+        .desktop-only {
+          display: none !important;
+        }
+
+        .mobile-only {
+          display: block;
+        }
+
+        .mobile-only.mobile-card-list {
+          display: grid;
+        }
+
+        .auth-route-shell .auth-shell,
+        .auth-shell {
+          min-height: 100vh;
+          grid-template-columns: 1fr;
+          border-radius: 0;
+        }
+
+        .auth-scene {
+          min-height: auto;
+          padding: 18px 18px 12px;
+        }
+
+        .auth-scene-copy h2.ant-typography {
+          font-size: 27px;
+        }
+
+        .auth-scene-copy .ant-typography {
+          font-size: 14px;
+          line-height: 1.65;
+        }
+
+        .auth-brand {
+          margin-bottom: 12px;
+        }
+
+        .auth-stage {
+          height: 170px;
+          margin: 0;
+          opacity: 0.78;
+        }
+
+        .ref-characters {
+          transform: scale(0.48) translateY(148px);
+          transform-origin: bottom center;
+        }
+
+        .auth-scene-foot {
+          display: none;
+        }
+
+        .auth-form-panel {
+          padding: 16px 12px 24px;
+        }
+
+        .auth-card {
+          padding: 2px;
+          border-radius: 8px;
+        }
+
+        .qr-modal-image {
+          width: min(210px, 68vw);
+        }
+      }
+
+      @media (max-width: 380px) {
+        .app-shell {
+          width: calc(100% - 18px);
+        }
+
+        .app-header h1.ant-typography {
+          font-size: 22px;
+        }
+
+        .hero-copy h1.ant-typography {
+          font-size: 28px;
+        }
+
+        .mobile-action-grid,
+        .report-card .ant-alert-action .ant-space,
+        .report-action-inline {
+          grid-template-columns: 1fr;
+        }
+      }
     </style>
   </head>
   <body>
@@ -1351,6 +1732,31 @@
               `下载：${item.label}`,
             ),
           ),
+        );
+      }
+
+      function MobileMetaItem({ label, children }) {
+        return h(
+          "div",
+          { className: "mobile-meta-item" },
+          h("div", { className: "mobile-meta-label" }, label),
+          h("div", { className: "mobile-meta-value" }, children),
+        );
+      }
+
+      function ReportActionButtons({ row, compact = false }) {
+        const item = normalizeReportArtifact(row);
+        const gridClass = compact ? "mobile-action-grid" : "";
+        return h(
+          "div",
+          { className: compact ? gridClass : "report-action-inline" },
+          h(Button, { href: item.shareUrl, target: "_blank", type: compact ? "primary" : "default" }, "打开分享页"),
+          h(Button, { onClick: () => showQrModal(item) }, "二维码"),
+          h(Button, { href: item.svgUrl, target: "_blank" }, "下载SVG"),
+          item.excelUrl ? h(Button, { href: item.excelUrl, target: "_blank" }, "Excel汇总") : null,
+          item.diagnosticsUrl ? h(Button, { href: item.diagnosticsUrl, target: "_blank" }, "接口诊断") : null,
+          item.normalizedDataUrl ? h(Button, { href: item.normalizedDataUrl, target: "_blank" }, "标准化数据") : null,
+          h(Button, { onClick: () => copyText(item.shareUrl).then(() => message.success("分享链接已复制")) }, "复制链接"),
         );
       }
 
@@ -2279,21 +2685,39 @@
             title: "操作",
             width: 360,
             render: (_, row) => {
-              const item = normalizeReportArtifact(row);
               return h(
                 Space,
                 { wrap: true },
-                h(Button, { href: item.shareUrl, target: "_blank" }, "打开分享页"),
-                h(Button, { href: item.svgUrl, target: "_blank" }, "下载SVG"),
-                h(Button, { onClick: () => showQrModal(item) }, "二维码"),
-                item.excelUrl ? h(Button, { href: item.excelUrl, target: "_blank" }, "Excel汇总") : null,
-                item.diagnosticsUrl ? h(Button, { href: item.diagnosticsUrl, target: "_blank" }, "接口诊断") : null,
-                item.normalizedDataUrl ? h(Button, { href: item.normalizedDataUrl, target: "_blank" }, "标准化数据") : null,
-                h(Button, { onClick: () => copyText(item.shareUrl).then(() => message.success("分享链接已复制")) }, "复制链接"),
+                h(ReportActionButtons, { row }),
               );
             },
           },
         ];
+
+        const mobileReports = h(
+          "div",
+          { className: "mobile-only mobile-card-list" },
+          reports.map((row) => {
+            const item = normalizeReportArtifact(row);
+            return h(
+              Card,
+              { key: row.id, bordered: false, className: "mobile-report-card" },
+              h(
+                "div",
+                { className: "mobile-card-head" },
+                h("a", { href: item.shareUrl, target: "_blank", rel: "noreferrer", className: "mobile-card-title" }, row.reportTitle || "四季蝉AI复盘报告"),
+                h(Tag, { color: row.sourceType === "login" ? "blue" : "gold" }, row.sourceName || row.sourceType || "复盘"),
+              ),
+              h(
+                "div",
+                { className: "mobile-meta-grid" },
+                h(MobileMetaItem, { label: "生成时间" }, row.createdAt ? dayjs(row.createdAt).format("YYYY-MM-DD HH:mm") : "暂无"),
+                h(MobileMetaItem, { label: "来源" }, row.sourceName || "暂无"),
+              ),
+              h(ReportActionButtons, { row, compact: true }),
+            );
+          }),
+        );
 
         return h(
           "div",
@@ -2304,7 +2728,8 @@
             h(Tag, { color: "blue", className: "hero-platform-tag" }, auth.user.role === "admin" ? "全部报告" : "我的报告"),
             h(Title, { level: 2, className: "june-title" }, "历史复盘报告"),
             h(Paragraph, null, auth.user.role === "admin" ? "管理员可查看平台生成过的复盘报告。" : "这里保存你生成过的AI复盘报告和分享产物。"),
-            h(Table, { rowKey: "id", loading, columns, dataSource: reports, pagination: { pageSize: 8 }, scroll: { x: 900 } }),
+            h("div", { className: "desktop-only" }, h(Table, { rowKey: "id", loading, columns, dataSource: reports, pagination: { pageSize: 8 }, scroll: { x: 900 } })),
+            loading ? h(Alert, { className: "mobile-only", type: "info", showIcon: true, message: "历史报告加载中" }) : mobileReports,
           ),
         );
       }
@@ -2993,6 +3418,32 @@
           },
         ];
 
+        const mobileCalendar = h(
+          "div",
+          { className: "mobile-only mobile-card-list" },
+          rows.map((row) =>
+            h(
+              Card,
+              { key: row.key, bordered: false, className: "mobile-calendar-card" },
+              h(
+                "div",
+                { className: "mobile-card-head" },
+                h("div", { className: "mobile-card-title" }, `${row.index}. ${row.project}`),
+                h(Tag, { color: row.propertyColor, className: "work-tag" }, row.property),
+              ),
+              h(
+                "div",
+                { className: "mobile-meta-grid" },
+                h(MobileMetaItem, { label: "对接内容" }, row.content),
+                h(MobileMetaItem, { label: "处理事务" }, h(Space, { direction: "vertical", size: 6 }, row.tasks.map((task) => h(Tag, { className: "task-tag", key: task }, task)))),
+                h(MobileMetaItem, { label: "注意事项" }, row.notes === "暂无" ? h(Text, { type: "secondary" }, "暂无") : row.notes),
+                h(MobileMetaItem, { label: "材料下载" }, h(MaterialButtons, { items: row.materialItems })),
+                h(MobileMetaItem, { label: "连锁配合人员" }, h(Space, { wrap: true, size: [6, 6] }, row.people.map((person) => h(Tag, { color: "blue", className: "people-tag", key: person }, person)))),
+              ),
+            ),
+          ),
+        );
+
         return h(
           "div",
           { className: "calendar-shell" },
@@ -3002,7 +3453,8 @@
             { gutter: [16, 16], className: "summary-row" },
             [["总事项", 7], ["一次性工作", 5], ["每月更新", 1], ["及时更新", 1]].map(([title, value]) => h(Col, { xs: 12, md: 6, key: title }, h(Card, { bordered: false }, h(Statistic, { title, value })))),
           ),
-          h(Card, { bordered: false, className: "table-card" }, h(Table, { columns, dataSource: rows, pagination: false, scroll: { x: 1500 }, sticky: true })),
+          h(Card, { bordered: false, className: "table-card desktop-only" }, h(Table, { columns, dataSource: rows, pagination: false, scroll: { x: 1500 }, sticky: true })),
+          mobileCalendar,
         );
       }
 

@@ -1,18 +1,33 @@
-# SOP_4CHAN
+# SOP_4CHAN 海典四季蝉门户
 
-海典四季蝉业务对接与AI复盘门户，使用 React + Ant Design 单页应用，并由 Node.js 服务提供用户登录注册、静态资源、Excel解析、AI复盘和 Supabase/Postgres 数据持久化能力。
+海典四季蝉门户是面向医药连锁客户的重点品数字化动销与复盘平台。网站把四季蝉的产品介绍、客户对接 SOP、激励玩法、选品思路、6 月营销推荐、AI 复盘报告、历史分享材料和 AI 配置集中到一个可访问、可分享、可部署的前后端项目中。
 
-## 功能
+当前线上入口建议使用：
 
-- 首页：四季蝉能力介绍。
-- 对接行事历：客户对接事项和材料下载。
-- 激励玩法：四季蝉激励类型说明。
-- 选品思路：重点品分层和选品来源。
-- 6月营销推荐：品种营销建议页。
-- 用户体系：开放注册、登录、退出，第一位注册用户自动成为管理员。
-- AI复盘报告：登录后上传四季蝉复盘数据标准模板 `.xlsx`，或通过登录获取数据，生成AI复盘报告并支持复制、分享、SVG导出和二维码查看。
-- 历史报告：保存解析摘要、AI报告和分享产物链接，用户可查看自己的历史报告，管理员可查看全部。
-- AI配置：仅管理员配置 AI API Key、Base URL、模型和调用协议。
+```text
+https://sijichan.top
+```
+
+## 网站内容
+
+- **首页**：介绍四季蝉作为“医药连锁重点品种数字化动销平台”的定位，说明厂家资源、重点品培训、店员激励、销售数据和复盘看板如何形成闭环。
+- **对接行事历**：沉淀客户上线前后的 SOP 工作目录，包括汇付账户开通、基础信息维护、工业信息收集、活动商品创建、培训、订单测试和店员上线，并提供材料下载。
+- **激励玩法**：展示四季蝉活动激励类型、玩法规则、适用场景和运营作用，帮助连锁理解如何设计店员动销激励。
+- **选品思路**：说明重点品、黄金单品、普通带金、AAA 主力赚钱品等品种分层逻辑，用于支撑活动选品。
+- **6 月营销推荐**：结合月度营销节点、热卖品和赚钱品，提供品类与重点品种推荐。
+- **AI 复盘报告**：登录后支持上传 Excel 模板或通过“四季蝉登录获取”读取客户数据，由 AI 生成复盘报告、独立分享网页、SVG 长图、二维码和 Excel 汇总。
+- **历史报告**：保存用户生成过的复盘报告，支持打开分享页、二维码弹框、下载 SVG、下载 Excel、接口诊断、标准化数据和复制链接。
+- **AI 配置**：管理员维护 AI API Key、Base URL、模型名称和调用协议，支持 DeepSeek / OpenAI-compatible Chat Completions。
+
+## 技术架构
+
+- **前端**：单文件 React 应用，使用 Ant Design 组件和 Ant Design/X 风格视觉语言，入口为 `index.html`。
+- **样式**：桌面端保留表格和仪表盘信息密度；手机端使用 `<=640px` 和 `<=380px` 断点，将长表格转换为卡片列表，优化按钮、页签、头部和登录页布局。
+- **后端**：Node.js HTTP 服务，入口为 `preview-server.js`，默认监听 `0.0.0.0:8765`。
+- **数据解析**：后端解析四季蝉复盘标准 Excel，也可通过内置导出器登录 `merchants.hydee.cn` 临时取数。
+- **AI 调用**：支持 OpenAI Responses 协议和 OpenAI-compatible Chat Completions 协议；DeepSeek 推荐配置为 `https://api.deepseek.com` + `deepseek-v4-flash`。
+- **报告产物**：每次 AI 复盘会生成 `.server/reports/{reportId}/index.html`、`report.svg`、`qr.svg`、`review.xlsx`、接口诊断 JSON 和标准化数据 JSON。
+- **数据存储**：优先使用 Supabase/Postgres；未配置数据库时回退到 `.server/portal-data.json` 本地存储。
 
 ## 本地运行
 
@@ -25,6 +40,38 @@ npm start
 
 ```text
 http://localhost:8765/
+```
+
+常用检查：
+
+```bash
+node --check preview-server.js
+```
+
+## 环境变量
+
+生产环境配置放在服务器 `.server/.env` 或进程管理工具环境变量中，不提交 GitHub。
+
+```bash
+PORT=8765
+HOST=0.0.0.0
+SESSION_SECRET=replace-with-random-secret
+PUBLIC_REPORT_BASE_URL=https://sijichan.top
+
+# Supabase/Postgres，可使用 DATABASE_URL 或拆分参数
+DATABASE_URL=postgresql://sijichan.<project-ref>:********@aws-0-<region>.pooler.supabase.com:5432/postgres
+DB_HOST=db.gqinewwwnfdxwqtnapjl.supabase.co
+DB_PORT=5432
+DB_NAME=postgres
+DB_USER=sijichan
+DB_PASSWORD=********
+DB_SSL=true
+```
+
+`PUBLIC_REPORT_BASE_URL` 会影响分享页、二维码、SVG、Excel、接口诊断和标准化数据链接。通过 Cloudflare Tunnel 暴露服务时应设置为：
+
+```bash
+PUBLIC_REPORT_BASE_URL=https://sijichan.top
 ```
 
 ## Supabase MCP
@@ -44,31 +91,7 @@ codex mcp login supabase
 npx skills add supabase/agent-skills
 ```
 
-> 当前 Windows 环境里 `codex.exe` 可能被系统策略拦截，需要在可执行 Codex CLI 的终端完成 MCP 登录。
-
-## 数据库配置
-
-服务支持 Supabase/Postgres。数据库连接配置只放在服务器 `.server/.env` 或 PM2 环境变量，不提交 GitHub。
-
-```bash
-# 推荐：使用 Supabase Dashboard 提供的 Session pooler / Transaction pooler 连接串，
-# 尤其是服务器没有 IPv6 出口时。
-DATABASE_URL=postgresql://sijichan.<project-ref>:********@aws-0-<region>.pooler.supabase.com:5432/postgres
-
-# 或者使用直连参数；注意 db.<project-ref>.supabase.co 可能只返回 IPv6。
-DB_HOST=db.gqinewwwnfdxwqtnapjl.supabase.co
-DB_PORT=5432
-DB_NAME=postgres
-DB_USER=sijichan
-DB_PASSWORD=********
-DB_SSL=true
-SESSION_SECRET=replace-with-random-secret
-PUBLIC_REPORT_BASE_URL=https://sijichan.top
-```
-
-如果本地没有配置数据库，服务会退回 `.server/portal-data.json` 本地兜底存储，便于开发调试。
-
-服务启动时会自动创建这些表：
+服务启动时会自动准备这些表：
 
 - `users`
 - `customer_profiles`
@@ -76,59 +99,49 @@ PUBLIC_REPORT_BASE_URL=https://sijichan.top
 - `customer_datasets`
 - `review_reports`
 
-## 用户与AI配置
+## 用户与权限
 
-第一位注册用户自动成为管理员，后续注册用户默认为客户。
+- 支持开放注册、登录、退出。
+- 第一位注册用户自动成为管理员；后续注册用户默认是客户角色。
+- 未登录用户可以浏览：首页、对接行事历、激励玩法、选品思路、6 月营销推荐。
+- 登录用户可以使用 AI 复盘报告和历史报告。
+- 只有管理员可以进入 AI 配置页并维护模型配置。
 
-管理员登录后进入“AI配置”页：
+## AI 复盘数据来源
 
-1. 输入 AI API Key。
-2. DeepSeek 推荐 Base URL `https://api.deepseek.com`。
-3. DeepSeek 推荐模型 `deepseek-v4-flash`，调用协议选择 `Chat Completions`。
-4. 点击“测试连接”，确认可用后保存。
+AI 复盘报告支持两种来源：
 
-AI API Key 会加密后保存到数据库；本地兜底模式下保存到 `.server/ai-config.json`。`.server/` 已加入 `.gitignore`，不会提交到 GitHub。
+1. **Excel 模板上传**：上传四季蝉复盘数据标准模板 `.xlsx`，后端解析标准页签并生成报告。
+2. **登录获取**：输入四季蝉账号、密码，客户名称和客户编码选填。后端临时登录 `merchants.hydee.cn`，按自然月口径读取销售、活动、奖励、培训、厂家打赏和概览校验数据。
 
-## 复盘数据来源
+四季蝉账号、密码和业务 token 只用于本次取数，不写入 GitHub、前端代码、分享报告或历史记录。
 
-AI复盘报告需要登录后使用，支持两种来源：
+## 分享与下载
 
-1. Excel模板上传：上传“四季蝉复盘数据标准模板”的 `.xlsx` 文件。
-2. 登录获取：使用四季蝉账号和密码临时登录 `merchants.hydee.cn`，由项目内置导出器按固定自然月口径读取销售、活动、奖励、培训、厂家打赏和概览校验数据后生成报告。
+AI 复盘成功后会返回：
 
-登录获取时，四季蝉账号、密码和后台 token 只会用于本次接口取数，不会写入 GitHub、前端代码、报告页面或历史记录。
+- 分享网页：`/reports/{reportId}/`
+- SVG 长图：`/reports/{reportId}/report.svg`
+- 二维码：`/reports/{reportId}/qr.svg`
+- Excel 汇总：`/reports/{reportId}/review.xlsx`
+- 接口诊断：`/reports/{reportId}/四季蝉接口诊断.json`
+- 标准化数据：`/reports/{reportId}/四季蝉登录获取标准化数据.json`
 
-每次成功生成报告后，数据库会保存：
+历史报告页和生成报告后的操作区都会按当前访问域名拼接链接。例如通过 `https://sijichan.top` 访问时，复制链接和下载链接都会使用 `https://sijichan.top/reports/...`。
 
-- 数据来源和解析摘要。
-- AI结构化报告和 Markdown。
-- 分享网页、SVG长图和二维码链接。
-- 数据源状态：区分“有明细”“有指标无明细”“接口成功，业务值为0”和“接口异常”，避免把概览、培训、厂家打赏等指标型数据误读为没取到。
+## 手机端适配
 
-不会保存客户上传的原始 Excel 文件。
+网站已针对手机浏览做专门适配：
 
-## 分享报告
+- 顶部头部改为紧凑纵向排版。
+- 主导航页签在手机端横向滑动并保持 sticky。
+- 对接行事历在手机端由横向大表格改为项目卡片列表。
+- 历史报告在手机端由表格改为报告卡片列表。
+- AI 复盘按钮、下载入口和二维码入口在手机端使用两列或单列按钮。
+- 二维码在当前页面弹框展示，不跳转到二维码网页。
+- 长标签、品种名称、材料下载按钮和说明文字均允许自然换行。
 
-AI复盘成功后，系统会在 `.server/reports/{reportId}/` 生成：
-
-- `index.html`：独立数据分析网页。
-- `report.json`：结构化报告数据。
-- `report.svg`：整份报告SVG长图。
-- `qr.svg`：扫码查看二维码。
-
-服务器部署时可设置：
-
-```bash
-PUBLIC_REPORT_BASE_URL=https://sijichan.top
-```
-
-二维码会指向：
-
-```text
-https://sijichan.top/reports/{reportId}/
-```
-
-## 服务器运行
+## 部署
 
 默认监听：
 
@@ -136,13 +149,13 @@ https://sijichan.top/reports/{reportId}/
 0.0.0.0:8765
 ```
 
-可用环境变量调整：
+可直接使用 Node.js：
 
 ```bash
 PORT=8765 HOST=0.0.0.0 npm start
 ```
 
-长期运行建议使用 `pm2`：
+长期运行建议使用 systemd 或 pm2。例如 pm2：
 
 ```bash
 npm install -g pm2
@@ -150,35 +163,15 @@ pm2 start preview-server.js --name sop-4chan
 pm2 save
 ```
 
-正式给客户上传经营数据时，建议配置域名和 HTTPS。
+正式给客户上传经营数据和配置 AI Key 时，建议使用域名和 HTTPS。当前 Cloudflare Tunnel 映射域名为：
 
-## 四季蝉登录获取内置导出器
+```text
+https://sijichan.top
+```
 
-`AI复盘报告` 页面中的“登录获取”已改为项目内置导出器，不再依赖外部 `sijichan-shuju` 仓库。后端直接登录 `merchants.hydee.cn`，使用 `account + MD5(password).toUpperCase() + clientId + loginSourceType=1` 获取 token，并按自然月口径读取销售、奖励、活动、培训、厂家打赏和概览校验数据。
+## 安全说明
 
-默认口径以 `2026-06-06` 为基准：上月为 2026-05，上上月为 2026-04，前两月对比期为 2026-03 至 2026-04，近半年为 2025-12 至 2026-05，上期半年为 2025-06 至 2025-11。客户编码为空时按登录账号默认权限取数；填写客户编码时才向四季蝉业务接口传递 `merCode`。
-
-每次成功生成报告后，`.server/reports/{reportId}/` 会包含 `index.html`、`report.json`、`report.svg`、`qr.svg` 和 `review.xlsx`，其中 `review.xlsx` 是经营复盘数据汇总工作簿。
-
-`review.xlsx` 会包含“数据源状态”页：销售汇总、活动汇总、奖励统计属于明细型数据；概览校验属于指标型数据；培训和厂家打赏如果接口成功但当前口径业务值为 0，会明确标注为“接口成功，业务值为0”，而不是简单显示 0 行。
-## 登录获取接口诊断型重写
-
-本次“登录获取”链路按 `019e9d68-1e1b-7862-b163-cf147ee78602` 会话中的内置脚本口径重写为项目内置导出器，不再依赖外部 `sijichan-shuju` 仓库，也不再用“最终 0 行”推断原因。
-
-执行计划：
-
-1. 登录 `merchants.hydee.cn`，使用 `account + MD5(password).toUpperCase() + clientId + loginSourceType=1` 获取 token。
-2. 按自然月固定口径取数：2026-05、2026-04、2026-03 至 2026-04、2025-12 至 2026-05、2025-06 至 2025-11。
-3. 逐个接口记录诊断：销售概览、销售商品明细、奖励统计、活动汇总、培训概览/明细、厂家打赏、概览校验。
-4. 每个接口都输出：模块、接口、类型、HTTP 状态、业务码、业务消息、明细行数、指标数量、请求参数、取数时间和失败原因。
-5. Excel `review.xlsx` 新增“接口诊断”页；报告目录新增 `四季蝉接口诊断.json` 和 `四季蝉登录获取标准化数据.json`。
-6. 前端报告生成结果和历史报告增加“接口诊断”“标准化数据”下载入口。
-
-排查结论口径：
-
-- “有明细”：接口成功并返回可复盘业务明细。
-- “有指标无明细”：概览类接口成功返回指标，但它本身不产生明细行。
-- “接口成功，业务值为0”：接口成功，当前客户/当前口径业务确实为空或金额为 0。
-- “失败”：接口请求失败、业务码异常、权限不足或 token 不被该接口接受，原因会写入“接口诊断”页。
-
-这样可以区分“没有数据”“接口没权限”“接口参数不对”“解析没覆盖”四种情况，避免再把所有问题混成“0 行”。
+- `.server/` 不提交 GitHub。
+- AI API Key、数据库密码、四季蝉账号密码、业务 token 不写入前端代码。
+- 客户上传的原始 Excel 不长期保存；系统只保存解析摘要、AI 报告、历史报告记录和分享产物。
+- 历史报告保存的是报告结果和下载链接，不保存四季蝉登录凭证。
