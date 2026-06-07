@@ -16,6 +16,7 @@ https://sijichan.top
 - **选品思路**：说明重点品、黄金单品、普通带金、AAA 主力赚钱品等品种分层逻辑，用于支撑活动选品。
 - **6 月营销推荐**：结合月度营销节点、热卖品和赚钱品，提供品类与重点品种推荐。
 - **AI 复盘报告**：登录后支持上传 Excel 模板或通过“四季蝉登录获取”读取客户数据，由 AI 生成复盘报告、独立分享网页、SVG 长图、二维码和 Excel 汇总。
+- **续用风险洞察**：AI 复盘会额外计算客户续用健康度、活动覆盖、激励闭环、员工参与、培训承接、厂家协同等指标，用于证明四季蝉价值、识别流失风险，并指导客户多使用重点品运营能力。
 - **历史报告**：保存用户生成过的复盘报告，支持打开分享页、二维码弹框、下载 SVG、下载 Excel、接口诊断、标准化数据和复制链接。
 - **相关工具与资料**：首页底部提供 4 个友链资料页，包括华南连锁 6 月营销方案、医药连锁四季营销日历、四季蝉产品学习手册和五大金刚综合能力评估测试。
 - **测评数据**：五大金刚测评页支持提交答题结果，管理员可在门户内查看提交人、部门、完成度和每题答案。
@@ -29,6 +30,7 @@ https://sijichan.top
 - **数据解析**：后端解析四季蝉复盘标准 Excel，也可通过内置导出器登录 `merchants.hydee.cn` 临时取数。
 - **AI 调用**：支持 OpenAI Responses 协议和 OpenAI-compatible Chat Completions 协议；DeepSeek 推荐配置为 `https://api.deepseek.com` + `deepseek-v4-flash`。
 - **报告产物**：每次 AI 复盘会生成 `.server/reports/{reportId}/index.html`、`report.svg`、`qr.svg`、`review.xlsx`、接口诊断 JSON 和标准化数据 JSON。
+- **运营洞察**：标准化摘要中包含 `operationInsights`，Excel 汇总增加“续用风险与运营提升”页，方便销售、实施和运营在老客户复盘会上直接使用。
 - **测评收集**：公开友链页 `links/five-core-capability-test.html` 调用 `POST /api/capability-test-submissions` 保存开放题答案，管理员通过 `GET /api/capability-test-submissions` 查看。
 - **数据存储**：优先使用 Supabase/Postgres；未配置数据库时回退到 `.server/portal-data.json` 本地存储。
 

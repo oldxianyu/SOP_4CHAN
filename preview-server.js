@@ -998,6 +998,42 @@ function countPositive(rows, field) {
   return rows.filter((row) => toNumber(row[field]) > 0).length;
 }
 
+function ratioPercent(numerator, denominator) {
+  const base = toNumber(denominator);
+  if (!base) return 0;
+  return Math.round((toNumber(numerator) / base) * 10000) / 100;
+}
+
+function sumCandidates(rows, candidates) {
+  return (rows || []).reduce((sum, row) => {
+    const key = candidates.find((candidate) => row && row[candidate] !== undefined && row[candidate] !== "");
+    return sum + (key ? toNumber(row[key]) : 0);
+  }, 0);
+}
+
+function uniqueCountCandidates(rows, candidates) {
+  const values = new Set();
+  for (const row of rows || []) {
+    const value = pickField(row, candidates);
+    if (hasValue(value)) values.add(String(value).trim());
+  }
+  return values.size;
+}
+
+function countRowsWithPositiveCandidate(rows, candidates) {
+  return (rows || []).filter((row) => candidates.some((candidate) => toNumber(row?.[candidate]) > 0)).length;
+}
+
+function rateLevel(value, good, warning) {
+  if (value >= good) return "healthy";
+  if (value >= warning) return "watch";
+  return "risk";
+}
+
+function money(value) {
+  return Math.round(toNumber(value) * 100) / 100;
+}
+
 function xmlDecode(text) {
   return String(text || "")
     .replace(/&lt;/g, "<")
@@ -1210,6 +1246,13 @@ async function parseWorkbook(buffer, filename) {
       topFactories: topRows(shareReward, "激励总金额", ["激励厂家", "激励总金额", "员工姓名", "所属机构", "晒单时间", "激励内容"], 10, true),
     },
   };
+  summary.operationInsights = deriveOperationInsights({
+    salesRows: [...comparison, ...trend],
+    activityRows: activity,
+    cashoutRows: cashout,
+    incentiveRows: incentive,
+    shareRewardRows: shareReward,
+  });
 
   return summary;
 }
@@ -1232,6 +1275,8 @@ function buildPrompt(summary) {
     "四季蝉不是单纯红包工具，而是把厂家、连锁总部、门店店员、顾客连接起来，围绕重点品完成选品、培训、激励、销售、提现、统计、复盘的数字化运营平台。",
     "不要加入与客户数据无关的营销节点、季节场景或泛化品类建议。",
     "请关注：品种增长/下滑、活动商品销售与奖励闭环、激励方式使用/未使用价值、店员提现参与、厂家晒单打赏、下一步动作。",
+    "新增复盘目标：通过数据证明四季蝉价值，引导客户持续使用，降低流失风险。必须使用 operationInsights 中的健康度、续用风险、价值证明点和建议动作。",
+    "请明确输出：1）客户继续使用四季蝉的价值证据；2）可能导致客户流失的风险信号；3）下月应推动客户多用哪些模块或玩法；4）总部、门店、厂家三方各自的跟进动作。",
     "输出必须是JSON，不要输出Markdown代码块。",
     "数据摘要如下：",
     JSON.stringify(summaryForAi(summary)),
@@ -1665,6 +1710,21 @@ function workbookSheets(summary, report) {
   const raw = summary.rawData || {};
   const windows = summary.windows || {};
   const metrics = summary.metricRows || {};
+  const insights = summary.operationInsights || {};
+  const insightRows = [
+    { 模块: "客户续用健康度", 指标: "健康度评分", 数值: insights.healthScore ?? "", 结论: insights.retentionRisk ? `续用风险：${insights.retentionRisk}` : "", 建议动作: "用于判断客户是否已经把四季蝉用成持续运营工具，而不是一次性红包活动。" },
+    ...((insights.scoreItems || []).map((item) => ({
+      模块: "健康度拆解",
+      指标: item.label || item.key || "",
+      数值: item.value ?? "",
+      结论: item.level === "healthy" ? "表现较好" : item.level === "watch" ? "需要关注" : "流失风险",
+      建议动作: item.explanation || "",
+    }))),
+    ...((insights.valueProofPoints || []).map((item) => ({ 模块: "价值证明点", 指标: "客户继续使用证据", 数值: "", 结论: item, 建议动作: "复盘会上优先展示，用数据证明四季蝉带来的动销、激励和协同价值。" }))),
+    ...((insights.riskItems || []).map((item) => ({ 模块: "流失风险信号", 指标: item.label || "", 数值: item.value ?? "", 结论: item.explanation || "", 建议动作: "形成下月跟进清单，避免客户只看到成本，看不到持续运营收益。" }))),
+    ...((insights.recommendedActions || []).map((item, index) => ({ 模块: "下月推动动作", 指标: `动作${index + 1}`, 数值: "", 结论: item, 建议动作: item }))),
+    ...((insights.weakActivityItems || []).map((item) => ({ 模块: "弱活动品种", 指标: item.商品名称 || item.商品编码 || "", 数值: item.指标值 ?? "", 结论: item.数据路径 || "", 建议动作: "检查是否存在有奖励但无销售的品种，必要时调整选品、门店覆盖或店员培训。" }))),
+  ].filter((row) => Object.values(row).some((value) => value !== "" && value !== undefined && value !== null));
   const statusRows = (summary.datasetFiles || []).map((file) => ({
     数据源: file.label || file.name,
     文件标识: file.name,
@@ -1725,6 +1785,7 @@ function workbookSheets(summary, report) {
     { name: "活动汇总-5月_vs_4月", rows: [...(raw.activitySummary?.lastMonth?.rows || []), ...(raw.activitySummary?.previousMonth?.rows || [])] },
     { name: "培训情况", rows: trainingRows },
     { name: "厂家打赏", rows: manufacturerTipRows.length ? manufacturerTipRows : [{ 类型: "厂家打赏汇总", 指标: "当前口径厂家打赏", 指标值: 0, 说明: "接口成功返回，但无打赏金额和明细记录" }] },
+    { name: "续用风险与运营提升", rows: insightRows.length ? insightRows : [{ 模块: "运营洞察", 指标: "暂无可计算洞察", 数值: "", 结论: "当前数据不足", 建议动作: "补齐销售、活动、奖励、培训、提现或厂家协同数据后再复盘。" }] },
     { name: "经营复盘结论", rows: [
       { 类型: "Executive Summary", 内容: report?.executiveSummary || "" },
       ...((report?.highlights || []).map((item) => ({ 类型: "关键发现", 内容: item }))),
@@ -2345,6 +2406,120 @@ function topGenericRows(rows, metricCandidates, fields, limit = 10, desc = true)
     });
 }
 
+function deriveOperationInsights({
+  salesRows = [],
+  activityRows = [],
+  rewardRows = [],
+  trainingRows = [],
+  tipsRows = [],
+  cashoutRows = [],
+  incentiveRows = [],
+  shareRewardRows = [],
+  metricRows = {},
+} = {}) {
+  const productCodeCandidates = ["commodityCode", "wareIspCode", "productCode", "goodsCode", "skuCode", "商品编码"];
+  const productNameCandidates = ["commodityName", "productName", "goodsName", "skuName", "商品名称"];
+  const salesAmountCandidates = ["saleCommodityAmount", "rewardSaleAmount", "saleAmount", "salesAmount", "销售金额", "激励商品销售金额"];
+  const rewardAmountCandidates = ["rewardCommodityAmount", "singleRewardMoney", "rewardAmount", "amount", "奖励金额", "激励总金额"];
+  const storeCandidates = ["saleStoreNum", "storeNum", "storeCode", "merCode", "门店编码", "动销门店数"];
+  const employeeCandidates = ["employeeCode", "empCode", "empId", "员工编码", "员工姓名", "empName"];
+  const rewardPlayFields = [
+    ["单品销售奖励", "singleRewardMoney", "单品奖励金额"],
+    ["疗程销售奖励", "multiRewardMoney", "疗程奖励金额"],
+    ["关联销售奖励", "combineRewardMoney", "关联奖励金额"],
+    ["单品目标奖励", "commodityTargetRewardMoney", "单品目标奖励金额"],
+    ["系列目标奖励", "serialTargetRewardMoney", "系列目标奖励金额"],
+    ["组合目标奖励", "combinationTargetRewardMoney", "组合目标奖励金额"],
+    ["早鸟奖励", "dayRankRewardMoney", "早鸟奖励金额"],
+    ["排名奖励", "rankingRewardMoney", "排名奖励金额"],
+  ];
+
+  const salesSkuCount = uniqueCountCandidates(salesRows, productCodeCandidates);
+  const activeSkuCount = uniqueCountCandidates(activityRows, productCodeCandidates);
+  const rewardSkuCount = uniqueCountCandidates(rewardRows, productCodeCandidates);
+  const totalSalesAmount = money(sumCandidates(salesRows, salesAmountCandidates));
+  const activitySalesAmount = money(sumCandidates(activityRows, salesAmountCandidates));
+  const totalRewardAmount = money(sumCandidates(activityRows, rewardAmountCandidates) || sumCandidates(rewardRows, rewardAmountCandidates));
+  const rewardEfficiency = activitySalesAmount ? money((totalRewardAmount / activitySalesAmount) * 100) : 0;
+  const activityCoverageRate = ratioPercent(activeSkuCount || rewardSkuCount, salesSkuCount || activeSkuCount || rewardSkuCount);
+  const storeCoverage = uniqueCountCandidates([...salesRows, ...activityRows], storeCandidates);
+  const employeeCoverage = uniqueCountCandidates([...activityRows, ...cashoutRows, ...shareRewardRows], employeeCandidates);
+  const trainingMetricRows = metricRows.training || [];
+  const trainingHasSignal = trainingRows.length > 0 || hasNonZeroMetric(trainingMetricRows);
+  const shareRecordCount = (tipsRows.length || shareRewardRows.length);
+  const shareRewardAmount = money(sumCandidates(tipsRows, rewardAmountCandidates) || sumCandidates(shareRewardRows, rewardAmountCandidates));
+  const factoryCollaborationLevel = shareRecordCount > 0 || shareRewardAmount > 0 ? "healthy" : "risk";
+  const cashoutEmployeeCount = cashoutRows.length ? cashoutRows.filter((row) => toNumber(row["累计提现及时豆（元）"]) > 0 || toNumber(row["累计提现金额"]) > 0).length : 0;
+  const incomeEmployeeCount = cashoutRows.length
+    ? cashoutRows.filter((row) => toNumber(row["累计及时豆（元）"]) + toNumber(row["累计延时豆（元）"]) + toNumber(row["累计收益"]) > 0).length
+    : 0;
+  const cashoutRate = incomeEmployeeCount ? ratioPercent(cashoutEmployeeCount, incomeEmployeeCount) : 0;
+  const usedRewardPlays = rewardPlayFields
+    .map(([name, ...fields]) => ({ name, amount: money(sumCandidates([...rewardRows, ...incentiveRows], fields)), skuCount: countRowsWithPositiveCandidate([...rewardRows, ...incentiveRows], fields) }))
+    .filter((item) => item.amount > 0 || item.skuCount > 0);
+  const unusedRewardPlays = rewardPlayFields.map(([name]) => name).filter((name) => !usedRewardPlays.some((item) => item.name === name));
+  const zeroOrWeakActivityRows = (activityRows || []).filter((row) => sumCandidates([row], salesAmountCandidates) <= 0 && sumCandidates([row], rewardAmountCandidates) > 0);
+  const lowActivityRows = topGenericRows(zeroOrWeakActivityRows, rewardAmountCandidates, [
+    { name: "商品名称", candidates: productNameCandidates },
+    { name: "商品编码", candidates: productCodeCandidates },
+    { name: "数据路径", candidates: ["数据路径"] },
+  ], 8, true);
+
+  const scoreItems = [
+    { key: "activityCoverage", label: "活动覆盖", value: activityCoverageRate, level: rateLevel(activityCoverageRate, 35, 15), explanation: `活动覆盖约 ${activityCoverageRate}% 的动销品种；覆盖越低，客户越容易把四季蝉理解成少数单品红包。` },
+    { key: "rewardClosure", label: "激励闭环", value: rewardEfficiency, level: activitySalesAmount ? rateLevel(Math.min(rewardEfficiency, 100), 8, 2) : "risk", explanation: activitySalesAmount ? `每100元活动销售对应约 ${rewardEfficiency} 元奖励，需结合毛利判断激励效率。` : "当前没有识别到活动销售额，难以证明奖励带动销售。" },
+    { key: "employeeParticipation", label: "员工参与", value: employeeCoverage || cashoutRate, level: employeeCoverage || cashoutRate ? "watch" : "risk", explanation: employeeCoverage ? `识别到 ${employeeCoverage} 个员工/店员相关参与信号。` : "缺少员工参与或提现信号，店员感知弱时客户续用风险会上升。" },
+    { key: "trainingConversion", label: "培训承接", value: trainingRows.length || trainingMetricRows.length, level: trainingHasSignal ? "watch" : "risk", explanation: trainingHasSignal ? "已有培训或学习指标，可进一步与销售结果绑定。" : "培训数据为空，建议把重点品培训、考试和激励任务连成闭环。" },
+    { key: "factoryCollaboration", label: "厂家协同", value: shareRewardAmount || shareRecordCount, level: factoryCollaborationLevel, explanation: shareRecordCount || shareRewardAmount ? `厂家晒单/打赏已有 ${shareRecordCount} 条记录，金额约 ${shareRewardAmount}。` : "厂家打赏和晒单为空，厂家资源没有被充分转化为门店执行证据。" },
+  ];
+  const riskItems = scoreItems.filter((item) => item.level === "risk");
+  const watchItems = scoreItems.filter((item) => item.level === "watch");
+  const healthScore = Math.max(0, Math.min(100, Math.round(scoreItems.reduce((sum, item) => sum + (item.level === "healthy" ? 20 : item.level === "watch" ? 12 : 5), 0))));
+  const retentionRisk = healthScore >= 72 ? "低" : healthScore >= 48 ? "中" : "高";
+  const valueProofPoints = [
+    totalSalesAmount ? `已识别重点品销售额约 ${totalSalesAmount}，可用于向客户证明重点品经营规模。` : "",
+    activitySalesAmount ? `活动商品销售额约 ${activitySalesAmount}，奖励金额约 ${totalRewardAmount}，可沉淀为“费用换动销”的投入产出证据。` : "",
+    usedRewardPlays.length ? `已使用 ${usedRewardPlays.length} 类激励玩法：${usedRewardPlays.map((item) => item.name).join("、")}。` : "",
+    storeCoverage ? `识别到 ${storeCoverage} 个门店/机构相关覆盖信号，可用于做门店分层追踪。` : "",
+  ].filter(Boolean);
+  const recommendedActions = [
+    activityCoverageRate < 35 ? "扩大活动覆盖：把AAA主力赚钱品、黄金单品和任务品分层配置，避免只做零散单品。" : "保留当前活动覆盖，并按品种层级做标杆门店复制。",
+    usedRewardPlays.length < 3 ? `释放玩法价值：优先补齐 ${unusedRewardPlays.slice(0, 3).join("、")}，让客户看到四季蝉不只是单品红包。` : "复用已跑通的激励玩法，沉淀为客户月度活动模板。",
+    trainingHasSignal ? "把培训结果与活动销售做同屏复盘，证明学习能转化为店员推荐动作。" : "补齐培训考试：每个重点品至少配置卖点学习、考试奖励和销售任务。",
+    factoryCollaborationLevel === "risk" ? "引入厂家协同：推动厂家提供晒单打赏或活动费用，用数据证明费用落到门店执行层。" : "把厂家打赏和晒单沉淀成大单分享、排行榜和厂家复投证据。",
+    employeeCoverage || cashoutRate ? "继续强化店员感知：复盘提现、排行榜和高收益员工案例。" : "补齐店员收益闭环：重点展示及时豆、延时豆、可提现收益和到账案例。",
+  ];
+
+  return {
+    healthScore,
+    retentionRisk,
+    scoreItems,
+    riskItems,
+    watchItems,
+    valueProofPoints,
+    recommendedActions,
+    metrics: {
+      salesSkuCount,
+      activeSkuCount,
+      rewardSkuCount,
+      activityCoverageRate,
+      totalSalesAmount,
+      activitySalesAmount,
+      totalRewardAmount,
+      rewardEfficiency,
+      storeCoverage,
+      employeeCoverage,
+      cashoutRate,
+      usedRewardPlayCount: usedRewardPlays.length,
+      unusedRewardPlays,
+      shareRecordCount,
+      shareRewardAmount,
+      weakActivitySkuCount: zeroOrWeakActivityRows.length,
+    },
+    weakActivityItems: lowActivityRows,
+  };
+}
+
 function rowsFromPaged(paged) {
   return Array.isArray(paged?.rows) ? paged.rows : [];
 }
@@ -2489,6 +2664,14 @@ function summarizeSijichanRaw(raw) {
   const salesMetricRows = Object.entries(rawData.sales).flatMap(([key, value]) => metricRowsFromObject(value.overview, "sales.json", `${key}.overview`));
   const activityMetricRows = Object.entries(rawData.activitySummary).flatMap(([key, value]) => metricRowsFromObject(value.sum, "activity_summary.json", `${key}.sum`));
   const rewardMetricRows = metricRowsFromObject(rawData.rewardStatistics.nearHalf.sum, "reward_statistics.json", "nearHalf.sum");
+  const metricRows = {
+    sales: salesMetricRows,
+    activitySummary: activityMetricRows,
+    rewardStatistics: rewardMetricRows,
+    training: trainingMetricRows,
+    manufacturerTips: tipsMetricRows,
+    overview: overviewMetricRows,
+  };
   const files = [
     { name: "sales.json", label: "销售汇总", rows: salesRows, metricRows: salesMetricRows, note: "销售商品明细接口，同时包含销售概览指标。" },
     { name: "activity_summary.json", label: "活动汇总", rows: activityRows, metricRows: activityMetricRows, note: "活动商品明细接口，同时包含活动汇总合计。" },
@@ -2517,15 +2700,16 @@ function summarizeSijichanRaw(raw) {
     datasetFiles: files.map(datasetStatus),
     interfaceDiagnostics: raw.diagnostics || [],
     rowCounts: Object.fromEntries(files.map((file) => [file.name, file.rows.length])),
-    metricRows: {
-      sales: salesMetricRows,
-      activitySummary: activityMetricRows,
-      rewardStatistics: rewardMetricRows,
-      training: trainingMetricRows,
-      manufacturerTips: tipsMetricRows,
-      overview: overviewMetricRows,
-    },
+    metricRows,
     rawData,
+    operationInsights: deriveOperationInsights({
+      salesRows,
+      activityRows,
+      rewardRows,
+      trainingRows,
+      tipsRows,
+      metricRows,
+    }),
     salesChange: {
       topSalesAmount: topGenericRows(allRows, salesMetric, commonFields, 10, true),
       topQuantityGrowth: topGenericRows(allRows, growthMetric, commonFields, 10, true),
