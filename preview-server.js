@@ -1449,7 +1449,42 @@ function parseReportJson(text) {
   return JSON.parse(clean);
 }
 
+function arrayOfText(value) {
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((item) => arrayOfText(item))
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+  }
+  if (value && typeof value === "object") {
+    return Object.entries(value)
+      .map(([key, item]) => `${key}：${typeof item === "object" ? JSON.stringify(item) : item}`)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  const text = String(value || "").trim();
+  return text ? [text] : [];
+}
+
+function normalizeReport(report) {
+  const safe = report && typeof report === "object" ? report : {};
+  return {
+    title: String(safe.title || "四季蝉AI复盘报告").trim(),
+    executiveSummary: String(safe.executiveSummary || safe.summary || "").trim(),
+    highlights: arrayOfText(safe.highlights),
+    risks: arrayOfText(safe.risks),
+    sections: Array.isArray(safe.sections)
+      ? safe.sections.map((section, index) => ({
+          heading: String(section?.heading || section?.title || `复盘模块${index + 1}`).trim(),
+          bullets: arrayOfText(section?.bullets || section?.items || section?.content),
+        }))
+      : arrayOfText(safe.sections).map((item, index) => ({ heading: `复盘模块${index + 1}`, bullets: [item] })),
+    nextActions: arrayOfText(safe.nextActions || safe.actions || safe.recommendations),
+  };
+}
+
 function reportToMarkdown(report) {
+  report = normalizeReport(report);
   const lines = [`# ${report.title || "四季蝉AI复盘报告"}`, "", report.executiveSummary || ""];
   if (report.highlights?.length) {
     lines.push("", "## 核心亮点", ...report.highlights.map((item) => `- ${item}`));
@@ -1467,10 +1502,12 @@ function reportToMarkdown(report) {
 }
 
 function renderList(items = []) {
+  items = arrayOfText(items);
   return items.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
 }
 
 function renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUrl }) {
+  report = normalizeReport(report);
   const sections = (report.sections || [])
     .map(
       (section) => `
@@ -1599,6 +1636,7 @@ function svgText(lines, x, y, options = {}) {
 }
 
 function renderReportSvg({ report, summary, shareUrl, qrSvg }) {
+  report = normalizeReport(report);
   const width = 1200;
   let y = 92;
   const parts = [];
@@ -1707,6 +1745,7 @@ function worksheetXml(matrix) {
 }
 
 function workbookSheets(summary, report) {
+  report = normalizeReport(report);
   const raw = summary.rawData || {};
   const windows = summary.windows || {};
   const metrics = summary.metricRows || {};
