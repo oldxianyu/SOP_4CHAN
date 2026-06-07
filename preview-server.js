@@ -1835,6 +1835,7 @@ function workbookSheets(summary, report) {
   }));
   const overviewRows = [
     { 指标: "销售明细行数", 明细值: summary.rowCounts?.["sales.json"] || 0, 校验结果: (summary.rowCounts?.["sales.json"] || 0) > 0 ? "有明细" : "无明细", 说明: "来自销售汇总接口" },
+    { 指标: "我的活动列表行数", 明细值: summary.rowCounts?.["activity_catalog.json"] || 0, 校验结果: (summary.rowCounts?.["activity_catalog.json"] || 0) > 0 ? "有明细" : "无明细", 说明: "来自我的活动列表接口" },
     { 指标: "活动汇总行数", 明细值: summary.rowCounts?.["activity_summary.json"] || 0, 校验结果: (summary.rowCounts?.["activity_summary.json"] || 0) > 0 ? "有明细" : "无明细", 说明: "来自活动汇总接口" },
     { 指标: "奖励统计行数", 明细值: summary.rowCounts?.["reward_statistics.json"] || 0, 校验结果: (summary.rowCounts?.["reward_statistics.json"] || 0) > 0 ? "有明细" : "无明细", 说明: "来自奖励统计接口" },
     { 指标: "奖励发放明细行数", 明细值: summary.rowCounts?.["reward_distribution.json"] || 0, 校验结果: (summary.rowCounts?.["reward_distribution.json"] || 0) > 0 ? "有明细" : "看指标/诊断", 说明: "来自奖励发放明细页接口" },
@@ -1891,6 +1892,7 @@ function workbookSheets(summary, report) {
     })) },
     { name: "数据源状态", rows: statusRows },
     { name: "概览校验", rows: overviewRows },
+    { name: "我的活动列表", rows: raw.activityCatalog?.joined || [] },
     { name: "奖励统计-半年", rows: raw.rewardStatistics?.nearHalf?.rows || [] },
     { name: "奖励发放明细", rows: rewardDistributionRows.length ? rewardDistributionRows : [{ 类型: "奖励发放", 说明: "当前口径未识别到奖励发放明细或指标，请查看接口诊断。" }] },
     { name: "员工豆豆账户与提现", rows: employeeAccountRows.length ? employeeAccountRows : [{ 类型: "员工收益闭环", 说明: "当前口径未识别到员工账户、提现、核销或结算数据，请查看接口诊断。" }] },
@@ -2535,6 +2537,7 @@ function deriveOperationInsights({
   cashoutRows = [],
   incentiveRows = [],
   shareRewardRows = [],
+  activityCatalogRows = [],
   employeeAccountRows = [],
   rewardDistributionRows = [],
   metricRows = {},
@@ -2546,6 +2549,9 @@ function deriveOperationInsights({
   const storeCandidates = ["saleStoreNum", "storeNum", "storeCode", "merCode", "门店编码", "动销门店数"];
   const employeeCandidates = ["employeeCode", "empCode", "empId", "employeeName", "empName", "clerkName", "员工编码", "员工姓名"];
   const employeeCountCandidates = ["saleEmpNum", "rewardEmpNum", "empNum", "employeeNum", "参与员工数", "奖励员工数"];
+  const activityBudgetCandidates = ["totalSubsidy", "activityMoney", "activityBudget", "budgetAmount", "活动预算"];
+  const activityUsedBudgetCandidates = ["alreadySubsidy", "gotSubsidyAmount", "usedSubsidy", "usedAmount", "已发放金额"];
+  const activityRemainBudgetCandidates = ["surplusSubsidy", "remainSubsidy", "balanceAmount", "剩余金额"];
   const rewardPlayFields = [
     ["单品销售奖励", "singleRewardMoney", "单品奖励金额"],
     ["疗程销售奖励", "multiRewardMoney", "疗程奖励金额"],
@@ -2560,6 +2566,14 @@ function deriveOperationInsights({
   const salesSkuCount = uniqueCountCandidates(salesRows, productCodeCandidates);
   const activeSkuCount = uniqueCountCandidates(activityRows, productCodeCandidates);
   const rewardSkuCount = uniqueCountCandidates(rewardRows, productCodeCandidates);
+  const joinedActivityCount = activityCatalogRows.length;
+  const onlineActivityCount = (activityCatalogRows || []).filter((row) => [1, 3, 62, "1", "3", "62"].includes(row.status)).length;
+  const endedActivityCount = (activityCatalogRows || []).filter((row) => [5, 6, "5", "6"].includes(row.status)).length;
+  const activityCatalogSalesAmount = money(sumCandidates(activityCatalogRows, ["activitySaleAmount", "saleAmount", "salesAmount"]));
+  const activityCatalogRelationSaleAmount = money(sumCandidates(activityCatalogRows, ["relationSaleAmount", "relatedSaleAmount"]));
+  const activityBudgetAmount = money(sumCandidates(activityCatalogRows, activityBudgetCandidates));
+  const activityUsedBudgetAmount = money(sumCandidates(activityCatalogRows, activityUsedBudgetCandidates));
+  const activityRemainBudgetAmount = money(sumCandidates(activityCatalogRows, activityRemainBudgetCandidates));
   const totalSalesAmount = money(sumCandidates(salesRows, salesAmountCandidates));
   const activitySalesAmount = money(sumCandidates(activityRows, salesAmountCandidates));
   const rewardRowsAmount = money(sumAllCandidateFields(rewardRows, rewardPlayFields.flatMap(([, ...fields]) => fields)));
@@ -2612,6 +2626,7 @@ function deriveOperationInsights({
   ], 8, true);
 
   const scoreItems = [
+    { key: "activitySustainability", label: "活动持续运营", value: joinedActivityCount, level: onlineActivityCount ? "healthy" : joinedActivityCount ? "watch" : "risk", explanation: joinedActivityCount ? `已识别 ${joinedActivityCount} 个已参加/已配置活动，其中当前上架/发布约 ${onlineActivityCount} 个，活动销售额约 ${activityCatalogSalesAmount}。` : "未识别到已参加活动列表，客户可能还没有形成持续活动运营池。" },
     { key: "activityCoverage", label: "活动覆盖", value: activityCoverageRate, level: rateLevel(activityCoverageRate, 35, 15), explanation: `活动覆盖约 ${activityCoverageRate}% 的动销品种；覆盖越低，客户越容易把四季蝉理解成少数单品红包。` },
     { key: "rewardClosure", label: "激励闭环", value: rewardEfficiency, level: activitySalesAmount ? rateLevel(Math.min(rewardEfficiency, 100), 8, 2) : "risk", explanation: activitySalesAmount ? `每100元活动销售对应约 ${rewardEfficiency} 元奖励，需结合毛利判断激励效率。` : "当前没有识别到活动销售额，难以证明奖励带动销售。" },
     { key: "employeeParticipation", label: "员工参与", value: employeeParticipationSignal, level: employeeParticipationSignal ? (totalWithdrawMoney || employeeCoverage ? "healthy" : "watch") : "risk", explanation: employeeParticipationSignal ? `识别到店员参与/豆豆/提现信号约 ${employeeParticipationSignal}，提现金额约 ${totalWithdrawMoney}。` : "缺少员工参与或提现信号，店员感知弱时客户续用风险会上升。" },
@@ -2620,10 +2635,13 @@ function deriveOperationInsights({
   ];
   const riskItems = scoreItems.filter((item) => item.level === "risk");
   const watchItems = scoreItems.filter((item) => item.level === "watch");
-  const healthScore = Math.max(0, Math.min(100, Math.round(scoreItems.reduce((sum, item) => sum + (item.level === "healthy" ? 20 : item.level === "watch" ? 12 : 5), 0))));
+  const rawHealthScore = scoreItems.reduce((sum, item) => sum + (item.level === "healthy" ? 20 : item.level === "watch" ? 12 : 5), 0);
+  const healthScore = Math.max(0, Math.min(100, Math.round((rawHealthScore / Math.max(1, scoreItems.length * 20)) * 100)));
   const retentionRisk = healthScore >= 72 ? "低" : healthScore >= 48 ? "中" : "高";
   const valueProofPoints = [
     totalSalesAmount ? `已识别重点品销售额约 ${totalSalesAmount}，可用于向客户证明重点品经营规模。` : "",
+    joinedActivityCount ? `已参加/配置活动 ${joinedActivityCount} 个，当前上架/发布约 ${onlineActivityCount} 个，可证明客户已有活动运营资产。` : "",
+    activityBudgetAmount || activityUsedBudgetAmount ? `活动预算约 ${activityBudgetAmount}，已发/已用约 ${activityUsedBudgetAmount}，剩余约 ${activityRemainBudgetAmount}，可用于推动客户做费用复盘。` : "",
     activitySalesAmount ? `活动商品销售额约 ${activitySalesAmount}，奖励金额约 ${totalRewardAmount}，可沉淀为“费用换动销”的投入产出证据。` : "",
     totalWithdrawMoney || totalPeas ? `店员豆豆账户/提现已有可复盘信号：累计豆豆约 ${totalPeas}，提现约 ${totalWithdrawMoney}，余额约 ${availableMoney}。` : "",
     rewardDistributionHasSignal ? "奖励发放明细已接入，可向客户展示“销售产生奖励、奖励触达店员”的执行证据。" : "",
@@ -2631,6 +2649,7 @@ function deriveOperationInsights({
     storeCoverage ? `识别到 ${storeCoverage} 个门店/机构相关覆盖信号，可用于做门店分层追踪。` : "",
   ].filter(Boolean);
   const recommendedActions = [
+    onlineActivityCount ? "梳理当前上架活动，把高销售、高奖励、高提现的活动沉淀为下月复用模板。" : "补齐活动池：优先恢复或新建上架活动，避免客户只在单次项目里使用四季蝉。",
     activityCoverageRate < 35 ? "扩大活动覆盖：把AAA主力赚钱品、黄金单品和任务品分层配置，避免只做零散单品。" : "保留当前活动覆盖，并按品种层级做标杆门店复制。",
     usedRewardPlays.length < 3 ? `释放玩法价值：优先补齐 ${unusedRewardPlays.slice(0, 3).join("、")}，让客户看到四季蝉不只是单品红包。` : "复用已跑通的激励玩法，沉淀为客户月度活动模板。",
     trainingHasSignal ? "把培训结果与活动销售做同屏复盘，证明学习能转化为店员推荐动作。" : "补齐培训考试：每个重点品至少配置卖点学习、考试奖励和销售任务。",
@@ -2648,6 +2667,14 @@ function deriveOperationInsights({
     recommendedActions,
     metrics: {
       salesSkuCount,
+      joinedActivityCount,
+      onlineActivityCount,
+      endedActivityCount,
+      activityCatalogSalesAmount,
+      activityCatalogRelationSaleAmount,
+      activityBudgetAmount,
+      activityUsedBudgetAmount,
+      activityRemainBudgetAmount,
       activeSkuCount,
       rewardSkuCount,
       activityCoverageRate,
@@ -2722,6 +2749,16 @@ async function collectSijichanData(body) {
   const rewardBody = { timeType: 1, startTime: windows.nearHalf.start, endTime: windows.nearHalf.end };
   const rewardDistributionBody = { timeType: 1, startTime: windows.nearHalf.start, endTime: windows.nearHalf.end };
   const employeeAccountBody = withMerCode({ timeType: 1, startTime: windows.nearHalf.start, endTime: windows.nearHalf.end });
+  const activityCatalogBody = {
+    status: null,
+    activityName: "",
+    commodityName: "",
+    commodityCode: "",
+    ispName: "",
+    storeCodeList: [],
+    areaIds: [],
+    fromType: null,
+  };
   const tipsBody = { startTime: windows.nearHalf.start, endTime: windows.nearHalf.end };
 
   return {
@@ -2746,6 +2783,9 @@ async function collectSijichanData(body) {
         statistics: await client.post("奖励发放统计-近半年", "imActivityReward/queryRewardStatistics", rewardDistributionBody),
         rows: await client.paged("奖励发放明细-近半年", "imActivityReward/queryRewardList", rewardDistributionBody),
       },
+    },
+    activityCatalog: {
+      joined: await client.paged("我的活动列表", "industryMarket/queryAlreadyActivity", activityCatalogBody),
     },
     activitySummary: {
       lastMonth: {
@@ -2807,6 +2847,7 @@ function summarizeSijichanRaw(raw) {
     ...withDataMeta(rowsFromPaged(raw.activitySummary.previousMonth.rows), "activity_summary.json", "previousMonth.rows"),
     ...withDataMeta(rowsFromPaged(raw.activitySummary.nearHalf.rows), "activity_summary.json", "nearHalf.rows"),
   ];
+  const activityCatalogRows = withDataMeta(rowsFromPaged(raw.activityCatalog?.joined), "activity_catalog.json", "joined");
   const rewardRows = withDataMeta(rowsFromPaged(raw.rewardStatistics.nearHalf.rows), "reward_statistics.json", "nearHalf.rows");
   const rewardDistributionRows = withDataMeta(rowsFromPaged(raw.rewardDistribution?.nearHalf?.rows), "reward_distribution.json", "nearHalf.rows");
   const trainingRows = [
@@ -2825,6 +2866,7 @@ function summarizeSijichanRaw(raw) {
     meta: raw.meta,
     diagnostics: raw.diagnostics || [],
     sales: Object.fromEntries(Object.entries(raw.sales).map(([key, value]) => [key, { overview: responseData(value.overview), rows: rowsFromPaged(value.products) }])),
+    activityCatalog: { joined: rowsFromPaged(raw.activityCatalog?.joined) },
     rewardStatistics: { nearHalf: { rows: rowsFromPaged(raw.rewardStatistics.nearHalf.rows), sum: responseData(raw.rewardStatistics.nearHalf.sum) } },
     rewardDistribution: { nearHalf: { statistics: responseData(raw.rewardDistribution?.nearHalf?.statistics), rows: rowsFromPaged(raw.rewardDistribution?.nearHalf?.rows) } },
     activitySummary: Object.fromEntries(Object.entries(raw.activitySummary).map(([key, value]) => [key, { rows: rowsFromPaged(value.rows), sum: responseData(value.sum) }])),
@@ -2864,6 +2906,7 @@ function summarizeSijichanRaw(raw) {
   ];
   const metricRows = {
     sales: salesMetricRows,
+    activityCatalog: [],
     activitySummary: activityMetricRows,
     rewardStatistics: rewardMetricRows,
     rewardDistribution: rewardDistributionMetricRows,
@@ -2874,6 +2917,7 @@ function summarizeSijichanRaw(raw) {
   };
   const files = [
     { name: "sales.json", label: "销售汇总", rows: salesRows, metricRows: salesMetricRows, note: "销售商品明细接口，同时包含销售概览指标。" },
+    { name: "activity_catalog.json", label: "我的活动列表", rows: activityCatalogRows, metricRows: [], note: "已参加/已配置活动列表，用于判断客户是否形成持续活动运营池。" },
     { name: "activity_summary.json", label: "活动汇总", rows: activityRows, metricRows: activityMetricRows, note: "活动商品明细接口，同时包含活动汇总合计。" },
     { name: "reward_statistics.json", label: "奖励统计", rows: rewardRows, metricRows: rewardMetricRows, note: "奖励统计明细接口，同时包含奖励金额合计。" },
     { name: "reward_distribution.json", label: "奖励发放明细", rows: rewardDistributionRows, metricRows: rewardDistributionMetricRows, note: "奖励发放页接口，用于证明奖励从活动执行流向店员。" },
@@ -2907,6 +2951,7 @@ function summarizeSijichanRaw(raw) {
     operationInsights: deriveOperationInsights({
       salesRows: withDataMeta(rowsFromPaged(raw.sales.nearHalf_vs_previousHalf.products), "sales.json", "nearHalf_vs_previousHalf.products"),
       activityRows: withDataMeta(rowsFromPaged(raw.activitySummary.nearHalf.rows), "activity_summary.json", "nearHalf.rows"),
+      activityCatalogRows,
       rewardRows,
       trainingRows,
       tipsRows,
