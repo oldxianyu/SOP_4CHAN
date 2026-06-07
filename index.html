@@ -1630,6 +1630,8 @@
                     h(Button, { href: artifact.svgUrl, target: "_blank", download: true }, "下载SVG图片"),
                     h(Button, { href: artifact.qrSvgUrl, target: "_blank", download: true }, "下载二维码"),
                     artifact.excelUrl ? h(Button, { href: artifact.excelUrl, target: "_blank", download: true }, "下载Excel汇总") : null,
+                    artifact.diagnosticsUrl ? h(Button, { href: artifact.diagnosticsUrl, target: "_blank", download: true }, "接口诊断") : null,
+                    artifact.normalizedDataUrl ? h(Button, { href: artifact.normalizedDataUrl, target: "_blank", download: true }, "标准化数据") : null,
                     h(Button, {
                       onClick: async () => {
                         await copyText(artifact.shareUrl);
@@ -1807,7 +1809,7 @@
             setSummary(data.summary);
             setReport(data.report);
             setMarkdown(data.markdown || "");
-            setArtifact({ reportId: data.reportId, shareUrl: data.shareUrl, svgUrl: data.svgUrl, qrSvgUrl: data.qrSvgUrl, excelUrl: data.excelUrl });
+            setArtifact({ reportId: data.reportId, shareUrl: data.shareUrl, svgUrl: data.svgUrl, qrSvgUrl: data.qrSvgUrl, excelUrl: data.excelUrl, normalizedDataUrl: data.normalizedDataUrl, diagnosticsUrl: data.diagnosticsUrl });
             finishReviewProgress(true);
             message.success("AI复盘报告已生成");
           } catch (err) {
@@ -1841,7 +1843,7 @@
             setSummary(data.summary);
             setReport(data.report);
             setMarkdown(data.markdown || "");
-            setArtifact({ reportId: data.reportId, shareUrl: data.shareUrl, svgUrl: data.svgUrl, qrSvgUrl: data.qrSvgUrl, excelUrl: data.excelUrl });
+            setArtifact({ reportId: data.reportId, shareUrl: data.shareUrl, svgUrl: data.svgUrl, qrSvgUrl: data.qrSvgUrl, excelUrl: data.excelUrl, normalizedDataUrl: data.normalizedDataUrl, diagnosticsUrl: data.diagnosticsUrl });
             finishReviewProgress(true);
             message.success("接口数据复盘报告已生成");
           } catch (err) {
@@ -2205,6 +2207,8 @@
                 h(Button, { href: row.svgUrl, target: "_blank" }, "下载SVG"),
                 h(Button, { href: row.qrSvgUrl, target: "_blank" }, "二维码"),
                 row.excelUrl ? h(Button, { href: row.excelUrl, target: "_blank" }, "Excel汇总") : null,
+                row.diagnosticsUrl ? h(Button, { href: row.diagnosticsUrl, target: "_blank" }, "接口诊断") : null,
+                row.normalizedDataUrl ? h(Button, { href: row.normalizedDataUrl, target: "_blank" }, "标准化数据") : null,
                 h(Button, { onClick: () => copyText(row.shareUrl).then(() => message.success("分享链接已复制")) }, "复制链接"),
               ),
           },

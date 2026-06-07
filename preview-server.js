@@ -716,6 +716,8 @@ async function saveReviewReportRecord(userId, sourceType, sourceName, summary, g
     svgUrl: generated.svgUrl,
     qrSvgUrl: generated.qrSvgUrl,
     excelUrl: generated.excelUrl,
+    normalizedDataUrl: generated.normalizedDataUrl,
+    diagnosticsUrl: generated.diagnosticsUrl,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -739,6 +741,8 @@ function normalizeReviewReportRow(row) {
     svgUrl: row.svg_url || row.svgUrl,
     qrSvgUrl: row.qr_svg_url || row.qrSvgUrl,
     excelUrl: row.excel_url || row.excelUrl || (row.share_url || row.shareUrl ? `${row.share_url || row.shareUrl}review.xlsx` : ""),
+    normalizedDataUrl: row.normalized_data_url || row.normalizedDataUrl || (row.share_url || row.shareUrl ? `${row.share_url || row.shareUrl}${encodeURIComponent("四季蝉登录获取标准化数据.json")}` : ""),
+    diagnosticsUrl: row.diagnostics_url || row.diagnosticsUrl || (row.share_url || row.shareUrl ? `${row.share_url || row.shareUrl}${encodeURIComponent("四季蝉接口诊断.json")}` : ""),
     createdAt: row.created_at || row.createdAt,
   };
 }
@@ -1289,6 +1293,9 @@ function renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUr
 
   const sourceName = summary?.source || summary?.filename || "四季蝉复盘数据";
   const generatedAt = new Date().toLocaleString("zh-CN", { hour12: false });
+  const excelUrl = `${shareUrl}review.xlsx`;
+  const diagnosticsUrl = `${shareUrl}${encodeURIComponent("四季蝉接口诊断.json")}`;
+  const normalizedDataUrl = `${shareUrl}${encodeURIComponent("四季蝉登录获取标准化数据.json")}`;
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -1353,6 +1360,9 @@ function renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUr
         <div class="buttons">
           <a class="button" href="${escapeHtml(svgUrl)}" download>下载SVG长图</a>
           <a class="button secondary" href="${escapeHtml(qrSvgUrl)}" download>下载二维码</a>
+          <a class="button secondary" href="${escapeHtml(excelUrl)}" download>下载Excel汇总</a>
+          <a class="button secondary" href="${escapeHtml(diagnosticsUrl)}" download>接口诊断</a>
+          <a class="button secondary" href="${escapeHtml(normalizedDataUrl)}" download>标准化数据</a>
           <a class="button secondary" href="${escapeHtml(shareUrl)}">刷新报告页</a>
         </div>
       </div>
@@ -1547,6 +1557,20 @@ function workbookSheets(summary, report) {
       { 项目: "近半年", 内容: `${windows.nearHalf?.start || ""} 至 ${windows.nearHalf?.end || ""}` },
       { 项目: "上期半年", 内容: `${windows.previousHalf?.start || ""} 至 ${windows.previousHalf?.end || ""}` },
     ] },
+    { name: "接口诊断", rows: (summary.interfaceDiagnostics || []).map((item) => ({
+      模块: item.模块 || "",
+      接口: item.接口 || "",
+      类型: item.类型 || "",
+      状态: item.状态 || "",
+      状态说明: item.状态说明 || "",
+      HTTP状态: item.HTTP状态 || "",
+      业务码: item.业务码 || "",
+      业务消息: item.业务消息 || "",
+      明细行数: item.明细行数 || 0,
+      指标数量: item.指标数量 || 0,
+      请求参数: item.请求参数 || "",
+      取数时间: item.取数时间 || "",
+    })) },
     { name: "数据源状态", rows: statusRows },
     { name: "概览校验", rows: overviewRows },
     { name: "奖励统计-半年", rows: raw.rewardStatistics?.nearHalf?.rows || [] },
@@ -1611,6 +1635,8 @@ async function persistReportArtifact({ report, markdown, summary }) {
   const svgUrl = `${shareUrl}report.svg`;
   const qrSvgUrl = `${shareUrl}qr.svg`;
   const excelUrl = `${shareUrl}review.xlsx`;
+  const normalizedDataUrl = `${shareUrl}${encodeURIComponent("四季蝉登录获取标准化数据.json")}`;
+  const diagnosticsUrl = `${shareUrl}${encodeURIComponent("四季蝉接口诊断.json")}`;
   const qrSvg = await QRCode.toString(shareUrl, {
     type: "svg",
     errorCorrectionLevel: "M",
@@ -1620,13 +1646,15 @@ async function persistReportArtifact({ report, markdown, summary }) {
   const reportSvg = renderReportSvg({ report, summary, shareUrl, qrSvg });
   const html = renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUrl });
 
-  fs.writeFileSync(path.join(reportDir, "report.json"), JSON.stringify({ report, markdown, summary, shareUrl, svgUrl, qrSvgUrl, excelUrl }, null, 2), "utf8");
+  fs.writeFileSync(path.join(reportDir, "report.json"), JSON.stringify({ report, markdown, summary, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl }, null, 2), "utf8");
+  fs.writeFileSync(path.join(reportDir, "四季蝉登录获取标准化数据.json"), JSON.stringify(summary.rawData || {}, null, 2), "utf8");
+  fs.writeFileSync(path.join(reportDir, "四季蝉接口诊断.json"), JSON.stringify(summary.interfaceDiagnostics || [], null, 2), "utf8");
   fs.writeFileSync(path.join(reportDir, "index.html"), html, "utf8");
   fs.writeFileSync(path.join(reportDir, "report.svg"), reportSvg, "utf8");
   fs.writeFileSync(path.join(reportDir, "qr.svg"), qrSvg, "utf8");
   await writeReviewWorkbook(path.join(reportDir, "review.xlsx"), summary, report);
 
-  return { reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl };
+  return { reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl };
 }
 
 async function refreshExistingReportArtifacts() {
@@ -1659,6 +1687,9 @@ async function refreshExistingReportArtifacts() {
       fs.writeFileSync(path.join(reportDir, "index.html"), html, "utf8");
       fs.writeFileSync(path.join(reportDir, "report.svg"), reportSvg, "utf8");
       fs.writeFileSync(path.join(reportDir, "qr.svg"), qrSvg, "utf8");
+      fs.writeFileSync(path.join(reportDir, "四季蝉登录获取标准化数据.json"), JSON.stringify(saved.summary?.rawData || {}, null, 2), "utf8");
+      fs.writeFileSync(path.join(reportDir, "四季蝉接口诊断.json"), JSON.stringify(saved.summary?.interfaceDiagnostics || [], null, 2), "utf8");
+      await writeReviewWorkbook(path.join(reportDir, "review.xlsx"), saved.summary || {}, saved.report);
     } catch (error) {
       console.warn(`Refresh report artifact failed for ${entry.name}: ${error.message}`);
     }
@@ -1863,6 +1894,108 @@ async function sijichanPagedPost(endpoint, baseBody, token, merCode, pageSize = 
     if (Array.isArray(data?.data)) rows.push(...data.data);
   }
   return { endpoint, baseRequest: baseBody, pageSize, totalCount, totalPages, rows, pages, fetchedAt: new Date().toISOString() };
+}
+
+function sanitizeSijichanRequest(value) {
+  if (!value || typeof value !== "object") return value || {};
+  const blocked = new Set(["password", "pwd", "token", "authorization"]);
+  const walk = (node) => {
+    if (Array.isArray(node)) return node.map(walk);
+    if (!node || typeof node !== "object") return node;
+    return Object.fromEntries(
+      Object.entries(node).map(([key, child]) => [
+        key,
+        blocked.has(key.toLowerCase()) ? "***" : walk(child),
+      ]),
+    );
+  };
+  return walk(value);
+}
+
+function emptySijichanPostResult(endpoint, body, error) {
+  return {
+    endpoint,
+    status: 0,
+    request: body || {},
+    response: { code: "ERROR", msg: error.message || "接口请求失败", data: null },
+    error: error.message || String(error),
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
+function emptySijichanPagedResult(endpoint, body, error, pageSize = 1000) {
+  return {
+    endpoint,
+    baseRequest: body || {},
+    pageSize,
+    totalCount: 0,
+    totalPages: 0,
+    rows: [],
+    pages: [],
+    error: error.message || String(error),
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
+function diagnosticStatusText(item) {
+  if (item.status === "failed") return `失败：${item.message || "未知错误"}`;
+  if (item.rowCount > 0) return `成功，有明细 ${item.rowCount}行`;
+  if (item.metricCount > 0 && item.hasNonZeroMetric) return `成功，有指标 ${item.metricCount}项`;
+  if (item.metricCount > 0) return "成功，业务值为0";
+  return "成功，无明细";
+}
+
+function buildSijichanDiagnostic({ label, endpoint, kind, request, result, rows = [], metricRows = [], error }) {
+  const failed = Boolean(error || result?.error);
+  const item = {
+    模块: label,
+    接口: endpoint,
+    类型: kind,
+    状态: failed ? "failed" : "success",
+    状态说明: "",
+    HTTP状态: result?.status || "",
+    业务码: result?.response?.code || "",
+    业务消息: result?.response?.msg || "",
+    明细行数: rows.length,
+    指标数量: metricRows.length,
+    请求参数: JSON.stringify(sanitizeSijichanRequest(request || result?.request || result?.baseRequest || {})),
+    取数时间: result?.fetchedAt || new Date().toISOString(),
+    message: error?.message || result?.error || "",
+    rowCount: rows.length,
+    metricCount: metricRows.length,
+    hasNonZeroMetric: hasNonZeroMetric(metricRows),
+    status: failed ? "failed" : "success",
+  };
+  item.状态说明 = diagnosticStatusText(item);
+  return item;
+}
+
+function createSijichanClient(token, merCode, diagnostics) {
+  return {
+    async post(label, endpoint, body) {
+      try {
+        const result = await sijichanPost(endpoint, body, token, merCode);
+        const metricRows = metricRowsFromObject(responseData(result), `${endpoint}.json`, "data");
+        diagnostics.push(buildSijichanDiagnostic({ label, endpoint, kind: "post", request: body, result, metricRows }));
+        return result;
+      } catch (error) {
+        const result = emptySijichanPostResult(endpoint, body, error);
+        diagnostics.push(buildSijichanDiagnostic({ label, endpoint, kind: "post", request: body, result, error }));
+        return result;
+      }
+    },
+    async paged(label, endpoint, body, pageSize = 1000) {
+      try {
+        const result = await sijichanPagedPost(endpoint, body, token, merCode, pageSize);
+        diagnostics.push(buildSijichanDiagnostic({ label, endpoint, kind: "paged", request: body, result, rows: result.rows || [] }));
+        return result;
+      } catch (error) {
+        const result = emptySijichanPagedResult(endpoint, body, error, pageSize);
+        diagnostics.push(buildSijichanDiagnostic({ label, endpoint, kind: "paged", request: body, result, error }));
+        return result;
+      }
+    },
+  };
 }
 
 function saleBody(window, comparison) {
@@ -2081,6 +2214,8 @@ async function collectSijichanData(body) {
   const merName = String(body.merName || login.merName || "").trim();
   const windows = buildSijichanWindows(body.asOf || "2026-06-06");
   const withMerCode = (payload = {}) => (merCode ? { merCode, ...payload } : payload);
+  const diagnostics = [];
+  const client = createSijichanClient(token, merCode, diagnostics);
 
   const salesPeriods = {
     lastMonth_vs_priorTwoMonths: [windows.lastMonth, windows.priorTwoMonths],
@@ -2095,8 +2230,8 @@ async function collectSijichanData(body) {
     sales[name] = {
       label: window.label,
       request,
-      overview: await sijichanPost("industryOrder/queryProductOverview", request, token, merCode),
-      products: await sijichanPagedPost("industryOrder/queryStatisticsByProductAndMer", request, token, merCode),
+      overview: await client.post(`销售概览-${window.label}`, "industryOrder/queryProductOverview", request),
+      products: await client.paged(`销售商品明细-${window.label}`, "industryOrder/queryStatisticsByProductAndMer", request),
     };
   }
 
@@ -2118,41 +2253,42 @@ async function collectSijichanData(body) {
     sales,
     rewardStatistics: {
       nearHalf: {
-        rows: await sijichanPagedPost("imActivityReward/commodity/rewardTypeStatistics", rewardBody, token, merCode),
-        sum: await sijichanPost("imActivityReward/commodity/rewardTypeStatistics/sum", rewardBody, token, merCode),
+        rows: await client.paged("奖励统计-近半年", "imActivityReward/commodity/rewardTypeStatistics", rewardBody),
+        sum: await client.post("奖励统计合计-近半年", "imActivityReward/commodity/rewardTypeStatistics/sum", rewardBody),
       },
     },
     activitySummary: {
       lastMonth: {
-        rows: await sijichanPagedPost("imActivityReward/summary/page", activityBody(windows.lastMonth), token, merCode),
-        sum: await sijichanPost("imActivityReward/summary/sum", activityBody(windows.lastMonth), token, merCode),
+        rows: await client.paged("活动汇总-5月", "imActivityReward/summary/page", activityBody(windows.lastMonth)),
+        sum: await client.post("活动汇总合计-5月", "imActivityReward/summary/sum", activityBody(windows.lastMonth)),
       },
       previousMonth: {
-        rows: await sijichanPagedPost("imActivityReward/summary/page", activityBody(windows.previousMonth), token, merCode),
-        sum: await sijichanPost("imActivityReward/summary/sum", activityBody(windows.previousMonth), token, merCode),
+        rows: await client.paged("活动汇总-4月", "imActivityReward/summary/page", activityBody(windows.previousMonth)),
+        sum: await client.post("活动汇总合计-4月", "imActivityReward/summary/sum", activityBody(windows.previousMonth)),
       },
       nearHalf: {
-        rows: await sijichanPagedPost("imActivityReward/summary/page", activityBody(windows.nearHalf), token, merCode),
-        sum: await sijichanPost("imActivityReward/summary/sum", activityBody(windows.nearHalf), token, merCode),
+        rows: await client.paged("活动汇总-近半年", "imActivityReward/summary/page", activityBody(windows.nearHalf)),
+        sum: await client.post("活动汇总合计-近半年", "imActivityReward/summary/sum", activityBody(windows.nearHalf)),
       },
     },
     training: {
-      courseOverview: await sijichanPost("report/course/courseOverview", { ...trainBase, currentPage: 1, pageSize: 10, timeType: 1 }, token, merCode),
-      resourceOverview: await sijichanPost("report/course/resourceOverview", { ...trainBase, currentPage: 1, pageSize: 10, timeType: 1 }, token, merCode),
-      roleLearning: await sijichanPagedPost("employeeTrainingStatistics/queryStatisticsByRole", trainBase, token, merCode),
-      storeLearning: await sijichanPagedPost("employeeTrainingStatistics/queryStatisticsByStore", trainBase, token, merCode),
-      employeeLearning: await sijichanPagedPost("employeeTrainingStatistics/queryStatisticsByEmployee", trainBase, token, merCode),
-      courseLearning: await sijichanPagedPost("employeeTrainingStatistics/queryStatisticsByCourse", trainBase, token, merCode),
+      courseOverview: await client.post("培训课程概览", "report/course/courseOverview", { ...trainBase, currentPage: 1, pageSize: 10, timeType: 1 }),
+      resourceOverview: await client.post("培训资源概览", "report/course/resourceOverview", { ...trainBase, currentPage: 1, pageSize: 10, timeType: 1 }),
+      roleLearning: await client.paged("培训角色学习统计", "employeeTrainingStatistics/queryStatisticsByRole", trainBase),
+      storeLearning: await client.paged("培训门店学习统计", "employeeTrainingStatistics/queryStatisticsByStore", trainBase),
+      employeeLearning: await client.paged("培训员工学习统计", "employeeTrainingStatistics/queryStatisticsByEmployee", trainBase),
+      courseLearning: await client.paged("培训课程学习统计", "employeeTrainingStatistics/queryStatisticsByCourse", trainBase),
     },
     manufacturerTips: {
-      summary: await sijichanPost("orderShareMoment/shareRewardDetailSum", tipsBody, token, merCode),
-      rows: await sijichanPagedPost("orderShareMoment/queryShareRewardDetailList", tipsBody, token, merCode),
+      summary: await client.post("店员圈厂家打赏汇总", "orderShareMoment/shareRewardDetailSum", tipsBody),
+      rows: await client.paged("店员圈厂家打赏明细", "orderShareMoment/queryShareRewardDetailList", tipsBody),
     },
     overview: {
-      activityTopStatistic: await sijichanPost("report/activityReward/queryTopStatisticData", withMerCode({}), token, merCode),
-      rewardStat: await sijichanPost("report/account/emp/overview/queryRewardStat", withMerCode({ startTime: windows.nearHalf.start, endTime: windows.nearHalf.end, timeType: 1 }), token, merCode),
-      orderShareSummary: await sijichanPost("report/order_share/orderShareMomentSummary", withMerCode({ startTime: windows.nearHalf.start, endTime: windows.nearHalf.end }), token, merCode),
+      activityTopStatistic: await client.post("概览-活动奖励核心指标", "report/activityReward/queryTopStatisticData", withMerCode({})),
+      rewardStat: await client.post("概览-员工奖励提现指标", "report/account/emp/overview/queryRewardStat", withMerCode({ startTime: windows.nearHalf.start, endTime: windows.nearHalf.end, timeType: 1 })),
+      orderShareSummary: await client.post("概览-店员圈指标", "report/order_share/orderShareMomentSummary", withMerCode({ startTime: windows.nearHalf.start, endTime: windows.nearHalf.end })),
     },
+    diagnostics,
   };
 }
 
@@ -2183,6 +2319,7 @@ function summarizeSijichanRaw(raw) {
   const tipsRows = withDataMeta(rowsFromPaged(raw.manufacturerTips.rows), "manufacturer_tips.json", "rows");
   const rawData = {
     meta: raw.meta,
+    diagnostics: raw.diagnostics || [],
     sales: Object.fromEntries(Object.entries(raw.sales).map(([key, value]) => [key, { overview: responseData(value.overview), rows: rowsFromPaged(value.products) }])),
     rewardStatistics: { nearHalf: { rows: rowsFromPaged(raw.rewardStatistics.nearHalf.rows), sum: responseData(raw.rewardStatistics.nearHalf.sum) } },
     activitySummary: Object.fromEntries(Object.entries(raw.activitySummary).map(([key, value]) => [key, { rows: rowsFromPaged(value.rows), sum: responseData(value.sum) }])),
@@ -2232,6 +2369,7 @@ function summarizeSijichanRaw(raw) {
     windows: raw.meta.windows,
     generatedAt: raw.meta.generatedAt,
     datasetFiles: files.map(datasetStatus),
+    interfaceDiagnostics: raw.diagnostics || [],
     rowCounts: Object.fromEntries(files.map((file) => [file.name, file.rows.length])),
     metricRows: {
       sales: salesMetricRows,
@@ -2351,8 +2489,8 @@ async function handleReviewReport(req, res) {
   }
 
   await saveDatasetRecord(user.id, "excel", summary, filename);
-  const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl } = await generateReportFromSummary(summary);
-  const dbReportId = await saveReviewReportRecord(user.id, "excel", filename, summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl });
+  const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary);
+  const dbReportId = await saveReviewReportRecord(user.id, "excel", filename, summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
   sendJson(res, 200, {
     ok: true,
     id: dbReportId,
@@ -2364,6 +2502,8 @@ async function handleReviewReport(req, res) {
     svgUrl,
     qrSvgUrl,
     excelUrl,
+    normalizedDataUrl,
+    diagnosticsUrl,
   });
 }
 
@@ -2384,9 +2524,9 @@ async function handleSijichanReviewReport(req, res) {
     return;
   }
   await saveDatasetRecord(user.id, "login", summary, summary.source || "登录获取");
-  const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl } = await generateReportFromSummary(summary);
-  const dbReportId = await saveReviewReportRecord(user.id, "login", "登录获取", summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl });
-  sendJson(res, 200, { ok: true, id: dbReportId, summary, report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl });
+  const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary);
+  const dbReportId = await saveReviewReportRecord(user.id, "login", "登录获取", summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
+  sendJson(res, 200, { ok: true, id: dbReportId, summary, report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
 }
 
 async function handleRegister(req, res) {
