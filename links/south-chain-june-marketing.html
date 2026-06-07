@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>华南某连锁药房 · 6月四季蝉营销方案 | 海典运营部</title>
+<style>
+:root {
+  --blue-50: #EFF6FF;   --blue-100: #DBEAFE;  --blue-200: #BFDBFE;
+  --blue-500: #3B82F6;  --blue-600: #2563EB;  --blue-700: #1D4ED8;
+  --blue-800: #1E40AF;  --blue-900: #1E3A8A;
+  --summer: #F59E0B;   --summer-bg: #FFFBEB;
+  --green-500: #10B981; --green-bg: #ECFDF5;
+  --red-500: #EF4444;   --red-bg: #FEF2F2;
+  --purple-500: #8B5CF6; --purple-bg: #F5F3FF;
+  --teal-500: #14B8A6;  --teal-bg: #F0FDFA;
+  --orange-500: #F97316; --orange-bg: #FFF7ED;
+  --gray-50: #F9FAFB;  --gray-100: #F3F4F6; --gray-200: #E5E7EB;
+  --gray-300: #D1D5DB; --gray-400: #9CA3AF; --gray-500: #6B7280;
+  --gray-600: #4B5563; --gray-700: #374151; --gray-800: #1F2937;
+  --gray-900: #111827;
+  --bg: #F8FAFC; --card: #FFFFFF; --text: #1E293B;
+  --text-muted: #64748B; --border: #E2E8F0;
+  --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.04);
+  --shadow-lg: 0 10px 30px rgba(0,0,0,0.1), 0 4px 12px rgba(0,0,0,0.06);
+  --radius-sm: 6px; --radius-md: 10px; --radius-lg: 16px; --radius-xl: 24px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+  background: var(--bg); color: var(--text); line-height: 1.6;
+  font-size: 15px; -webkit-font-smoothing: antialiased;
+}
+
+/* HEADER */
+.header {
+  background: linear-gradient(135deg, #0F172A 0%, #1E3A5F 50%, #1E40AF 100%);
+  color: white; position: sticky; top: 0; z-index: 100;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+}
+.header-inner {
+  max-width: 1200px; margin: 0 auto; padding: 16px 32px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.header-brand { display: flex; align-items: center; gap: 16px; }
+.header-logo {
+  width: 48px; height: 48px; background: rgba(255,255,255,0.15);
+  border-radius: var(--radius-md); display: flex;
+  align-items: center; justify-content: center; font-size: 24px;
+}
+.header-text h1 { font-size: 20px; font-weight: 700; }
+.header-text p { font-size: 13px; opacity: 0.7; margin-top: 2px; }
+.header-meta { display: flex; align-items: center; gap: 24px; }
+.header-stat { text-align: center; }
+.header-stat .num { font-size: 22px; font-weight: 800; color: #60A5FA; line-height: 1; }
+.header-stat .label { font-size: 11px; opacity: 0.6; margin-top: 4px; }
+
+/* MAIN */
+.main { max-width: 1200px; margin: 0 auto; padding: 28px 24px; }
+
+/* INTRO BANNER */
+.intro-banner {
+  background: linear-gradient(135deg, var(--blue-700), var(--blue-600));
+  border-radius: var(--radius-xl); padding: 36px 44px; color: white;
+  margin-bottom: 28px; position: relative; overflow: hidden;
+  box-shadow: var(--shadow-lg);
+}
+.intro-banner::before {
+  content: ''; position: absolute; top: -50%; right: -10%;
+  width: 400px; height: 400px;
+  background: radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 70%);
+  border-radius: 50%;
+}
+.intro-content { position: relative; z-index: 1; }
+.intro-tag {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 20px; padding: 4px 14px; font-size: 12px; margin-bottom: 14px;
+}
+.intro-banner h2 { font-size: 26px; font-weight: 800; margin-bottom: 10px; }
+.intro-banner h2 span { color: #93C5FD; }
+.intro-banner p { font-size: 14px; opacity: 0.85; max-width: 750px; line-height: 1.7; }
+
+/* SECTION TITLE */
+.section-title { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.section-title .icon {
+  width: 40px; height: 40px; border-radius: var(--radius-md);
+  display: flex; align-items: center; justify-content: center; font-size: 20px;
+}
+.section-title h2 { font-size: 20px; font-weight: 700; color: var(--gray-800); }
+.section-title .sub { font-size: 13px; color: var(--text-muted); font-weight: 400; margin-left: 8px; }
+
+/* DATA SNAPSHOT CARDS */
+.data-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px;
+}
+.data-card {
+  background: var(--card); border-radius: var(--radius-lg);
+  border: 1px solid var(--border); padding: 20px;
+  box-shadow: var(--shadow); transition: all 0.2s;
+}
+.data-card:hover { box-shadow: var(--shadow-md); }
+.data-card .label { font-size: 12px; color: var(--text-muted); font-weight: 600; margin-bottom: 4px; }
+.data-card .value { font-size: 26px; font-weight: 800; color: var(--gray-800); }
+.data-card .value.red { color: var(--red-500); }
+.data-card .value.green { color: var(--green-500); }
+.data-card .value.amber { color: #D97706; }
+.data-card .meta { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.data-card .insight {
+  font-size: 12px; color: var(--gray-600); line-height: 1.7;
+  margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--gray-200);
+}
+.data-card .insight strong { color: var(--gray-800); }
+.data-card .arrow-guide {
+  display: flex; align-items: center; gap: 4px;
+  margin-top: 10px; font-size: 11px; color: var(--blue-500); font-weight: 600;
+}
+.data-card .arrow-guide svg { width: 14px; height: 14px; }
+.data-card.highlight-blue { border-left: 3px solid var(--blue-500); }
+.data-card.highlight-green { border-left: 3px solid var(--green-500); }
+.data-card.highlight-amber { border-left: 3px solid #D97706; }
+.data-card.highlight-purple { border-left: 3px solid var(--purple-500); }
+
+/* CALENDAR TIMELINE */
+.timeline { display: flex; gap: 10px; margin-bottom: 28px; overflow-x: auto; }
+.timeline-item {
+  flex: 1; min-width: 100px; background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 16px; text-align: center;
+  box-shadow: var(--shadow); transition: all 0.2s;
+}
+.timeline-item:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.timeline-item .date { font-size: 18px; font-weight: 800; }
+.timeline-item .event { font-size: 13px; font-weight: 700; margin: 6px 0; }
+.timeline-item .tag {
+  font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600;
+  display: inline-block;
+}
+.timeline-item.hot { border-top: 3px solid var(--red-500); }
+.timeline-item.hot .tag { background: var(--red-bg); color: var(--red-500); }
+
+/* ALERT BANNER */
+.alert-banner {
+  background: linear-gradient(135deg, #FEF2F2, #FFF1F2);
+  border: 1px solid #FECACA; border-radius: var(--radius-lg);
+  padding: 20px 28px; margin-bottom: 28px;
+}
+.alert-banner h4 { font-size: 14px; color: #B91C1C; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+.alert-banner p { font-size: 13px; color: #7F1D1D; line-height: 1.7; }
+
+/* RECOMMENDATION TABLE */
+.rec-table-wrap { overflow-x: auto; margin-bottom: 28px; }
+.rec-table {
+  width: 100%; border-collapse: collapse; background: var(--card);
+  border-radius: var(--radius-lg); overflow: hidden;
+  box-shadow: var(--shadow); font-size: 13px;
+}
+.rec-table thead { background: var(--blue-800); color: white; }
+.rec-table th {
+  padding: 14px 12px; text-align: left; font-weight: 700; font-size: 12px;
+  white-space: nowrap;
+}
+.rec-table td { padding: 14px 12px; border-bottom: 1px solid var(--gray-100); vertical-align: top; line-height: 1.7; }
+.rec-table tbody tr:hover { background: var(--blue-50); }
+.rec-table tbody tr:last-child td { border-bottom: none; }
+
+.stars { color: #F59E0B; font-size: 15px; letter-spacing: 1px; white-space: nowrap; }
+.star-count { font-size: 11px; color: var(--text-muted); margin-left: 2px; }
+
+.rec-table .cat-name {
+  font-weight: 700; color: var(--blue-700); font-size: 13px;
+}
+.rec-table .prod-list {
+  display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;
+}
+.rec-table .prod-tag {
+  font-size: 11px; background: var(--blue-50); color: var(--blue-700);
+  padding: 2px 8px; border-radius: 4px; font-weight: 600; white-space: nowrap;
+}
+.rec-table .reason { font-size: 12px; color: var(--gray-600); }
+.rec-table .reason strong { color: var(--gray-800); }
+.rec-table .reason .data-highlight {
+  color: var(--red-500); font-weight: 700;
+}
+.rec-table .reason .data-good {
+  color: var(--green-500); font-weight: 700;
+}
+
+.rec-table .action-list { font-size: 12px; color: var(--gray-600); }
+.rec-table .action-list .action-item {
+  display: flex; align-items: flex-start; gap: 6px; margin-bottom: 3px;
+}
+.rec-table .action-item .badge {
+  font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 700;
+  white-space: nowrap; flex-shrink: 0; margin-top: 2px;
+}
+.badge-select { background: var(--purple-bg); color: var(--purple-500); }
+.badge-touch { background: var(--teal-bg); color: var(--teal-500); }
+.badge-incent { background: var(--orange-bg); color: var(--orange-500); }
+.badge-train { background: var(--green-bg); color: var(--green-500); }
+.badge-crack { background: #FDF2F8; color: #DB2777; }
+.badge-target { background: #EFF6FF; color: #2563EB; }
+
+/* RHYTHM SECTION */
+.rhythm-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px;
+}
+.rhythm-card {
+  background: var(--card); border-radius: var(--radius-lg);
+  border: 1px solid var(--border); padding: 24px; box-shadow: var(--shadow);
+}
+.rhythm-card .phase { font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 8px; }
+.rhythm-card h4 { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+.rhythm-card .tasks { font-size: 12px; color: var(--gray-600); line-height: 1.8; }
+.rhythm-card:nth-child(1) { border-top: 3px solid var(--blue-500); }
+.rhythm-card:nth-child(2) { border-top: 3px solid var(--green-500); }
+.rhythm-card:nth-child(3) { border-top: 3px solid var(--orange-500); }
+.rhythm-card:nth-child(4) { border-top: 3px solid var(--purple-500); }
+
+/* 爆品打造方法论 */
+.method-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px;
+}
+.method-card {
+  background: var(--card); border-radius: var(--radius-lg);
+  border: 1px solid var(--border); padding: 24px 20px;
+  box-shadow: var(--shadow); position: relative;
+}
+.method-card .step-num {
+  position: absolute; top: -14px; left: 20px;
+  width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 800; color: white;
+}
+.method-card:nth-child(1) .step-num { background: var(--blue-500); }
+.method-card:nth-child(2) .step-num { background: var(--purple-500); }
+.method-card:nth-child(3) .step-num { background: var(--orange-500); }
+.method-card:nth-child(4) .step-num { background: var(--teal-500); }
+.method-card h4 { font-size: 14px; font-weight: 700; margin: 8px 0 6px; color: var(--gray-800); }
+.method-card .method-desc { font-size: 12px; color: var(--gray-600); line-height: 1.7; margin-bottom: 8px; }
+.method-card .method-example {
+  font-size: 11px; background: var(--gray-50); border-radius: var(--radius-sm);
+  padding: 8px 10px; color: var(--gray-700); line-height: 1.6;
+}
+.method-card .method-example strong { color: var(--gray-900); }
+
+/* 品种映射表 */
+.method-map-table {
+  width: 100%; border-collapse: collapse; background: var(--card);
+  border-radius: var(--radius-lg); overflow: hidden;
+  box-shadow: var(--shadow); font-size: 12px; margin-top: 16px;
+}
+.method-map-table thead { background: linear-gradient(135deg, #4338CA, #6366F1); color: white; }
+.method-map-table th { padding: 10px 10px; text-align: left; font-weight: 700; font-size: 11px; }
+.method-map-table td { padding: 10px; border-bottom: 1px solid var(--gray-100); vertical-align: top; line-height: 1.7; }
+.method-map-table tbody tr:hover { background: var(--blue-50); }
+.method-map-table tbody tr:last-child td { border-bottom: none; }
+.method-map-table .prod-name { font-weight: 700; color: var(--blue-700); white-space: nowrap; }
+.method-map-table .step-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px;
+  vertical-align: middle;
+}
+.step-dot.blue { background: var(--blue-500); }
+.step-dot.purple { background: var(--purple-500); }
+.step-dot.orange { background: var(--orange-500); }
+.step-dot.teal { background: var(--teal-500); }
+
+/* WARNING BOX */
+.warning-box {
+  background: linear-gradient(135deg, #FFFBEB, #FEF3C7);
+  border: 1px solid #FCD34D; border-radius: var(--radius-lg);
+  padding: 24px 28px; margin-bottom: 28px;
+}
+.warning-box h4 { font-size: 14px; color: #92400E; margin-bottom: 12px; }
+.warning-box .warning-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 8px 0; font-size: 13px; color: #78350F; line-height: 1.7;
+}
+.warning-box .warning-item .icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+
+/* FOOTER */
+footer {
+  text-align: center; padding: 32px 24px; color: var(--text-muted);
+  font-size: 12px; border-top: 1px solid var(--border); background: white;
+}
+
+/* RESPONSIVE */
+@media (max-width: 900px) {
+  .data-grid { grid-template-columns: repeat(2, 1fr); }
+  .rhythm-grid { grid-template-columns: repeat(2, 1fr); }
+  .method-grid { grid-template-columns: repeat(2, 1fr); }
+  .timeline { flex-wrap: wrap; }
+  .timeline-item { flex: 1 1 45%; min-width: auto; }
+  .header-meta { display: none; }
+  .intro-banner { padding: 24px; }
+}
+@media (max-width: 600px) {
+  .data-grid { grid-template-columns: 1fr; }
+  .rhythm-grid { grid-template-columns: 1fr; }
+  .method-grid { grid-template-columns: 1fr; }
+  .header-inner { padding: 12px 16px; }
+  .main { padding: 16px 12px; }
+  .rec-table { font-size: 11px; }
+  .rec-table th, .rec-table td { padding: 8px 6px; }
+}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-inner">
+    <div class="header-brand">
+      <div class="header-logo">🦗</div>
+      <div class="header-text">
+        <h1>华南某大型连锁药房（300+直营门店）· 6月营销方案</h1>
+        <p>基于四季蝉能力体系 & 客户真实品类数据 · 运营部内部资料</p>
+      </div>
+    </div>
+    <div class="header-meta">
+      <div class="header-stat"><div class="num">6.18-21</div><div class="label">超级黄金周</div></div>
+      <div class="header-stat"><div class="num">11</div><div class="label">爆品方案</div></div>
+      <div class="header-stat"><div class="num">4</div><div class="label">运营阶段</div></div>
+    </div>
+  </div>
+</header>
+
+<main class="main">
+
+  <!-- 核心理念 -->
+  <div class="intro-banner">
+    <div class="intro-content">
+      <div class="intro-tag">四季蝉 · 六月营销逻辑</div>
+      <h2>懂客户数据，<span>才能推对品种</span></h2>
+      <p>本方案从客户276个细分品类的真实销售数据、广东省热销对比、<strong>通用名热卖榜TOP300（全国/广东/企业三级排名交叉验证）</strong>出发，结合6月节气（芒种→夏至）、节日（六一/端午/618/父亲节）、病毒流行期（手足口病广东高发/夏季腹泻/空调病），锁定最适合该客户的爆品方向。每个推荐都对应四季蝉的具体能力——不是泛泛的"做活动"，而是精准的选品分级、激励设计、培训考核、会员触达。</p>
+    </div>
+  </div>
+
+  <!-- 客户数据快照 -->
+  <div class="section-title">
+    <div class="icon" style="background: var(--blue-100); color: var(--blue-600);">📊</div>
+    <h2>客户经营数据快照</h2>
+    <span class="sub">基于随心看 + 四级分类销售报告（276个细分品类）</span>
+  </div>
+
+  <div class="data-grid">
+    <!-- 卡1：6月唤醒窗口 -->
+    <div class="data-card highlight-blue">
+      <div class="label">6月节日密度 · 唤醒窗口</div>
+      <div class="value" style="font-size:22px;">4个营销节点</div>
+      <div class="meta">儿童节 · 端午 · 618 · 父亲节 | 全年节日最密集月</div>
+      <div class="insight">
+        6月是一年中<strong>唯一同时覆盖"亲子+送礼+大促+孝心"四类场景的月份</strong>。51.3万低频会员一年没怎么来——不是不需要，是<strong>没理由来</strong>。这个月给足理由，比花钱投广告拉新划算10倍。
+      </div>
+      <div class="arrow-guide">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+        下方10大爆品案，每个都绑了节日场景
+      </div>
+    </div>
+    <!-- 卡2：品类毛利提升空间 -->
+    <div class="data-card highlight-green">
+      <div class="label">品类毛利提升空间（营销可改）</div>
+      <div class="value green">~112万/年</div>
+      <div class="meta">当前品类毛利率27.7% → 省均31.9%，差距4.2pp</div>
+      <div class="insight">
+        4.2个百分点听着不多，但<strong>2.67亿体量下就是112万毛利</strong>——比很多连锁一年的净利润都高。不是靠涨价，是靠<strong>选品分级把低毛利SKU换成高毛利品种</strong>，同品类内部就有答案。
+      </div>
+      <div class="arrow-guide">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+        推荐表中"选品分级"栏给出了每个品类的A级替换方案
+      </div>
+    </div>
+    <!-- 卡3：超级优势品类 -->
+    <div class="data-card highlight-amber">
+      <div class="label">广东省碾压级优势品类</div>
+      <div class="value amber">3.8倍省均</div>
+      <div class="meta">多种维生素 | 儿科维生素1.5倍 · 咳喘中成药1.4倍 · 皮炎湿疹1.7倍</div>
+      <div class="insight">
+        这几个品类<strong>客户已经是广东省头部水平</strong>——不是"补短板"的问题，是<strong>"放大优势"的问题</strong>。巧的是6月咳喘/儿科/皮肤病/维生素刚好都是应季旺季，顺势放大是最省力的增长路径。
+      </div>
+      <div class="arrow-guide">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+        推荐表#1#2#4#5#8都是"放大优势"的打法
+      </div>
+    </div>
+    <!-- 卡4：6月应季需求规模 -->
+    <div class="data-card highlight-purple">
+      <div class="label">6月应季品类需求规模</div>
+      <div class="value" style="font-size:22px;">~800万+/月</div>
+      <div class="meta">咳喘139万 + 儿科158万 + 肠胃76万 + 皮肤病270万 + 清热353万</div>
+      <div class="insight">
+        这些不是凭空造的需求，而是<strong>6月自然爆发的刚性需求</strong>：手足口病、空调咳、粽子积食、蚊虫湿疹——即使不做营销顾客也会来买。关键是<strong>用四季蝉把"自然流量"变成"有利润的成交"</strong>，而不是卖了也不赚钱。
+      </div>
+      <div class="arrow-guide">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+        看下方日历了解需求节奏，爆品表看具体打法
+      </div>
+    </div>
+  </div>
+
+  <!-- 爆品打造方法论 -->
+  <div class="section-title">
+    <div class="icon" style="background: #FDF2F8; color: #DB2777;">🔧</div>
+    <h2>爆品打造建议 · 四步方法论</h2>
+    <span class="sub">不只是"推什么"，更是"怎么把一个品种推成爆品"——对应四季蝉能力</span>
+  </div>
+
+  <div class="method-grid">
+    <div class="method-card">
+      <div class="step-num">1</div>
+      <h4>数据发现 · 找出潜力股</h4>
+      <div class="method-desc">
+        不是凭经验拍脑袋，而是用<strong>两个硬指标</strong>筛选：毛利率高于省均 + 销售指数远超省均。这两个同时满足的品种，说明客户既有卖的能力、又有利润空间。
+      </div>
+      <div class="method-example">
+        <strong>案例：</strong>降脂中成药毛利率49.6%远超省均32.8%，销售指数23远超省均12——<strong>这个品种就是潜力爆品</strong>，当前体量仅10.2万，放大5倍就是50万+的高毛利增量。
+      </div>
+    </div>
+    <div class="method-card">
+      <div class="step-num">2</div>
+      <h4>选品分级 · 锁定A级品</h4>
+      <div class="method-desc">
+        用四季蝉<strong>ABC选品分级</strong>把潜力品种提为A级：确保TOP10 SKU铺货率100%、动销率>85%。同时反向操作——亏损品种（如阿胶-11.6%）降为C级限推。
+      </div>
+      <div class="method-example">
+        <strong>案例：</strong>阿胶55.2万/毛利-11.6% → <strong>紧急降C</strong>；综合滋补养生药15.2万/毛利54.2% → <strong>提A替代</strong>。同品类内一降一升，毛利结构当场改善。
+      </div>
+    </div>
+    <div class="method-card">
+      <div class="step-num">3</div>
+      <h4>激励驱动 · 让店员主动推</h4>
+      <div class="method-desc">
+        分层设计激励：<strong>单品激励</strong>（推一盒奖X元）→ 推高毛利品种；<strong>关联激励</strong>（组合成交奖X元）→ 拉升客单价；<strong>替代激励</strong>（C→A替代奖X元）→ 修复毛利结构。
+      </div>
+      <div class="method-example">
+        <strong>案例：</strong>"空调咳喘包"关联激励5元/单 → 咳喘中成药(55.4%毛利)+祛痰西药(43.8%)+润喉含片，关联后组合毛利率提升8-10pp，店员实得5元/单。
+      </div>
+    </div>
+    <div class="method-card">
+      <div class="step-num">4</div>
+      <h4>培训+触达 · 会卖+想买</h4>
+      <div class="method-desc">
+        双管齐下：<strong>四季蝉碎片化微课</strong>让店员3分钟学会一个品种的推荐话术；<strong>精准会员触达</strong>（AI机器人/慢病合约/店员圈）把需求推给有需求的会员。
+      </div>
+      <div class="method-example">
+        <strong>案例：</strong>三伏贴预售 → 微课"三伏贴适应症与禁忌"培训全员 → 筛选咳喘慢病会员推送"冬病夏治预约" → 单店目标30套，推一套奖15元。
+      </div>
+    </div>
+  </div>
+
+  <p style="font-size:13px;color:var(--text-muted);margin-bottom:20px;line-height:1.8;">
+    下面这张表把<strong>该客户具体品种</strong>按四步法做了映射——每个品种在哪一步有什么动作、用什么激励、培训什么话术、触达什么人群，都对应到四季蝉的具体能力上：
+  </p>
+
+  <div style="overflow-x:auto;margin-bottom:28px;">
+  <table class="method-map-table">
+    <thead>
+      <tr>
+        <th style="width:14%;">潜力爆品品种</th>
+        <th style="width:10%;">当前状态</th>
+        <th style="width:12%;">① 数据信号</th>
+        <th style="width:12%;">② 选品动作</th>
+        <th style="width:18%;">③ 激励设计</th>
+        <th style="width:34%;">④ 培训+触达</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="prod-name">多种维生素</td>
+        <td>王牌品种 · 3.8倍省均</td>
+        <td>毛利54.4% · 指数76vs省均20</td>
+        <td><span class="step-dot blue"></span>锁A · 确保TOP10 SKU铺货率100%</td>
+        <td>疗程激励：夏季活力套餐(钙+维D+多维3月装)推一套奖8元</td>
+        <td><strong>培训：</strong>微课"夏天为什么更要补维D"<br><strong>触达：</strong>近半年购钙/维会员 → "夏季补钙正当时"；父亲节45+男性 → "爸气十足"礼盒</td>
+      </tr>
+      <tr>
+        <td class="prod-name">降脂中成药</td>
+        <td>潜力爆品 · 体量太小</td>
+        <td>毛利49.6%远超省均32.8% · 指数23vs省均12</td>
+        <td><span class="step-dot purple"></span>提A · 从10.2万放大到50万目标</td>
+        <td>关联激励：心脑血管品类每单关联降脂中成药额外奖2元</td>
+        <td><strong>培训：</strong>话术"从6.3%毛利的心脏病中成药引导到49.6%的降脂中成药"<br><strong>触达：</strong>心脑血管慢病会员 → "夏至安宫+降脂组合"</td>
+      </tr>
+      <tr>
+        <td class="prod-name">综合滋补养生药</td>
+        <td>替代阿胶的首选</td>
+        <td>毛利54.2%略超省均49.8% · 仅15.2万体量</td>
+        <td><span class="step-dot purple"></span>提A · 阿胶降C，本品提A替代</td>
+        <td>替代激励：原推阿胶→成功转推本品奖5元/单</td>
+        <td><strong>培训：</strong>微课"滋补品替代话术：阿胶亏本→综合滋补养生54.2%毛利"<br><strong>触达：</strong>近90天购阿胶会员 → 推送替代方案</td>
+      </tr>
+      <tr>
+        <td class="prod-name">病毒性皮肤病外用药</td>
+        <td>隐藏高毛利品种</td>
+        <td>毛利54.2% · 仅5.8万体量 · 省均55.1%持平</td>
+        <td><span class="step-dot purple"></span>提A · 目标体量翻倍到12万</td>
+        <td>单品激励：推一盒奖3元</td>
+        <td><strong>培训：</strong>微课"病毒性皮肤病vs真菌性皮肤病怎么区分"<br><strong>触达：</strong>近60天购皮肤病外用药会员 → 推送夏季皮肤病科普+推荐</td>
+      </tr>
+      <tr>
+        <td class="prod-name">咳喘中成药</td>
+        <td>优势品类 · 应季爆发</td>
+        <td>毛利55.4% · 指数147vs省均105 · 1.4倍</td>
+        <td><span class="step-dot blue"></span>锁A · 锁定TOP3高毛利SKU</td>
+        <td>关联激励："空调咳喘包"关联成功奖5元/单</td>
+        <td><strong>培训：</strong>微课"空调病咳嗽三型辨证：热痰/寒痰/燥咳"<br><strong>触达：</strong>近90天购呼吸系统用药会员 → "夏咳早防"</td>
+      </tr>
+      <tr>
+        <td class="prod-name">儿科维生素</td>
+        <td>超级优势 · 1.5倍省均</td>
+        <td>毛利49.6% · 指数186vs省均124</td>
+        <td><span class="step-dot blue"></span>锁A · 锁定高毛利品牌（非广告品）</td>
+        <td>单品激励：指定高毛利儿童维生素推一盒奖3元</td>
+        <td><strong>培训：</strong>微课"手足口病识别三步骤+儿科关联推荐话术"<br><strong>触达：</strong>宝妈会员 → 六一前"手足口病防护专题"</td>
+      </tr>
+      <tr>
+        <td class="prod-name">安宫牛黄丸</td>
+        <td>王牌品种 · 企业排名第2</td>
+        <td>企业#2 广东#4 全国#10 · "夏至服安宫"民间刚需</td>
+        <td><span class="step-dot blue"></span>锁A · 夏至前全店铺货率100%、收银台端架陈列</td>
+        <td>关联激励：安宫+三七/丹参组合奖8元/单（安宫利润薄，利润在关联品）</td>
+        <td><strong>培训：</strong>微课"安宫三段话术：为什么吃→谁不能吃→关联三七理由"<br><strong>触达：</strong>45-75岁慢病会员 → 夏至前10天"安宫提醒+父亲节送礼"</td>
+      </tr>
+      <tr>
+        <td class="prod-name">藿香正气口服液</td>
+        <td>应季刚需 · 企业#17</td>
+        <td>企业#17 广东#29 · 环比+7 · 端午+暑湿+空调病三场景通吃</td>
+        <td><span class="step-dot blue"></span>锁A · 端午前铺货充足、入口端架陈列</td>
+        <td>关联激励："夏季防暑包"=藿香正气+清凉油+补液盐打包，关联成功奖3元</td>
+        <td><strong>培训：</strong>微课"藿香正气vs小柴胡：寒湿还是湿热？怎么区分推荐"<br><strong>触达：</strong>全量会员 → 端午前"粽子积食怎么办+防暑包"推送</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <!-- 6月营销日历 -->
+  <div class="section-title">
+    <div class="icon" style="background: var(--summer-bg); color: var(--summer);">📅</div>
+    <h2>6月营销日历</h2>
+    <span class="sub">节气 · 节日 · 病毒流行 · 营销节点</span>
+  </div>
+
+  <div class="timeline">
+    <div class="timeline-item">
+      <div class="date">6.1</div>
+      <div class="event">儿童节</div>
+      <span class="tag">节日</span>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">儿科品类流量入口</div>
+    </div>
+    <div class="timeline-item">
+      <div class="date">6.5</div>
+      <div class="event">芒种</div>
+      <span class="tag">节气</span>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">冬病夏治启动信号</div>
+    </div>
+    <div class="timeline-item hot">
+      <div class="date">6月上-中</div>
+      <div class="event">手足口病高峰</div>
+      <span class="tag">病毒流行·广东高发</span>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">广东省6月特别流行，儿科+消杀刚性爆发</div>
+    </div>
+    <div class="timeline-item hot">
+      <div class="date">6.18</div>
+      <div class="event">618购物节</div>
+      <span class="tag">大促</span>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">健康品类借势</div>
+    </div>
+    <div class="timeline-item hot">
+      <div class="date">6.19</div>
+      <div class="event">端午节</div>
+      <span class="tag">节日</span>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">粽子积食 + 驱蚊防虫</div>
+    </div>
+    <div class="timeline-item hot">
+      <div class="date">6.21</div>
+      <div class="event">夏至 · 父亲节</div>
+      <span class="tag">节气+节日</span>
+      <div style="font-size:11px;color:var(--red-500);margin-top:6px;font-weight:700;">安宫牛黄丸窗口！</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">+ 中老年健康礼</div>
+    </div>
+    <div class="timeline-item">
+      <div class="date">6月全月</div>
+      <div class="event">夏季腹泻/空调病</div>
+      <span class="tag">季节病</span>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">胃肠道+呼吸道持续需求</div>
+    </div>
+  </div>
+
+  <!-- 健康预警 -->
+  <div class="alert-banner">
+    <h4>6月健康预警 · 广东省特别关注</h4>
+    <p>
+      <strong style="color:#B91C1C;">手足口病：广东省为全国高发省份，5-7月是当地流行高峰</strong>——该客户300+门店全部分布在广东，这是<strong>躲不掉的刚性需求场景</strong>，儿科退热/抗病毒/消杀用品必须提前备货到位；夏季急性肠胃炎/细菌性腹泻进入高发季；空调使用率飙升，"空调病"感冒/咽痛/咳嗽就诊量上升30%+；蚊虫密度随气温升高快速攀升，登革热进入预警期；夏至后高温高湿，心脑血管意外风险显著增加，慢病患者需加强用药管理。
+    </p>
+  </div>
+
+  <!-- 爆品推荐大表 -->
+  <div class="section-title">
+    <div class="icon" style="background: var(--green-bg); color: var(--green-500);">🎯</div>
+    <h2>6月爆品推荐 · 四季蝉联动方案</h2>
+    <span class="sub">11大爆品方向，全部基于客户真实在售品种 + 广东省热销对比 + 通用名热卖榜TOP300交叉验证</span>
+  </div>
+
+  <div class="rec-table-wrap">
+    <table class="rec-table">
+      <thead>
+        <tr>
+          <th style="width:18%;">6月爆品方向</th>
+          <th style="width:8%;">星级</th>
+          <th style="width:36%;">推荐原因（含客户真实数据）</th>
+          <th style="width:38%;">四季蝉运营动作 / 营销动作</th>
+        </tr>
+      </thead>
+      <tbody>
+
+        <!-- #1 夏季咳喘防护 -->
+        <tr>
+          <td>
+            <div class="cat-name">夏季咳喘防护包</div>
+            <div class="prod-list">
+              <span class="prod-tag">咳喘中成药 63.8万/55.4%毛利</span>
+              <span class="prod-tag">京都念慈菴蜜炼川贝枇杷膏 企#26 ⭐</span>
+              <span class="prod-tag">热痰咳嗽药 63.2万/51.7%毛利</span>
+              <span class="prod-tag">寒痰咳嗽药 12.4万/53.4%毛利</span>
+              <span class="prod-tag">祛痰西药 16.5万/43.8%毛利</span>
+            </div>
+          </td>
+          <td><span class="stars">★★★★★</span><br><span class="star-count">必做</span></td>
+          <td class="reason">
+            ① 三个子品类<strong>全部远超广东省均</strong>：咳喘中成药万元销售指数147（省均105），热痰咳嗽145（省均116），寒痰咳嗽28（省均47，但毛利率53.4%远超省均31.6%），合计<strong>139万体量</strong>都是广东省热销品种，说明广东老百姓有这个需求、客户有能力卖；<br>② 6月空调病咳嗽高发，咳喘品类需求刚性；<br>③ 三个子品类毛利率全部50%+，<strong>利润贡献极高</strong>，恰恰是客户品类层毛利率27.7%需要拉升的方向。
+          </td>
+          <td class="action-list">
+            <div class="action-item"><span class="badge badge-select">选品分级</span>咳喘中成药/热痰咳嗽药/寒痰咳嗽药全部提为A级重点品，锁定每个子品类TOP3高毛利SKU</div>
+            <div class="action-item"><span class="badge badge-incent">关联激励</span>"空调咳喘包"=咳喘中成药+祛痰西药+润喉含片，关联成功奖5元/单</div>
+            <div class="action-item"><span class="badge badge-train">培训考核</span>四季蝉碎片化微课「空调病咳嗽三型辨证」：热痰/寒痰/燥咳鉴别 → 考试通过奖励</div>
+            <div class="action-item"><span class="badge badge-touch">精准触达</span>筛选近90天购呼吸系统用药的会员，芒种后推送「夏咳早防」+咳喘组合优惠券</div>
+          </td>
+        </tr>
+
+        <!-- #2 儿科夏日健康防护 -->
+        <tr>
+          <td>
+            <div class="cat-name">儿科夏日健康防护</div>
+            <div class="prod-list">
+              <span class="prod-tag">儿科维生素 80.8万/49.6%毛利</span>
+              <span class="prod-tag">儿科发热镇痛 34.5万/16.1%毛利</span>
+              <span class="prod-tag">儿科消化不良 33.8万/42.7%毛利</span>
+              <span class="prod-tag">儿科维矿同补 6.1万/51.7%毛利</span>
+              <span class="prod-tag">儿科清热消炎 2.5万/48.9%毛利</span>
+            </div>
+          </td>
+          <td><span class="stars">★★★★★</span><br><span class="star-count">必做</span></td>
+          <td class="reason">
+            ① <strong>儿科维生素</strong>是客户超级优势品类：49.6%毛利率，万元销售指数<span class="data-good">186远超省均124</span>，广东省排名靠前；<strong>儿科消化不良/厌食药</strong>毛利率42.7%，销售指数<span class="data-good">78远超省均43（1.8倍）</span>——广东家长愿意为孩子花钱，客户有这个能力；<br>② 6月1日儿童节天然流量入口 + 手足口病全国高发期（5-7月），退热/防感染需求刚性；<br>③ 儿科品类整体毛利率37.3%，是拉升品类结构的重要引擎。
+          </td>
+          <td class="action-list">
+            <div class="action-item"><span class="badge badge-select">选品分级</span>儿科维生素/儿科消化不良提为A级，锁定高毛利品牌（非广告品）</div>
+            <div class="action-item"><span class="badge badge-crack">裂变分享</span>六一期间推「宝宝健康包」到店领取试用装（退热贴+益生菌试吃），引导宝妈发朋友圈，店员圈同步推送海报</div>
+            <div class="action-item"><span class="badge badge-train">培训考核</span>四季蝉微课「手足口病识别三步骤」+「儿科关联推荐话术」，考试通过奖5元</div>
+            <div class="action-item"><span class="badge badge-incent">单品激励</span>指定高毛利儿童维生素/益生菌，推一盒奖3元</div>
+            <div class="action-item"><span class="badge badge-touch">精准触达</span>筛选近半年购儿科药品的宝妈会员，六一前推送「手足口病防护专题」</div>
+          </td>
+        </tr>
+
+        <!-- #3 端午肠胃健康组合 -->
+        <tr>
+          <td>
+            <div class="cat-name">端午肠胃健康组合</div>
+            <div class="prod-list">
+              <span class="prod-tag">肠炎药 13.2万/39.5%毛利</span>
+              <span class="prod-tag">止泻西药 13.3万/27.9%毛利</span>
+              <span class="prod-tag">通便中成药 10.7万/47.9%毛利</span>
+              <span class="prod-tag">胃肠调理药 32.7万/36.0%毛利</span>
+              <span class="prod-tag">胃动力用药 9.5万/18.0%毛利</span>
+            </div>
+          </td>
+          <td><span class="stars">★★★★★</span><br><span class="star-count">必做</span></td>
+          <td class="reason">
+            ① <strong>肠炎药</strong>毛利率<span class="data-good">39.5%远超省均24.6%</span>，说明客户在肠炎品类有高毛利选品能力；<strong>通便中成药</strong>毛利率47.9%与省均48.5%持平，销售指数25远超省均16；<br>② 端午节粽子糯米难消化 → 积食/便秘/消化不良需求刚性爆发；<br>③ 6月进入夏季腹泻高发期，止泻+肠炎+胃肠调理需求持续到8月；<br>④ 肠胃品类客户毛利率31.6%有提升空间，通过关联推高毛利子品可拉高整体。
+          </td>
+          <td class="action-list">
+            <div class="action-item"><span class="badge badge-incent">关联激励</span>"端午消化包"=健胃消食片（引流品）+高毛利通便中成药/肠炎药+益生菌，打包价让利5%但毛利组合提升，关联成功奖4元</div>
+            <div class="action-item"><span class="badge badge-select">选品分级</span>锁定肠炎药/通便中成药/胃肠调理药中的高毛利SKU为A级重点品</div>
+            <div class="action-item"><span class="badge badge-crack">店员圈</span>端午前一周推送"吃粽子不积食"科普海报+推荐话术，店员转发朋友圈裂变</div>
+            <div class="action-item"><span class="badge badge-touch">AI机器人</span>端午节前3天自动推送"粽子节肠胃无忧"组合优惠券给近30天购买消化类药品的会员</div>
+          </td>
+        </tr>
+
+        <!-- #4 维生素矿物质夏季补充 -->
+        <tr>
+          <td>
+            <div class="cat-name">维生素矿物质夏季补充</div>
+            <div class="prod-list">
+              <span class="prod-tag">多种矿物质 73.5万/46.9%毛利</span>
+              <span class="prod-tag">维矿同补药 62.6万/47.8%毛利</span>
+              <span class="prod-tag">多种维生素 32.8万/54.4%毛利</span>
+              <span class="prod-tag">维生素B 4.8万/25.7%毛利</span>
+            </div>
+          </td>
+          <td><span class="stars">★★★★★</span><br><span class="star-count">必做</span></td>
+          <td class="reason">
+            ① <strong>多种维生素</strong>是客户王牌中的王牌：毛利率54.4%，万元销售指数<span class="data-good">76，省均仅20——3.8倍省均</span>，碾压级优势品类；<br>② <strong>维矿同补药</strong>47.8%毛利率，销售指数144远超省均107；<strong>多种矿物质</strong>46.9%毛利；<br>③ 整个维生素矿物质大类毛利率<span class="data-good">45.4%</span>是客户毛利率最高的品类，但仅占总销售5.5%——体量有巨大放大空间；<br>④ 夏季运动出汗、钙流失、食欲下降，维生素/矿物质补充需求旺季；可同时作为父亲节送礼场景。
+          </td>
+          <td class="action-list">
+            <div class="action-item"><span class="badge badge-select">选品分级</span>多种维生素/维矿同补/多种矿物质全部A级，确保TOP10 SKU铺货率100%、动销率>85%</div>
+            <div class="action-item"><span class="badge badge-incent">疗程激励</span>"夏季活力套餐"=钙+维D+多种维生素3个月疗程装，推一套奖8元</div>
+            <div class="action-item"><span class="badge badge-touch">精准触达</span>筛选近半年购钙片/维生素的会员，推送"夏季补钙正当时"+疗程优惠；父亲节前筛选45+男性会员推送"爸气十足"中老年多维礼盒</div>
+            <div class="action-item"><span class="badge badge-crack">店员圈</span>每周推送一款维生素爆品海报+「为什么夏天更要补维D」科普短文</div>
+          </td>
+        </tr>
+
+        <!-- #4.5 安宫牛黄丸·端午-夏至专项 -->
+        <tr style="background:#FFFBF0;">
+          <td>
+            <div class="cat-name" style="color:#B45309;">安宫牛黄丸 · 夏至专项</div>
+            <div class="prod-list">
+              <span class="prod-tag" style="background:#FFF7ED;color:#C2410C;">安宫牛黄丸 企业#2/广东#4/全国#10</span>
+              <span class="prod-tag" style="background:#FFF7ED;color:#C2410C;">核心优势品种 · 全国排名第2</span>
+            </div>
+          </td>
+          <td><span class="stars">★★★★★</span><br><span class="star-count">必做</span></td>
+          <td class="reason">
+            ① <strong>这是客户通用名热卖榜排名第2的品种</strong>，在全国300强中排第10、广东排第4——不是"要不要推"的问题，是<strong>"怎么把这块天然优势吃到极致"</strong>的问题；<br>② 夏至（6.21）是安宫牛黄丸的<strong>传统服用窗口期</strong>，"夏至服安宫"在广东省内有广泛民间认知，消费者不需要教育、只需要提醒；<br>③ 6.21当天夏至+端午+父亲节三节合一，<strong>送礼场景极强</strong>——安宫作为"保命药+孝心礼"双重属性，是父亲节送礼的最佳载体之一；<br>④ <strong>交叉验证</strong>：通用名热卖榜TOP300中，端午节行业热卖品种安宫排名第4，但原方案中完全遗漏了这个品种——必须补上。
+          </td>
+          <td class="action-list">
+            <div class="action-item"><span class="badge badge-select">选品分级</span>安宫牛黄丸锁A级重点品，确保所有门店铺货率100%，夏至前一周重点陈列（收银台+中岛堆头）</div>
+            <div class="action-item"><span class="badge badge-incent">关联激励</span>"夏至安宫组合"：安宫牛黄丸+三七粉/丹参/脑心通胶囊，关联成功奖8元/单（安宫是必买品，关联品才是利润来源）</div>
+            <div class="action-item"><span class="badge badge-train">培训考核</span>四季蝉微课「安宫牛黄丸三段话术」：①夏至为什么要服安宫 ②什么体质不能吃 ③关联三七/丹参的理由——考试通过奖励</div>
+            <div class="action-item"><span class="badge badge-touch">精准触达</span>筛选45-75岁心脑血管慢病会员+近半年购安宫会员，夏至前10天推送「夏至安宫提醒」+父亲节送礼专题</div>
+            <div class="action-item"><span class="badge badge-incent">单品激励</span>安宫牛黄丸推一盒仅象征性奖2元（流量品不需要高激励），但关联三七/丹参/脑心通额外奖5元</div>
+          </td>
+        </tr>
+
+        <!-- #5 心脑血管夏季慢病管理 -->
+        <tr>
+          <td>
+            <div class="cat-name">心脑血管夏季慢病管理</div>
+            <div class="prod-list">
+              <span class="prod-tag">心脏病中成药 78.5万/6.3%毛利 ⚠</span>
+              <span class="prod-tag">钙通道阻滞药 48.7万/25.0%毛利</span>
+              <span class="prod-tag">ARB降压 36.0万/16.4%毛利</span>
+              <span class="prod-tag">降脂中成药 10.2万/49.6%毛利 ⭐</span>
+              <span class="prod-tag">综合降脂药 7.7万/41.5%毛利 ⭐</span>
+            </div>
+          </td>
+          <td><span class="stars">★★★★</span><br><span class="star-count">高优先</span></td>
+          <td class="reason">
+            ① 心脑血管是客户<strong>最大体量品类</strong>（352万），但整体毛利率仅15.3%，核心问题是<strong>心脏病中成药78.5万毛利率仅6.3%</strong>拖累整体——但这个品类客户不能不卖，解决方案是"不砍品类、拉升关联"；<br>② <strong>降脂中成药</strong>毛利率<span class="data-good">49.6%远超省均32.8%</span>，销售指数23远超省均12；<strong>综合降脂药</strong>41.5%远超省均15.6%——同品类内高毛利子品就在那里，只是体量太小需要放大；<br>③ 夏至前后是安宫牛黄丸传统服用窗口期，"夏至服安宫"民俗认知强，广东省内消费者有认知基础。
+          </td>
+          <td class="action-list">
+            <div class="action-item"><span class="badge badge-select">选品分级</span>降脂中成药/综合降脂药/降压中成药（57.8%毛利但仅1万体量）提为A级，目标放大3-5倍</div>
+            <div class="action-item"><span class="badge badge-incent">关联激励</span>心脑血管品类强制关联：每单关联辅酶Q10/鱼油/卵磷脂/三七粉任一款奖3元；关联降脂中成药额外奖2元</div>
+            <div class="action-item"><span class="badge badge-touch">慢病合约</span>筛选心脑血管慢病会员（近90天购降压/降脂/心脏病药），精准推送"夏至安宫+家庭常备"组合提醒</div>
+            <div class="action-item"><span class="badge badge-train">培训考核</span>碎片化课程"夏季心脑血管用药三问三答"+「如何从6.3%毛利的心脏病中成药引导到49.6%的降脂中成药」话术</div>
+          </td>
+        </tr>
+
+        <!-- #6 冬病夏治三伏预热 -->
+        <tr>
+          <td>
+            <div class="cat-name">冬病夏治·三伏预热</div>
+            <div class="prod-list">
+              <span class="prod-tag">咳喘中成药 63.8万/55.4%毛利</span>
+              <span class="prod-tag">寒痰咳嗽药 12.4万/53.4%毛利</span>
+              <span class="prod-tag">肩周炎/关节炎药 10.4万/56.9%毛利</span>
+              <span class="prod-tag">祛风湿药 11.7万/42.1%毛利</span>
+            </div>
+          </td>
+          <td><span class="stars">★★★★</span><br><span class="star-count">高优先</span></td>
+          <td class="reason">
+            ① 芒种到夏至是"冬病夏治"最佳预热期，7月入伏后三伏贴是药店黄金品类；客户呼吸系统慢病会员（咳喘中成药客户群）是核心目标；<br>② <strong>肩周炎/颈椎病/关节炎药</strong>毛利率<span class="data-good">56.9%远超省均52.0%</span>，虽体量仅10.4万但客流884人——这类高客单慢病品种适合"三伏贴+关节养护"打包；<br>③ <strong>祛风湿药</strong>毛利率42.1%远超省均31.8%，是冬病夏治关联品种；<br>④ 客户呼吸系统品类毛利率<span class="data-good">36.3%</span>整体不错，三伏预热可以进一步放大。
+          </td>
+          <td class="action-list">
+            <div class="action-item"><span class="badge badge-incent">疗程激励</span>"冬病夏治三伏套餐"预售：三伏贴全疗程+关节养护品（关节炎药/祛风湿药），推一套奖15元</div>
+            <div class="action-item"><span class="badge badge-touch">精准触达</span>筛选呼吸系统慢病会员（咳喘中成药/寒痰咳嗽药购药记录）→推送"冬病夏治三伏贴预约"；筛选关节药购买会员→推送"三伏贴+关节养护"组合</div>
+            <div class="action-item"><span class="badge badge-train">培训考核</span>四季蝉微课"三伏贴适应症与禁忌"+「冬病夏治的中医逻辑怎么跟顾客讲」</div>
+            <div class="action-item"><span class="badge badge-target">目标激励</span>单店三伏贴预售目标30套，达成分店长额外奖励</div>
+          </td>
+        </tr>
+
+        <!-- #7 父亲节中老年健康礼 -->
+        <tr>
+          <td>
+            <div class="cat-name">父亲节中老年健康礼</div>
+            <div class="prod-list">
+              <span class="prod-tag">ED/PE类药 90.6万/37.1%毛利</span>
+              <span class="prod-tag">补肾药 55.8万/38.3%毛利</span>
+              <span class="prod-tag">前列腺增生药 12.1万/21.0%毛利</span>
+              <span class="prod-tag">关节炎药 10.4万/56.9%毛利 ⭐</span>
+              <span class="prod-tag">多种矿物质(钙) 73.5万/46.9%毛利 ⭐</span>
+            </div>
+          </td>
+          <td><span class="stars">★★★★</span><br><span class="star-count">高优先</span></td>
+          <td class="reason">
+            ① 6.21父亲节+夏至+端午三节合一，送礼场景极强；<br>② <strong>ED/PE类药</strong>90.6万体量、毛利率37.1%，销售指数209远超省均145——客户在这个品类有绝对优势；<strong>补肾药</strong>55.8万体量，但毛利率38.3%低于省均44.0%，有提升空间（通过选品替换）；<br>③ <strong>关节炎药</strong>毛利率56.9%是父亲节礼盒的利润担当；钙片（多种矿物质）46.9%毛利是基础搭品；<br>④ 客户58.8%低频会员以中老年为主，礼品营销是唤醒低频的有效手段。
+          </td>
+          <td class="action-list">
+            <div class="action-item"><span class="badge badge-incent">早鸟激励</span>6.14-6.20预热期，店员提前锁定老客户预购"父亲节健康礼"，锁定一单奖5元</div>
+            <div class="action-item"><span class="badge badge-select">选品分级</span>补肾药重新ABC分级——替换低毛利SKU为省均44%+的高毛利替代品（当前38.3%低于省均5.7pp）</div>
+            <div class="action-item"><span class="badge badge-touch">精准触达</span>筛选45-65岁男性会员及其关联子女账号，父亲节前推送「爸气十足健康礼」专属优惠</div>
+            <div class="action-item"><span class="badge badge-crack">店员圈裂变</span>"爸气十足"海报+小程序购买链接，店员转发朋友圈抽奖；到店自提引导关联销售</div>
+          </td>
+        </tr>
+
+        <!-- #8 夏季皮肤病综合防护 -->
+        <tr>
+          <td>
+            <div class="cat-name">夏季皮肤病综合防护</div>
+            <div class="prod-list">
+              <span class="prod-tag">皮炎湿疹外用药 113.0万/30.4%毛利</span>
+              <span class="prod-tag">真菌性皮肤病 81.3万/37.1%毛利</span>
+              <span class="prod-tag">细菌性皮肤病 36.6万/39.9%毛利</span>
+              <span class="prod-tag">蚊虫叮咬外用药 33.0万/35.4%毛利</span>
+              <span class="prod-tag">病毒性皮肤病 5.8万/54.2%毛利 ⭐</span>
+            </div>
+          </td>
+          <td><span class="stars">★★★★</span><br><span class="star-count">高优先</span></td>
+          <td class="reason">
+            ① 外用药是客户<strong>第一大品类</strong>（整体787万/18.1%占比），皮肤病是客户在广东省的核心优势领域；<br>② <strong>皮炎湿疹外用药</strong>113万体量，销售指数<span class="data-good">260远超省均155</span>——碾压级优势；<strong>蚊虫叮咬外用药</strong>33万，销售指数<span class="data-good">76远超省均52</span>；<strong>真菌性皮肤病</strong>81万，毛利率37.1%超过省均33.5%；<br>③ 6月蚊虫密度飙升+高温湿疹高发+真菌感染（脚气等）旺季，皮肤病品类需求全面爆发；<br>④ 皮炎湿疹品类毛利率30.4%低于省均34.2%，有3.8pp提升空间——选品替换即可。
+          </td>
+          <td class="action-list">
+            <div class="action-item"><span class="badge badge-select">选品分级</span>皮炎湿疹品类ABC重分级，锁定毛利率>35%的SKU替代低毛利品（当前低于省均3.8pp）；蚊虫叮咬品类提A级</div>
+            <div class="action-item"><span class="badge badge-incent">关联激励</span>"夏季皮肤无忧包"=皮炎湿疹药+蚊虫叮咬止痒+芦荟胶，关联成功奖3元</div>
+            <div class="action-item"><span class="badge badge-incent">单品激励</span>病毒性皮肤病外用药（54.2%毛利率，仅5.8万体量但远超省均55.1%）单品推一盒奖3元，目标体量翻倍</div>
+            <div class="action-item"><span class="badge badge-crack">店员圈</span>「夏季皮肤病自查指南」科普海报（湿疹vs真菌vs蚊虫叮咬如何区分），店员转发朋友圈引流</div>
+          </td>
+        </tr>
+
+        <!-- #9 防暑降温清热 -->
+        <tr>
+          <td>
+            <div class="cat-name">防暑降温清热 + 夏季感冒预防</div>
+            <div class="prod-list">
+              <span class="prod-tag">藿香正气口服液 企#17/广#29 ⭐</span>
+              <span class="prod-tag">小柴胡颗粒 广#13/企#57 ⭐ 机会品种</span>
+              <span class="prod-tag">暑湿/暑热感冒药 59.0万/37.0%毛利</span>
+              <span class="prod-tag">清热消炎药 80.4万/34.5%毛利</span>
+              <span class="prod-tag">解热镇痛抗炎药 102.5万/34.7%毛利</span>
+              <span class="prod-tag">抗病毒口服液 企#21/广#23</span>
+              <span class="prod-tag">其它清热解毒用药 110.6万/16.0%毛利 ⚠</span>
+            </div>
+          </td>
+          <td><span class="stars">★★★★</span><br><span class="star-count">高优先</span></td>
+          <td class="reason">
+            ① <strong>藿香正气口服液</strong>企业排名#17、环比+7，是应季核心品种——端午粽子积食+夏季暑湿+空调病，藿香正气三个场景通吃，必须重点推；<br>② <strong>小柴胡颗粒</strong>广东省排名#13（非常热！），但企业仅排#57——广东省老百姓在大量买、客户却没跟上，这是<strong>最直接的"捡漏"品种</strong>，6月空调感冒+暑热交加正是小柴胡适应症高峰；<br>③ 清热解毒类目合计353万体量，是6月流量担当；<br>④ <strong>清热消炎药</strong>80.4万，销售指数<span class="data-good">185远超省均121</span>，但毛利率34.5%低于省均42.1%（差7.6pp）——选品有提升空间；<br>⑤ <strong>问题点</strong>：其它清热解毒用药110.6万体量最大，但毛利率仅16.0%远低于省均36.4%（差20.4pp！），急须选品分级替换。
+          </td>
+          <td class="action-list">
+            <div class="action-item"><span class="badge badge-select">选品分级</span>藿香正气口服液/小柴胡颗粒提A级重点品——小柴胡当前企#57远低于广东#13的省均热度，是典型的"顾客想要、我们没卖好"品种，目标6月把排名拉到广东前30</div>
+            <div class="action-item"><span class="badge badge-incent">关联激励</span>"夏季防暑包"=藿香正气+清凉油+补液盐，打包让利5%但组合毛利健康；"空调感冒包"=小柴胡+金嗓子喉片，关联成功奖3元</div>
+            <div class="action-item"><span class="badge badge-select">选品分级</span>清热解毒品类紧急ABC重分级——其它清热解毒用药110.6万/16.0%毛利远低于省均36.4%，锁定毛利率>35%的SKU替代低毛利品</div>
+            <div class="action-item"><span class="badge badge-train">培训考核</span>「清热解毒品类替代话术」：从16%毛利的品种引导到35%+的高毛利清热消炎药；「小柴胡vs藿香正气怎么区分推荐」微课</div>
+            <div class="action-item"><span class="badge badge-target">目标激励</span>清热解毒品类毛利率月度环比提升1pp即奖励；小柴胡企业排名从#57提升至广东前30为目标</div>
+          </td>
+        </tr>
+
+        <!-- #10 阿胶品类止损+替代 -->
+        <tr>
+          <td>
+            <div class="cat-name">滋补品类· 阿胶分流替代</div>
+            <div class="prod-list">
+              <span class="prod-tag">阿胶 企业#4/广东#9/全国#37 🔴</span>
+              <span class="prod-tag">→ 综合滋补养生药 15.2万/54.2%毛利 ⭐</span>
+              <span class="prod-tag">→ 补肾药 55.8万/38.3%毛利</span>
+              <span class="prod-tag">→ 补气药 29.6万/71.1%毛利 ⭐⭐</span>
+              <span class="prod-tag">→ 龟甲胶 6.2万/26.4%毛利</span>
+            </div>
+          </td>
+          <td><span class="stars">★★★★</span><br><span class="star-count">高优先</span></td>
+          <td class="reason">
+            ① <strong>重要修正</strong>：阿胶虽然是客户通用名热卖榜全国排名第4的品种（55.2万销售额），但毛利率-11.6%意味着每卖100元亏11.6元。然而——这恰恰说明客户把阿胶当作<strong>战略性引流品</strong>在经营。简单"降C限推"会损失大量到店客流。<strong>正确策略不是砍掉阿胶，而是分流替代</strong>：保留阿胶作为"门口招牌"，但店员推荐时<strong>主推高毛利替代品</strong>；<br>② <strong>替代品就在自己品类里</strong>：<strong>综合滋补养生药</strong>毛利率54.2%略超省均49.8%，体量仅15.2万——这才是该主推的高毛利滋补品；<strong>补气药</strong>毛利率71.1%远超省均50.0%，体量29.6万，是利润王中王；<br>③ <strong>补肾药</strong>55.8万几乎与阿胶等体量，毛利率38.3%，但低于省均44.0%（差5.7pp），同样需要选品替换拉升；<br>④ <strong>补血药</strong>毛利率31.5%远低于省均49.0%（差17.5pp），选品替换空间巨大。
+          </td>
+          <td class="action-list">
+            <div class="action-item"><span class="badge badge-select">选品分级</span>阿胶维持A级但不推——保留铺货和陈列（流量品功能），店员推荐时<strong>主动引导到替代品</strong>；综合滋补养生药/补气药/龟甲胶全部提为A级主力推</div>
+            <div class="action-item"><span class="badge badge-incent">替代激励</span>"阿胶分流替代专项"：顾客想买阿胶时，店员成功推荐综合滋补养生药（54.2%毛利）或补气药（71.1%毛利），奖5元/单</div>
+            <div class="action-item"><span class="badge badge-train">培训考核</span>「滋补品分流话术」三步走：①先肯定"阿胶确实是好东西" → ②再提醒"阿胶偏温补，夏天容易上火" → ③顺势推荐综合滋补/补气品（夏天更适合的温和滋补），学习+考试通过奖励</div>
+            <div class="action-item"><span class="badge badge-target">目标激励</span>滋补品类毛利率月度环比提升3pp（不砍阿胶销量的前提下，把替代品占比从当前约10%提到30%）</div>
+          </td>
+        </tr>
+
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 四季蝉四步运营节奏 -->
+  <div class="section-title">
+    <div class="icon" style="background: var(--purple-bg); color: var(--purple-500);">⚡</div>
+    <h2>四季蝉 · 六月运营四步节奏</h2>
+    <span class="sub">从准备→落地→拉升→复盘，四阶段环环相扣</span>
+  </div>
+
+  <div class="rhythm-grid">
+    <div class="rhythm-card">
+      <div class="phase">5.25 - 6.5 | 第一阶段</div>
+      <h4>基础准备</h4>
+      <div class="tasks">
+        · 全品类ABC重分级（阿胶降C、降脂中成药提A、咳喘提A、维生素锁A）<br>
+        · 店员培训考核上线四季蝉（6门碎片化微课）<br>
+        · 慢病会员人群筛选与标签分组<br>
+        · 六一/端午/父亲节/618物料+话术库准备<br>
+        · 各品类关联组合定价确认
+      </div>
+    </div>
+    <div class="rhythm-card">
+      <div class="phase">6.6 - 6.14 | 第二阶段</div>
+      <h4>策略落地</h4>
+      <div class="tasks">
+        · 六一儿科主题营销收尾复盘<br>
+        · 手足口病防护专题全店启动<br>
+        · 冬病夏治三伏贴预售上线<br>
+        · 心脑血管慢病会员"夏至安宫"触达<br>
+        · 店员圈每日推送科普+话术
+      </div>
+    </div>
+    <div class="rhythm-card">
+      <div class="phase">6.15 - 6.21 | 第三阶段</div>
+      <h4>毛利拉升 · 黄金周</h4>
+      <div class="tasks">
+        · 618+端午+父亲节+夏至四合一全域活动<br>
+        · 安宫牛黄丸夏至专项全员冲刺（全店陈列+全员推荐+提前预购锁定）<br>
+        · 关联激励集中发力（咳喘包/消化包/心脑关联/安宫+三七丹参）<br>
+        · 阿胶分流替代全员执行<br>
+        · 清热解毒品类毛利修复 + 小柴胡排名攻坚战<br>
+        · 父亲节中老年健康礼品冲刺
+      </div>
+    </div>
+    <div class="rhythm-card">
+      <div class="phase">6.22 - 6.30 | 第四阶段</div>
+      <h4>价值提升</h4>
+      <div class="tasks">
+        · 沉睡会员唤醒（端午积分兑换到店客户）<br>
+        · 三伏贴预售核销 + 到店关联推荐<br>
+        · 6月数据复盘（品类毛利率变化/关联成功率/会员唤醒率）<br>
+        · 7月三伏方案调整<br>
+        · 激励奖金结算发放
+      </div>
+    </div>
+  </div>
+
+  <!-- 三个必须 -->
+  <div class="warning-box">
+    <h4>六月三个必须动（结合热卖榜TOP300交叉验证 + 客户诊断结论）</h4>
+    <div class="warning-item">
+      <span class="icon">🔴</span>
+      <span><strong>安宫牛黄丸：企业排名全国第2的优势品种，夏至窗口不抓就是浪费：</strong>这是客户在全广东排第4、全国排第10的核心品种——6.21夏至当天+端午+父亲节三节合一，"夏至服安宫"是广东民间刚需。不需要教育顾客，只需要铺好货、做好陈列、培训好关联话术（安宫+三七/丹参）、提前10天触达慢病会员。不抓这个窗口，等于把到手的钱送给隔壁药店。</span>
+    </div>
+    <div class="warning-item">
+      <span class="icon">🟡</span>
+      <span><strong>阿胶不砍、要分流：</strong>企业排名全国第4的引流品，砍掉是自断客流。正确做法：保留阿胶陈列和A级身份（维持引流功能），但店员推荐时用"夏天阿胶偏温补，综合滋补/补气品更温和"的话术引导到54.2%-71.1%毛利的高利润替代品。目标不是让阿胶消失，而是让替代品占比从10%提到30%。</span>
+    </div>
+    <div class="warning-item">
+      <span class="icon">🟡</span>
+      <span><strong>清热解毒品类毛利率仅16.0%远低于省均36.4%：</strong>110.6万体量的"其它清热解毒用药"被低价引流品拖累，差了整整20个百分点。这是客户品类层毛利率27.7%落后大盘31.9%的重要贡献因素。6月必须通过四季蝉选品分级替换低毛利SKU。</span>
+    </div>
+    <div class="warning-item">
+      <span class="icon">🟢</span>
+      <span><strong>多种维生素3.8倍省均、儿科维生素1.5倍省均、咳喘中成药1.4倍省均——这些碾压级优势品类要放大：</strong>不是"还可以做得更好"，而是"已经是广东省顶尖了，要继续拉开差距"。6月这些品类不仅要保优势，更要用四季蝉的疗程激励+单品激励把体量再推高30%。</span>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  <p>海典软件 · 运营部内部资料 · 基于四季蝉能力体系</p>
+  <p style="margin-top:4px;opacity:0.6;">数据支持：随心看 + 四级分类销售报告（276品类） + 广东省热销对比 + <strong>通用名热卖榜TOP300全国/广东/企业三级排名交叉验证</strong> | 客户名称已脱敏</p>
+  <p style="margin-top:8px;opacity:0.5;font-size:11px;">⚠ 数据局限性说明：当前数据源（四级分类销售报告、重点商品ABC报告）为当期截面数据，不含去年同期（YoY）对比字段。文中涉及的"环比""下滑"等趋势判断基于当期数据结构和季节性规律推断，如需精确同比分析，需补充去年同期数据。滋补类品种（阿胶、补肾药、综合滋补等）具有显著季节性特征，冬旺夏淡属正常市场规律，文中"下滑"描述不应理解为经营恶化信号。</p>
+</footer>
+
+</body>
+</html>

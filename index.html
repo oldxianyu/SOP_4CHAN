@@ -859,6 +859,37 @@
         color: #1f3f95;
       }
 
+      .friend-link-card.ant-card {
+        height: 100%;
+        border-color: rgba(42, 75, 255, 0.13);
+        background: linear-gradient(135deg, #fbfcff, #ffffff);
+        transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+      }
+
+      .friend-link-card.ant-card:hover {
+        border-color: rgba(42, 75, 255, 0.28);
+        box-shadow: 0 16px 34px rgba(24, 52, 126, 0.1);
+        transform: translateY(-2px);
+      }
+
+      .friend-link-card a {
+        color: #1f3f95;
+        font-size: 18px;
+        font-weight: 850;
+        line-height: 1.35;
+        overflow-wrap: anywhere;
+      }
+
+      .friend-link-card .ant-typography {
+        margin: 8px 0 0;
+      }
+
+      .friend-link-tag.ant-tag {
+        margin-bottom: 12px;
+        border-radius: 999px;
+        font-weight: 800;
+      }
+
       .calendar-shell .ant-alert,
       .summary-row {
         margin-bottom: 16px;
@@ -2759,6 +2790,32 @@
           ["数据看板", "总部、门店、厂家查看活动销量、执行情况、员工表现和费用使用。"],
           ["资金与提现", "奖励可实时到账/提现，资金在连锁账户中流转，流程更可控。"],
         ];
+        const friendLinks = [
+          {
+            title: "华南某连锁 6月四季蝉营销方案",
+            desc: "面向客户场景的月度动销方案，可作为重点品营销活动参考。",
+            href: "links/south-chain-june-marketing.html",
+            tag: "营销方案",
+          },
+          {
+            title: "医药连锁四季营销日历",
+            desc: "按季节与营销节点梳理医药连锁可用的品类运营节奏。",
+            href: "links/pharmacy-seasonal-marketing-calendar.html",
+            tag: "营销日历",
+          },
+          {
+            title: "四季蝉产品学习手册 v2",
+            desc: "帮助连锁总部、运营和门店理解四季蝉产品能力与使用场景。",
+            href: "links/sijichan-product-handbook-v2.html",
+            tag: "学习手册",
+          },
+          {
+            title: "五大金刚综合能力评估测试",
+            desc: "用于店员或团队学习后的能力测评，辅助培训闭环。",
+            href: "links/five-core-capability-test.html",
+            tag: "能力测试",
+          },
+        ];
 
         return h(
           "div",
@@ -2874,6 +2931,33 @@
                         h(Space, { align: "start" }, h("span", { className: "module-icon" }, index + 1), h("div", null, h(Text, { strong: true }, title), h(Paragraph, null, text))),
                       ),
                     ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          h(
+            Card,
+            { className: "section-card", bordered: false },
+            h(
+              "div",
+              { className: "section-title-row" },
+              h(Title, { level: 2 }, "相关工具与资料"),
+              h(Paragraph, null, "把常用营销方案、学习手册、营销日历和测评工具集中到首页，方便客户快速打开。"),
+            ),
+            h(
+              Row,
+              { gutter: [12, 12] },
+              friendLinks.map((item) =>
+                h(
+                  Col,
+                  { xs: 24, md: 12, xl: 6, key: item.href },
+                  h(
+                    Card,
+                    { className: "friend-link-card", bordered: true },
+                    h(Tag, { color: "blue", className: "friend-link-tag" }, item.tag),
+                    h("a", { href: item.href, target: "_blank", rel: "noreferrer" }, item.title),
+                    h(Paragraph, { type: "secondary" }, item.desc),
                   ),
                 ),
               ),

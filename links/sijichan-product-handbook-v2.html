@@ -1,0 +1,1781 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>四季蝉产品学习手册 — 医药连锁数字化动销利器</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #0066CC;
+            --primary-dark: #004C99;
+            --secondary: #10B981;
+            --accent: #F59E0B;
+            --success: #10B981;
+            --danger: #EF4444;
+            --purple: #8B5CF6;
+            --bg-light: #F8FAFC;
+            --text-dark: #1E293B;
+            --text-gray: #64748B;
+            --border: #E2E8F0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            background: var(--bg-light);
+            color: var(--text-dark);
+            line-height: 1.7;
+        }
+
+        /* 导航栏 */
+        .nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            box-shadow: 0 2px 20px rgba(0,0,0,0.08);
+            z-index: 1000;
+            padding: 0 20px;
+        }
+
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 60px;
+        }
+
+        .nav-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 700;
+            font-size: 18px;
+            color: var(--primary);
+        }
+
+        .nav-brand-icon {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--secondary), #059669);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 18px;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+
+        .nav-links::-webkit-scrollbar {
+            display: none;
+        }
+
+        .nav-link {
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            color: var(--text-gray);
+            text-decoration: none;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+
+        .nav-link:hover {
+            background: var(--bg-light);
+            color: var(--primary);
+        }
+
+        .nav-link.active {
+            background: var(--primary);
+            color: white;
+        }
+
+        /* 主容器 */
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 80px 20px 60px;
+        }
+
+        /* Hero区 */
+        .hero {
+            background: linear-gradient(135deg, #0066CC 0%, #0088EE 50%, #10B981 100%);
+            border-radius: 24px;
+            padding: 60px 40px;
+            color: white;
+            margin-bottom: 40px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -20%;
+            width: 60%;
+            height: 200%;
+            background: rgba(255,255,255,0.1);
+            transform: rotate(15deg);
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255,255,255,0.2);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+
+        .hero h1 {
+            font-size: 42px;
+            font-weight: 800;
+            margin-bottom: 16px;
+            line-height: 1.2;
+        }
+
+        .hero-subtitle {
+            font-size: 20px;
+            opacity: 0.9;
+            margin-bottom: 30px;
+            max-width: 600px;
+        }
+
+        .hero-stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin-top: 30px;
+        }
+
+        .hero-stat {
+            background: rgba(255,255,255,0.15);
+            border-radius: 16px;
+            padding: 20px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+        }
+
+        .hero-stat-value {
+            font-size: 32px;
+            font-weight: 800;
+        }
+
+        .hero-stat-label {
+            font-size: 13px;
+            opacity: 0.85;
+            margin-top: 4px;
+        }
+
+        /* 章节标题 */
+        .section {
+            margin-bottom: 50px;
+        }
+
+        .section-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .section-num {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        .section-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--text-dark);
+        }
+
+        .section-desc {
+            font-size: 15px;
+            color: var(--text-gray);
+            margin-top: 4px;
+        }
+
+        /* 卡片网格 */
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+        }
+
+        .card-grid-2 {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .card-grid-4 {
+            grid-template-columns: repeat(4, 1fr);
+        }
+
+        /* 基础卡片 */
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+            border: 1px solid var(--border);
+            transition: all 0.3s;
+        }
+
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.1);
+        }
+
+        .card-icon {
+            width: 52px;
+            height: 52px;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            margin-bottom: 16px;
+        }
+
+        .card-icon-blue { background: #EFF6FF; color: var(--primary); }
+        .card-icon-green { background: #ECFDF5; color: var(--secondary); }
+        .card-icon-orange { background: #FFF7ED; color: var(--accent); }
+        .card-icon-purple { background: #F5F3FF; color: var(--purple); }
+        .card-icon-red { background: #FEF2F2; color: var(--danger); }
+
+        .card-title {
+            font-size: 17px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .card-text {
+            font-size: 14px;
+            color: var(--text-gray);
+            line-height: 1.6;
+        }
+
+        .card-highlight {
+            margin-top: 12px;
+            padding: 10px 14px;
+            background: var(--bg-light);
+            border-radius: 10px;
+            font-size: 14px;
+            color: var(--primary);
+            font-weight: 500;
+        }
+
+        /* 特色卡片 */
+        .feature-card {
+            background: white;
+            border-radius: 20px;
+            padding: 32px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+            border: 1px solid var(--border);
+        }
+
+        .feature-card-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 24px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid var(--bg-light);
+        }
+
+        .feature-card-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+        }
+
+        .feature-card-title {
+            font-size: 22px;
+            font-weight: 700;
+        }
+
+        .feature-card-desc {
+            font-size: 15px;
+            color: var(--text-gray);
+        }
+
+        /* 流程图 */
+        .flow {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 30px 0;
+        }
+
+        .flow-step {
+            background: white;
+            border-radius: 16px;
+            padding: 20px 28px;
+            text-align: center;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+            border: 2px solid var(--border);
+            min-width: 140px;
+        }
+
+        .flow-step-num {
+            width: 28px;
+            height: 28px;
+            background: var(--primary);
+            border-radius: 50%;
+            color: white;
+            font-size: 14px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 10px;
+        }
+
+        .flow-step-text {
+            font-weight: 600;
+            font-size: 15px;
+        }
+
+        .flow-arrow {
+            font-size: 24px;
+            color: var(--text-gray);
+        }
+
+        /* 表格 */
+        .table-wrap {
+            background: white;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+            border: 1px solid var(--border);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            background: var(--bg-light);
+            padding: 16px 20px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 14px;
+            color: var(--text-gray);
+            border-bottom: 2px solid var(--border);
+        }
+
+        td {
+            padding: 16px 20px;
+            font-size: 14px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover td {
+            background: var(--bg-light);
+        }
+
+        .tag {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .tag-blue { background: #EFF6FF; color: var(--primary); }
+        .tag-green { background: #ECFDF5; color: var(--secondary); }
+        .tag-orange { background: #FFF7ED; color: #D97706; }
+        .tag-red { background: #FEF2F2; color: var(--danger); }
+        .tag-purple { background: #F5F3FF; color: var(--purple); }
+
+        /* 引用框 */
+        .quote-box {
+            background: linear-gradient(135deg, #EFF6FF, #F0F9FF);
+            border-left: 4px solid var(--primary);
+            border-radius: 0 16px 16px 0;
+            padding: 24px 28px;
+            margin: 24px 0;
+        }
+
+        .quote-text {
+            font-size: 18px;
+            color: var(--primary-dark);
+            font-weight: 500;
+            margin-bottom: 12px;
+        }
+
+        .quote-author {
+            font-size: 14px;
+            color: var(--text-gray);
+        }
+
+        /* 警告框 */
+        .alert-box {
+            background: #FEF3C7;
+            border: 1px solid #FCD34D;
+            border-radius: 12px;
+            padding: 20px 24px;
+            margin: 20px 0;
+        }
+
+        .alert-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 600;
+            color: #92400E;
+            margin-bottom: 8px;
+        }
+
+        .alert-text {
+            font-size: 14px;
+            color: #92400E;
+        }
+
+        /* 对比卡片 */
+        .compare-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin: 24px 0;
+        }
+
+        .compare-card {
+            border-radius: 20px;
+            padding: 32px;
+        }
+
+        .compare-card-pros {
+            background: linear-gradient(135deg, #ECFDF5, #D1FAE5);
+            border: 2px solid var(--secondary);
+        }
+
+        .compare-card-cons {
+            background: linear-gradient(135deg, #FEF2F2, #FEE2E2);
+            border: 2px solid var(--danger);
+        }
+
+        .compare-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .compare-list {
+            list-style: none;
+        }
+
+        .compare-list li {
+            padding: 10px 0;
+            font-size: 15px;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        /* 数字强调 */
+        .big-num {
+            font-size: 48px;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        /* 角色卡片 */
+        .role-cards {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+            margin: 24px 0;
+        }
+
+        .role-card {
+            background: white;
+            border-radius: 20px;
+            padding: 28px;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+            border: 2px solid var(--border);
+            transition: all 0.3s;
+        }
+
+        .role-card:hover {
+            border-color: var(--primary);
+            transform: translateY(-4px);
+        }
+
+        .role-icon {
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 36px;
+            margin: 0 auto 20px;
+        }
+
+        .role-title {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .role-desc {
+            font-size: 14px;
+            color: var(--text-gray);
+            margin-bottom: 16px;
+        }
+
+        .role-duty {
+            background: var(--bg-light);
+            border-radius: 10px;
+            padding: 12px;
+            font-size: 14px;
+            color: var(--primary);
+            font-weight: 500;
+        }
+
+        /* 案例卡片 */
+        .case-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 24px;
+            margin: 24px 0;
+        }
+
+        .case-card {
+            background: white;
+            border-radius: 20px;
+            padding: 28px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+            border: 1px solid var(--border);
+        }
+
+        .case-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .case-logo {
+            width: 56px;
+            height: 56px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 700;
+            font-size: 18px;
+        }
+
+        .case-name {
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .case-type {
+            font-size: 13px;
+            color: var(--text-gray);
+        }
+
+        .case-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .case-stat {
+            text-align: center;
+            padding: 12px;
+            background: var(--bg-light);
+            border-radius: 10px;
+        }
+
+        .case-stat-value {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .case-stat-label {
+            font-size: 12px;
+            color: var(--text-gray);
+        }
+
+        /* QA卡片 */
+        .qa-list {
+            margin: 24px 0;
+        }
+
+        .qa-item {
+            background: white;
+            border-radius: 16px;
+            margin-bottom: 16px;
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+
+        .qa-question {
+            padding: 20px 24px;
+            font-weight: 600;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: white;
+            cursor: pointer;
+        }
+
+        .qa-question:hover {
+            background: var(--bg-light);
+        }
+
+        .qa-icon {
+            width: 32px;
+            height: 32px;
+            background: #FEF3C7;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #D97706;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .qa-answer {
+            padding: 0 24px 20px;
+            font-size: 15px;
+            color: var(--text-gray);
+            line-height: 1.7;
+        }
+
+        /* 底部CTA */
+        .cta-section {
+            background: linear-gradient(135deg, var(--primary), #0088EE);
+            border-radius: 24px;
+            padding: 60px 40px;
+            text-align: center;
+            color: white;
+            margin-top: 60px;
+        }
+
+        .cta-title {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 16px;
+        }
+
+        .cta-text {
+            font-size: 18px;
+            opacity: 0.9;
+            margin-bottom: 30px;
+        }
+
+        .cta-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            background: white;
+            color: var(--primary);
+            padding: 16px 40px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.3s;
+        }
+
+        .cta-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        /* 五大模块 */
+        .module-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 16px;
+            margin: 24px 0;
+        }
+
+        .module-card {
+            background: white;
+            border-radius: 16px;
+            padding: 20px 16px;
+            text-align: center;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+            border: 1px solid var(--border);
+            transition: all 0.3s;
+        }
+
+        .module-card:hover {
+            border-color: var(--primary);
+            transform: translateY(-4px);
+        }
+
+        .module-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            margin: 0 auto 12px;
+        }
+
+        .module-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .module-items {
+            font-size: 11px;
+            color: var(--text-gray);
+            line-height: 1.6;
+        }
+
+        /* 响应式 */
+        @media (max-width: 900px) {
+            .hero-stats { grid-template-columns: repeat(2, 1fr); }
+            .card-grid { grid-template-columns: repeat(2, 1fr); }
+            .card-grid-4 { grid-template-columns: repeat(2, 1fr); }
+            .module-grid { grid-template-columns: repeat(3, 1fr); }
+            .role-cards { grid-template-columns: 1fr; }
+            .compare-grid { grid-template-columns: 1fr; }
+            .case-grid { grid-template-columns: 1fr; }
+            .flow { flex-direction: column; }
+            .flow-arrow { transform: rotate(90deg); }
+        }
+
+        @media (max-width: 600px) {
+            .hero { padding: 40px 24px; }
+            .hero h1 { font-size: 28px; }
+            .hero-stats { grid-template-columns: 1fr; }
+            .card-grid { grid-template-columns: 1fr; }
+            .card-grid-2 { grid-template-columns: 1fr; }
+            .card-grid-4 { grid-template-columns: 1fr; }
+            .module-grid { grid-template-columns: repeat(2, 1fr); }
+            .section-title { font-size: 22px; }
+        }
+
+        /* 平滑滚动 */
+        html {
+            scroll-behavior: smooth;
+        }
+
+        /* 锚点偏移 */
+        .section[id] {
+            scroll-margin-top: 80px;
+        }
+
+        /* 底部 */
+        .footer {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-gray);
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="nav">
+        <div class="nav-content">
+            <div class="nav-brand">
+                <div class="nav-brand-icon">🦋</div>
+                四季蝉学习手册
+            </div>
+            <div class="nav-links">
+                <a href="#intro" class="nav-link">产品定位</a>
+                <a href="#company" class="nav-link">公司背书</a>
+                <a href="#pain" class="nav-link">行业痛点</a>
+                <a href="#ability" class="nav-link">产品能力</a>
+                <a href="#price" class="nav-link">收费模式</a>
+                <a href="#product" class="nav-link">选品指南</a>
+                <a href="#compare" class="nav-link">竞品对比</a>
+                <a href="#case" class="nav-link">成功案例</a>
+                <a href="#qa" class="nav-link">常见答疑</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Hero区 -->
+        <section class="hero">
+            <div class="hero-badge">
+                <span>📚 海典软件 · 内部学习资料</span>
+            </div>
+            <h1>四季蝉产品学习手册</h1>
+            <p class="hero-subtitle">
+                医药连锁数字化动销激励平台 — 让员工愿意卖、主动卖、卖得好
+            </p>
+            <div class="hero-stats">
+                <div class="hero-stat">
+                    <div class="hero-stat-value">4%</div>
+                    <div class="hero-stat-label">服务费（按提现金额）</div>
+                </div>
+                <div class="hero-stat">
+                    <div class="hero-stat-value">秒到账</div>
+                    <div class="hero-stat-label">员工提现速度</div>
+                </div>
+                <div class="hero-stat">
+                    <div class="hero-stat-value">200+</div>
+                    <div class="hero-stat-label">已签约连锁</div>
+                </div>
+                <div class="hero-stat">
+                    <div class="hero-stat-value">8万+</div>
+                    <div class="hero-stat-label">月活店员</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 第1章：产品定位 -->
+        <section class="section" id="intro">
+            <div class="section-header">
+                <div class="section-num">1</div>
+                <div>
+                    <h2 class="section-title">产品定位 — 四季蝉是什么</h2>
+                    <p class="section-desc">一句话说清楚：帮药店解决员工"不会卖、不愿卖"的问题</p>
+                </div>
+            </div>
+
+            <div class="card-grid card-grid-4">
+                <div class="card">
+                    <div class="card-icon card-icon-blue">💊</div>
+                    <div class="card-title">解决什么问题</div>
+                    <div class="card-text">员工不知道卖什么、不愿意推高毛利品种</div>
+                    <div class="card-highlight">员工不会卖、不愿卖</div>
+                </div>
+                <div class="card">
+                    <div class="card-icon card-icon-green">🎁</div>
+                    <div class="card-title">核心机制是什么</div>
+                    <div class="card-text">完成任务 → 获得豆豆 → 实时提现</div>
+                    <div class="card-highlight">像微信零钱一样方便</div>
+                </div>
+                <div class="card">
+                    <div class="card-icon card-icon-orange">🔄</div>
+                    <div class="card-title">谁付钱</div>
+                    <div class="card-text">厂家提供费用，连锁制定规则</div>
+                    <div class="card-highlight">三方共赢生态</div>
+                </div>
+                <div class="card">
+                    <div class="card-icon card-icon-purple">📱</div>
+                    <div class="card-title">怎么计费</div>
+                    <div class="card-text">按效计费，产生激励才收费</div>
+                    <div class="card-highlight">上线初期零费用</div>
+                </div>
+            </div>
+
+            <div class="quote-box">
+                <div class="quote-text">"四季蝉 = 数字化动销激励平台"</div>
+                <div class="quote-author">让员工的每一份努力，都能马上看到回报</div>
+            </div>
+        </section>
+
+        <!-- 第2章：公司背书 -->
+        <section class="section" id="company">
+            <div class="section-header">
+                <div class="section-num">2</div>
+                <div>
+                    <h2 class="section-title">公司背书 — 谁在做四季蝉</h2>
+                    <p class="section-desc">海典软件 — 专注医药流通行业22年</p>
+                </div>
+            </div>
+
+            <div class="card-grid card-grid-4">
+                <div class="card" style="text-align:center;">
+                    <div style="font-size:40px;margin-bottom:12px;">🏢</div>
+                    <div style="font-size:28px;font-weight:800;color:var(--primary);">22年</div>
+                    <div style="font-size:14px;color:var(--text-gray);">专注医药流通行业</div>
+                    <div style="font-size:12px;color:var(--text-gray);margin-top:4px;">2004年成立</div>
+                </div>
+                <div class="card" style="text-align:center;">
+                    <div style="font-size:40px;margin-bottom:12px;">📊</div>
+                    <div style="font-size:28px;font-weight:800;color:var(--primary);">51.2%</div>
+                    <div style="font-size:14px;color:var(--text-gray);">ERP市场占有率</div>
+                    <div style="font-size:12px;color:var(--text-gray);margin-top:4px;">行业第一</div>
+                </div>
+                <div class="card" style="text-align:center;">
+                    <div style="font-size:40px;margin-bottom:12px;">🏥</div>
+                    <div style="font-size:28px;font-weight:800;color:var(--primary);">5900+</div>
+                    <div style="font-size:14px;color:var(--text-gray);">服务医药企业</div>
+                    <div style="font-size:12px;color:var(--text-gray);margin-top:4px;">19万+ 门店</div>
+                </div>
+                <div class="card" style="text-align:center;">
+                    <div style="font-size:40px;margin-bottom:12px;">🤝</div>
+                    <div style="font-size:28px;font-weight:800;color:var(--primary);">99家</div>
+                    <div style="font-size:14px;color:var(--text-gray);">百强客户</div>
+                    <div style="font-size:12px;color:var(--text-gray);margin-top:4px;">各榜单首位</div>
+                </div>
+            </div>
+
+            <div class="compare-grid" style="margin-top:24px;">
+                <div class="compare-card compare-card-pros">
+                    <div class="compare-title">
+                        <span style="font-size:24px;">✓</span>
+                        四季蝉的优势
+                    </div>
+                    <ul class="compare-list">
+                        <li><span>🏢</span> 大公司产品，售后有保障</li>
+                        <li><span>📊</span> 数据安全，与ERP系统打通</li>
+                        <li><span>💰</span> 合规账户，费用透明</li>
+                        <li><span>🔄</span> 产品持续迭代升级</li>
+                    </ul>
+                </div>
+                <div class="compare-card compare-card-cons">
+                    <div class="compare-title">
+                        <span style="font-size:24px;">⚠</span>
+                        小工具的风险
+                    </div>
+                    <ul class="compare-list">
+                        <li><span>📱</span> 可能是个人开发，数据不安全</li>
+                        <li><span>💸</span> 资金在第三方平台，有风险</li>
+                        <li><span>🔧</span> 没有持续服务保障</li>
+                        <li><span>📴</span> 随时可能停止运营</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 第3章：行业痛点 -->
+        <section class="section" id="pain">
+            <div class="section-header">
+                <div class="section-num">3</div>
+                <div>
+                    <h2 class="section-title">行业痛点 — 药店有多难</h2>
+                    <p class="section-desc">理解客户的困难，才知道四季蝉的价值</p>
+                </div>
+            </div>
+
+            <div class="card-grid">
+                <div class="card">
+                    <div class="card-icon card-icon-red">📉</div>
+                    <div class="card-title">压力一：流量下滑</div>
+                    <div class="card-text">
+                        • O2O普及但中小连锁缺乏运营能力<br>
+                        • 会员复购率低，60%会员年消费≤3次<br>
+                        • 线下客流持续减少
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-icon card-icon-orange">💰</div>
+                    <div class="card-title">压力二：利润压缩</div>
+                    <div class="card-text">
+                        • 医保改革、集采压缩毛利空间<br>
+                        • 人工成本持续上涨<br>
+                        • 房租压力有增无减
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-icon card-icon-purple">📱</div>
+                    <div class="card-title">压力三：数字化滞后</div>
+                    <div class="card-text">
+                        • 缺乏数据驱动决策能力<br>
+                        • 采购信息不透明<br>
+                        • 员工激励手段单一
+                    </div>
+                </div>
+            </div>
+
+            <div class="alert-box" style="margin-top:24px;">
+                <div class="alert-title">
+                    <span style="font-size:20px;">💡</span>
+                    核心洞察
+                </div>
+                <div class="alert-text">
+                    表面是流量下滑、利润压缩，<strong>本质上是没有找到让员工主动卖高毛利品种的方法</strong>。四季蝉解决的就是这个根本问题。
+                </div>
+            </div>
+        </section>
+
+        <!-- 第4章：核心公式 -->
+        <section class="section">
+            <div class="section-header">
+                <div class="section-num">📐</div>
+                <div>
+                    <h2 class="section-title">核心公式 — 四季蝉的底层逻辑</h2>
+                    <p class="section-desc">理解这个公式，就理解了四季蝉的价值本质</p>
+                </div>
+            </div>
+
+            <div class="feature-card" style="text-align:center;padding:50px 40px;">
+                <div style="font-size:18px;color:var(--text-gray);margin-bottom:20px;">营销干预能力</div>
+                <div style="font-size:28px;font-weight:700;margin-bottom:20px;">
+                    = 员工对重点商品的推荐能力
+                </div>
+                <div style="font-size:28px;font-weight:700;margin-bottom:30px;">
+                    = 3A品中高毛利商品销售占比
+                </div>
+                <div style="padding:20px;background:var(--bg-light);border-radius:16px;display:inline-block;">
+                    <div style="font-size:16px;color:var(--text-gray);">行业高质量参考值</div>
+                    <div style="font-size:48px;font-weight:800;color:var(--primary);">50%</div>
+                    <div style="font-size:14px;color:var(--text-gray);">重点商品高毛利销售占比达到50%为优秀水平</div>
+                </div>
+            </div>
+
+            <div class="quote-box" style="margin-top:30px;">
+                <div class="quote-text">💡 利润公式</div>
+                <div style="font-size:20px;font-weight:600;margin-bottom:12px;">
+                    3亿规模 × 提升高毛利占比5% = 显著利润空间
+                </div>
+                <div class="quote-author">帮连锁提升高毛利品种动销，就是帮他们实实在在赚钱</div>
+            </div>
+        </section>
+
+        <!-- 第5章：三角色体系 -->
+        <section class="section">
+            <div class="section-header">
+                <div class="section-num">🔄</div>
+                <div>
+                    <h2 class="section-title">三角色体系 — 谁在使用四季蝉</h2>
+                    <p class="section-desc">连锁、厂家、店员，三方共赢的生态闭环</p>
+                </div>
+            </div>
+
+            <div class="role-cards">
+                <div class="role-card">
+                    <div class="role-icon" style="background:#EFF6FF;">🏪</div>
+                    <div class="role-role-title">连锁总部</div>
+                    <div class="role-desc">制定策略、管理品类、监控数据</div>
+                    <div class="role-duty">
+                        🎯 选品分级<br>
+                        📊 数据看板<br>
+                        💵 费用结算
+                    </div>
+                </div>
+                <div class="role-card">
+                    <div class="role-icon" style="background:#ECFDF5;">🏭</div>
+                    <div class="role-title">药企厂家</div>
+                    <div class="role-desc">提供费用支持、获取销售数据</div>
+                    <div class="role-duty">
+                        💰 激励费用<br>
+                        📈 销售归因<br>
+                        🎯 品种推广
+                    </div>
+                </div>
+                <div class="role-card">
+                    <div class="role-icon" style="background:#FEF3C7;">👩‍⚕️</div>
+                    <div class="role-title">店员/店长</div>
+                    <div class="role-desc">执行动销、获取激励、即时提现</div>
+                    <div class="role-duty">
+                        📋 查看任务<br>
+                        🎁 获取豆豆<br>
+                        💸 随时提现
+                    </div>
+                </div>
+            </div>
+
+            <div class="flow">
+                <div class="flow-step">
+                    <div class="flow-step-num">1</div>
+                    <div class="flow-step-text">连锁制定策略</div>
+                </div>
+                <div class="flow-arrow">→</div>
+                <div class="flow-step">
+                    <div class="flow-step-num">2</div>
+                    <div class="flow-step-text">厂家提供费用</div>
+                </div>
+                <div class="flow-arrow">→</div>
+                <div class="flow-step">
+                    <div class="flow-step-num">3</div>
+                    <div class="flow-step-text">店员执行动销</div>
+                </div>
+                <div class="flow-arrow">→</div>
+                <div class="flow-step">
+                    <div class="flow-step-num">4</div>
+                    <div class="flow-step-text">豆豆自动到账</div>
+                </div>
+                <div class="flow-arrow">→</div>
+                <div class="flow-step">
+                    <div class="flow-step-num">5</div>
+                    <div class="flow-step-text">实时提现到卡</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 第6章：五大赋能模块 -->
+        <section class="section" id="ability">
+            <div class="section-header">
+                <div class="section-num">5</div>
+                <div>
+                    <h2 class="section-title">五大赋能模块 — 四季蝉能做什么</h2>
+                    <p class="section-desc">不只是激励工具，是员工综合服务平台</p>
+                </div>
+            </div>
+
+            <div class="module-grid">
+                <div class="module-card">
+                    <div class="module-icon" style="background:#FEF3C7;">📚</div>
+                    <div class="module-title">商品知识</div>
+                    <div class="module-items">
+                        关联组合<br>
+                        商品卖点<br>
+                        阶段促销<br>
+                        日销跟进
+                    </div>
+                </div>
+                <div class="module-card">
+                    <div class="module-icon" style="background:#ECFDF5;">✍️</div>
+                    <div class="module-title">培训考核</div>
+                    <div class="module-items">
+                        商品培训<br>
+                        试题知识库<br>
+                        考试激励<br>
+                        效期促销
+                    </div>
+                </div>
+                <div class="module-card">
+                    <div class="module-icon" style="background:#EFF6FF;">🎁</div>
+                    <div class="module-title">营销激励</div>
+                    <div class="module-items">
+                        激励政策<br>
+                        红包激励<br>
+                        排行榜<br>
+                        首单奖励
+                    </div>
+                </div>
+                <div class="module-card">
+                    <div class="module-icon" style="background:#F5F3FF;">📊</div>
+                    <div class="module-title">实施数据</div>
+                    <div class="module-items">
+                        大单分享<br>
+                        陈列反馈<br>
+                        任务反馈<br>
+                        即时通报
+                    </div>
+                </div>
+                <div class="module-card">
+                    <div class="module-icon" style="background:#FEF2F2;">🤖</div>
+                    <div class="module-title">AI运营</div>
+                    <div class="module-items">
+                        群内公告<br>
+                        私聊运营<br>
+                        AI互动<br>
+                        活跃气氛
+                    </div>
+                </div>
+            </div>
+
+            <div class="card-grid card-grid-2" style="margin-top:24px;">
+                <div class="card">
+                    <div class="card-icon card-icon-green">🎯</div>
+                    <div class="card-title">AI运营 — 机器人自动管群</div>
+                    <div class="card-text">
+                        店员群添加"四季蝉机器人"后，AI自动推送：<br>
+                        • 排行榜实时排名<br>
+                        • 首单恭喜祝贺<br>
+                        • 大单分享展示<br>
+                        • 额外激励通知<br>
+                        • 预设话术互动（恭喜鼓掌）
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-icon card-icon-purple">🔗</div>
+                    <div class="card-title">分享裂变 — 离店交易成为可能</div>
+                    <div class="card-text">
+                        商城首页活动 → 社群内容分发 → 顾客扫码下单 → 销售归因 + 及时提现<br><br>
+                        店员下班后也能卖货，客户扫码即成交
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 第7章：收费模式 -->
+        <section class="section" id="price">
+            <div class="section-header">
+                <div class="section-num">💰</div>
+                <div>
+                    <h2 class="section-title">收费模式 — 费用怎么算</h2>
+                    <p class="section-desc">按效计费，只有产生激励才收费</p>
+                </div>
+            </div>
+
+            <div class="card-grid card-grid-4" style="margin-bottom:30px;">
+                <div class="card" style="text-align:center;border:2px solid var(--secondary);">
+                    <div style="font-size:14px;color:var(--text-gray);margin-bottom:8px;">及时豆服务费</div>
+                    <div style="font-size:40px;font-weight:800;color:var(--secondary);">4%</div>
+                    <div style="font-size:13px;color:var(--text-gray);">员工提现金额的4%</div>
+                </div>
+                <div class="card" style="text-align:center;">
+                    <div style="font-size:14px;color:var(--text-gray);margin-bottom:8px;">延时豆服务费</div>
+                    <div style="font-size:40px;font-weight:800;color:var(--primary);">2%</div>
+                    <div style="font-size:13px;color:var(--text-gray);">员工提现金额的2%</div>
+                </div>
+                <div class="card" style="text-align:center;">
+                    <div style="font-size:14px;color:var(--text-gray);margin-bottom:8px;">连锁机会价</div>
+                    <div style="font-size:40px;font-weight:800;color:var(--accent);">8-10%</div>
+                    <div style="font-size:13px;color:var(--text-gray);">可向厂家收取</div>
+                </div>
+                <div class="card" style="text-align:center;">
+                    <div style="font-size:14px;color:var(--text-gray);margin-bottom:8px;">上线初期</div>
+                    <div style="font-size:40px;font-weight:800;color:var(--danger);">0元</div>
+                    <div style="font-size:13px;color:var(--text-gray);">无激励无费用</div>
+                </div>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>激励类型</th>
+                            <th>服务费</th>
+                            <th>适用场景</th>
+                            <th>提现速度</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="tag tag-green">及时豆</span></td>
+                            <td>4%</td>
+                            <td>任务品、重点品（需要快速激励）</td>
+                            <td>实时到账，秒提现</td>
+                        </tr>
+                        <tr>
+                            <td><span class="tag tag-blue">延时豆</span></td>
+                            <td>2%</td>
+                            <td>厂家品种（轻管理）</td>
+                            <td>按约定周期结算</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="quote-box" style="margin-top:24px;">
+                <div class="quote-text">💡 关键理解</div>
+                <div class="quote-text" style="font-size:16px;">
+                    4%是员工<strong>提现金额</strong>的4%，不是销售金额的4%。<br>
+                    上线初期如果没有激励产生，连锁和海典都是零收入。
+                </div>
+            </div>
+        </section>
+
+        <!-- 第8章：选品分级 -->
+        <section class="section" id="product">
+            <div class="section-header">
+                <div class="section-num">📦</div>
+                <div>
+                    <h2 class="section-title">选品分级 — 该推什么、怎么推</h2>
+                    <p class="section-desc">选品逻辑：经验 + 政策 + 季节 + 热度</p>
+                </div>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>级别</th>
+                            <th>数量</th>
+                            <th>目标管理</th>
+                            <th>激励类型</th>
+                            <th>说明</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="tag tag-red">任务品</span></td>
+                            <td>2-6个</td>
+                            <td>到店到人</td>
+                            <td>及时激励</td>
+                            <td>核心中的核心，集中资源强推</td>
+                        </tr>
+                        <tr>
+                            <td><span class="tag tag-orange">重点品</span></td>
+                            <td>30个左右</td>
+                            <td>到店</td>
+                            <td>及时激励</td>
+                            <td>主力品种，持续动销</td>
+                        </tr>
+                        <tr>
+                            <td><span class="tag tag-blue">总品数</span></td>
+                            <td>100-300个</td>
+                            <td>无/轻管理</td>
+                            <td>延时激励</td>
+                            <td>长尾品种，厂家推动</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="alert-box" style="margin-top:24px;">
+                <div class="alert-title">
+                    <span style="font-size:20px;">⚠️</span>
+                    最大坑：不是厂家要带金就给及时激励
+                </div>
+                <div class="alert-text">
+                    及时激励是稀缺资源，只能给最重要的任务品。如果所有品种都给及时激励，员工就没有重点了，激励效果大打折扣。
+                </div>
+            </div>
+        </section>
+
+        <!-- 第9章：五种激励方式 -->
+        <section class="section">
+            <div class="section-header">
+                <div class="section-num">🎯</div>
+                <div>
+                    <h2 class="section-title">五种激励方式 — 怎么让员工有动力</h2>
+                    <p class="section-desc">激励要设计得让员工"跳一跳够得着"</p>
+                </div>
+            </div>
+
+            <div class="card-grid card-grid-5" style="grid-template-columns:repeat(5,1fr);">
+                <div class="card" style="text-align:center;">
+                    <div class="card-icon card-icon-blue" style="margin:0 auto 12px;">💵</div>
+                    <div class="card-title">加金额</div>
+                    <div class="card-text">单品/疗程按实收金额百分比计提</div>
+                </div>
+                <div class="card" style="text-align:center;">
+                    <div class="card-icon card-icon-green" style="margin:0 auto 12px;">🔗</div>
+                    <div class="card-title">加关联</div>
+                    <div class="card-text">主商品遇关联商品，计提加码</div>
+                </div>
+                <div class="card" style="text-align:center;">
+                    <div class="card-icon card-icon-orange" style="margin:0 auto 12px;">📈</div>
+                    <div class="card-title">加疗程</div>
+                    <div class="card-text">达量分阶段计提</div>
+                </div>
+                <div class="card" style="text-align:center;">
+                    <div class="card-icon card-icon-purple" style="margin:0 auto 12px;">🎯</div>
+                    <div class="card-title">加目标</div>
+                    <div class="card-text">达成前按盒，达成后加提</div>
+                </div>
+                <div class="card" style="text-align:center;">
+                    <div class="card-icon card-icon-red" style="margin:0 auto 12px;">🏆</div>
+                    <div class="card-title">加提</div>
+                    <div class="card-text">排行榜、分享点赞、效期推荐</div>
+                </div>
+            </div>
+
+            <div class="quote-box" style="margin-top:30px;">
+                <div class="quote-text">💡 设计原则</div>
+                <div class="quote-text" style="font-size:16px;">
+                    激励方案要<strong>聚焦</strong>，不要撒胡椒面。聚焦才能形成合力，才能真正提升重点品种动销。
+                </div>
+            </div>
+        </section>
+
+        <!-- 第10章：运营四步曲 -->
+        <section class="section">
+            <div class="section-header">
+                <div class="section-num">🔄</div>
+                <div>
+                    <h2 class="section-title">运营四步曲 — 怎么用好四季蝉</h2>
+                    <p class="section-desc">看似在做动销，实则要做人心</p>
+                </div>
+            </div>
+
+            <div class="flow" style="margin:40px 0;">
+                <div class="flow-step" style="background:linear-gradient(135deg,#EFF6FF,#DBEAFE);border-color:var(--primary);">
+                    <div class="flow-step-num" style="background:var(--primary);">1</div>
+                    <div class="flow-step-text">重点商品梳理</div>
+                    <div style="font-size:12px;color:var(--text-gray);margin-top:8px;">选品分级</div>
+                </div>
+                <div class="flow-arrow">→</div>
+                <div class="flow-step" style="background:linear-gradient(135deg,#FEF3C7,#FDE68A);border-color:var(--accent);">
+                    <div class="flow-step-num" style="background:var(--accent);">2</div>
+                    <div class="flow-step-text">有节奏的管理人心</div>
+                    <div style="font-size:12px;color:var(--text-gray);margin-top:8px;">聚焦人心，提升自驱力</div>
+                </div>
+                <div class="flow-arrow">→</div>
+                <div class="flow-step" style="background:linear-gradient(135deg,#ECFDF5,#D1FAE5);border-color:var(--secondary);">
+                    <div class="flow-step-num" style="background:var(--secondary);">3</div>
+                    <div class="flow-step-text">精细化运营跟进</div>
+                    <div style="font-size:12px;color:var(--text-gray);margin-top:8px;">数据驱动调整</div>
+                </div>
+                <div class="flow-arrow">→</div>
+                <div class="flow-step" style="background:linear-gradient(135deg,#F5F3FF,#EDE9FE);border-color:var(--purple);">
+                    <div class="flow-step-num" style="background:var(--purple);">4</div>
+                    <div class="flow-step-text">良性运营闭环</div>
+                    <div style="font-size:12px;color:var(--text-gray);margin-top:8px;">持续优化迭代</div>
+                </div>
+            </div>
+
+            <div class="card-grid card-grid-2">
+                <div class="card">
+                    <div class="card-icon card-icon-orange">👥</div>
+                    <div class="card-title">聚焦人心 — 提升员工自驱力</div>
+                    <div class="card-text">
+                        • 单客经济：场景触达、提升开口率<br>
+                        • 目标管理：AI鞭策、自动提醒<br>
+                        • 专业赋能：商品学术、关联能力<br>
+                        • 及时激励：聚焦重点、数据复盘
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-icon card-icon-blue">📊</div>
+                    <div class="card-title">精细化运营 — 数据驱动决策</div>
+                    <div class="card-text">
+                        • 员工绩效可视化<br>
+                        • 财务核算一键化<br>
+                        • 商品激励随时查<br>
+                        • 不同角色不同看板
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 第11章：竞品对比 -->
+        <section class="section" id="compare">
+            <div class="section-header">
+                <div class="section-num">⚔️</div>
+                <div>
+                    <h2 class="section-title">竞品对比 — 为什么选四季蝉</h2>
+                    <p class="section-desc">我们不怕比，只怕你不比</p>
+                </div>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>对比维度</th>
+                            <th>四季蝉</th>
+                            <th>存健康</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>提现速度</strong></td>
+                            <td><span class="tag tag-green">✓ 实时到账，秒提现</span></td>
+                            <td><span class="tag tag-red">✗ 7天后提现</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>资金归属</strong></td>
+                            <td><span class="tag tag-green">✓ 钱始终在连锁账户</span></td>
+                            <td><span class="tag tag-red">✗ 资金在平台账户</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>合规流程</strong></td>
+                            <td><span class="tag tag-green">✓ 连锁→员工直接分账</span></td>
+                            <td><span class="tag tag-red">✗ 需二次核对</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>发票开具</strong></td>
+                            <td><span class="tag tag-green">✓ 海典开6%服务费发票</span></td>
+                            <td><span class="tag tag-orange">需确认</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>公司背景</strong></td>
+                            <td><span class="tag tag-green">✓ 22年行业积累</span></td>
+                            <td><span class="tag tag-orange">需确认</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="quote-box" style="margin-top:24px;">
+                <div class="quote-text">💡 差异化优势总结</div>
+                <div style="font-size:16px;">
+                    四季蝉的核心优势：<strong>快（秒到账）+ 稳（资金在连锁）+ 合规（海典背书）</strong>
+                </div>
+            </div>
+        </section>
+
+        <!-- 第12章：成功案例 -->
+        <section class="section" id="case">
+            <div class="section-header">
+                <div class="section-num">🏆</div>
+                <div>
+                    <h2 class="section-title">成功案例 — 数据说话</h2>
+                    <p class="section-desc">半年时间，四季蝉交出的成绩单</p>
+                </div>
+            </div>
+
+            <div class="card-grid card-grid-4" style="margin-bottom:30px;">
+                <div class="card" style="text-align:center;">
+                    <div style="font-size:36px;margin-bottom:8px;">🏪</div>
+                    <div style="font-size:32px;font-weight:800;color:var(--primary);">210家</div>
+                    <div style="font-size:14px;color:var(--text-gray);">连锁上线</div>
+                </div>
+                <div class="card" style="text-align:center;">
+                    <div style="font-size:36px;margin-bottom:8px;">💊</div>
+                    <div style="font-size:32px;font-weight:800;color:var(--secondary);">1200个</div>
+                    <div style="font-size:14px;color:var(--text-gray);">厂家账号</div>
+                </div>
+                <div class="card" style="text-align:center;">
+                    <div style="font-size:36px;margin-bottom:8px;">👩‍⚕️</div>
+                    <div style="font-size:32px;font-weight:800;color:var(--accent);">8万人</div>
+                    <div style="font-size:14px;color:var(--text-gray);">员工上线</div>
+                </div>
+                <div class="card" style="text-align:center;">
+                    <div style="font-size:36px;margin-bottom:8px;">📈</div>
+                    <div style="font-size:32px;font-weight:800;color:var(--danger);">+12%</div>
+                    <div style="font-size:14px;color:var(--text-gray);">单品销量提升</div>
+                </div>
+            </div>
+
+            <div class="case-grid">
+                <div class="case-card">
+                    <div class="case-header">
+                        <div class="case-logo">苏</div>
+                        <div>
+                            <div class="case-name">江苏同正</div>
+                            <div class="case-type">重点品数字化运营标杆</div>
+                        </div>
+                    </div>
+                    <div style="font-size:14px;color:var(--text-gray);">
+                        同样有奖励、同样的目录，实时奖励+数据跟进双重驱动，效果显著
+                    </div>
+                    <div class="case-stats">
+                        <div class="case-stat">
+                            <div class="case-stat-value">8%→14.74%</div>
+                            <div class="case-stat-label">重点品占比提升</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="case-card">
+                    <div class="case-header">
+                        <div class="case-logo">陕</div>
+                        <div>
+                            <div class="case-name">汉中派林</div>
+                            <div class="case-type">西北区域标杆</div>
+                        </div>
+                    </div>
+                    <div style="font-size:14px;color:var(--text-gray);">
+                        聚焦在哪里，增长点就在哪里。持续迭代优化
+                    </div>
+                    <div class="case-stats">
+                        <div class="case-stat">
+                            <div class="case-stat-value">+12%+</div>
+                            <div class="case-stat-label">单品销量提升</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card-grid" style="margin-top:24px;">
+                <div class="card" style="text-align:center;">
+                    <div class="card-icon card-icon-green" style="margin:0 auto 12px;">🏪</div>
+                    <div class="card-title">百家惠瑞丰</div>
+                    <div class="card-text">重点品数字化实践先行者</div>
+                </div>
+                <div class="card" style="text-align:center;">
+                    <div class="card-icon card-icon-purple" style="margin:0 auto 12px;">🏪</div>
+                    <div class="card-title">山西国邦</div>
+                    <div class="card-text">重点品体系化运营典范</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 第13章：常见答疑 -->
+        <section class="section" id="qa">
+            <div class="section-header">
+                <div class="section-num">❓</div>
+                <div>
+                    <h2 class="section-title">常见答疑 — 客户最关心的问题</h2>
+                    <p class="section-desc">把这些问题的答案背熟，见客户不慌</p>
+                </div>
+            </div>
+
+            <div class="qa-list">
+                <div class="qa-item">
+                    <div class="qa-question">
+                        <div class="qa-icon">Q</div>
+                        4%服务费是怎么算的？太贵了！
+                    </div>
+                    <div class="qa-answer">
+                        <strong>4%是员工提现金额的4%，不是销售金额的4%。</strong>比如员工提现100元，海典收4元。而且这4%可以跟厂家谈，让厂家承担这部分费用。关键是：没有产生激励就没有费用，上线初期零成本。
+                    </div>
+                </div>
+                <div class="qa-item">
+                    <div class="qa-question">
+                        <div class="qa-icon">Q</div>
+                        员工提现合规吗？会不会有风险？
+                    </div>
+                    <div class="qa-answer">
+                        <strong>四季蝉基于汇付账户，合规合法。</strong>连锁→员工直接分账，海典开6%服务费发票。连锁可以向厂家收取8%-10%的费用，多出来的部分是连锁的营业外收入。
+                    </div>
+                </div>
+                <div class="qa-item">
+                    <div class="qa-question">
+                        <div class="qa-icon">Q</div>
+                        竞品7天才能提现，你们为什么能秒到账？
+                    </div>
+                    <div class="qa-answer">
+                        <strong>因为钱始终在连锁账户，不是存在平台。</strong>竞品模式是资金先到平台，再由平台分发给员工，存在资金安全和合规风险。四季蝉的钱在连锁账上，员工申请提现时，连锁直接打款，秒到账且零风险。
+                    </div>
+                </div>
+                <div class="qa-item">
+                    <div class="qa-question">
+                        <div class="qa-icon">Q</div>
+                        我们的店员不会用怎么办？
+                    </div>
+                    <div class="qa-answer">
+                        四季蝉是<strong>员工综合服务平台</strong>，不只是激励工具。里面有商品知识培训、试题库、AI运营助手。店员群里有机器人自动推送排行榜、激励通知，帮店长分担管理精力。8万店员已经在用，接受度很高。
+                    </div>
+                </div>
+                <div class="qa-item">
+                    <div class="qa-question">
+                        <div class="qa-icon">Q</div>
+                        品类规划怎么做？品种越多越好吗？
+                    </div>
+                    <div class="qa-answer">
+                        <strong>绝对不是越多越好！</strong>重点聚焦才能出效果。建议：任务品2-6个（到店到人，及时激励）、重点品30个左右（到店，及时激励）、总品数100-300个（轻管理，延时激励）。记住：<strong>不是厂家要带金就给及时激励</strong>。
+                    </div>
+                </div>
+                <div class="qa-item">
+                    <div class="qa-question">
+                        <div class="qa-icon">Q</div>
+                        不想用激励功能，只做培训可以吗？
+                    </div>
+                    <div class="qa-answer">
+                        可以签，但<strong>激励是吸引员工参与培训的核心媒介</strong>。没有激励，员工缺乏参与动力，培训效果难以保证。建议先开激励，后期再逐步深化运营。
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 总结 -->
+        <section class="section">
+            <div class="section-header">
+                <div class="section-num">📌</div>
+                <div>
+                    <h2 class="section-title">学习要点总结</h2>
+                    <p class="section-desc">记住这5点，你就能自信地介绍四季蝉</p>
+                </div>
+            </div>
+
+            <div class="card-grid">
+                <div class="card">
+                    <div class="card-icon card-icon-blue">1</div>
+                    <div class="card-title">产品定位</div>
+                    <div class="card-text">解决员工"不会卖、不愿卖"问题，核心是提升高毛利品种动销</div>
+                </div>
+                <div class="card">
+                    <div class="card-icon card-icon-green">2</div>
+                    <div class="card-title">核心机制</div>
+                    <div class="card-text">完成任务→获得豆豆→实时提现，像微信零钱一样方便</div>
+                </div>
+                <div class="card">
+                    <div class="card-icon card-icon-orange">3</div>
+                    <div class="card-title">收费模式</div>
+                    <div class="card-text">按效计费，及时豆4%，延时豆2%，上线初期零费用</div>
+                </div>
+                <div class="card">
+                    <div class="card-icon card-icon-purple">4</div>
+                    <div class="card-title">差异化</div>
+                    <div class="card-text">秒到账+资金在连锁+22年公司背书，竞品无法比拟</div>
+                </div>
+                <div class="card">
+                    <div class="card-icon card-icon-red">5</div>
+                    <div class="card-title">运营关键</div>
+                    <div class="card-text">聚焦人心，精细化运营，数据驱动闭环优化</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- CTA -->
+        <section class="cta-section">
+            <div class="cta-title">四季蝉 — 让每一份努力都被看见</div>
+            <div class="cta-text">帮连锁提升高毛利品种动销，帮员工获得即时回报<br>这是我们共同的价值所在</div>
+            <div style="font-size:16px;opacity:0.8;">
+                🏢 上海海典软件股份有限公司<br>
+                📞 了解更多，请联系运营部
+            </div>
+        </section>
+
+        <div class="footer">
+            <p>四季蝉产品学习手册 v2.0 | 海典软件运营部</p>
+            <p style="margin-top:8px;">最后更新：2026年5月</p>
+        </div>
+    </div>
+
+    <script>
+        // 导航高亮
+        const sections = document.querySelectorAll('.section[id]');
+        const navLinks = document.querySelectorAll('.nav-link');
+
+        window.addEventListener('scroll', () => {
+            let current = '';
+            sections.forEach(section => {
+                const sectionTop = section.offsetTop;
+                if (scrollY >= sectionTop - 100) {
+                    current = section.getAttribute('id');
+                }
+            });
+
+            navLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href') === '#' + current) {
+                    link.classList.add('active');
+                }
+            });
+        });
+
+        // QA折叠
+        document.querySelectorAll('.qa-question').forEach(q => {
+            q.addEventListener('click', () => {
+                const item = q.parentElement;
+                const answer = item.querySelector('.qa-answer');
+                const isOpen = item.classList.contains('open');
+
+                // 关闭所有
+                document.querySelectorAll('.qa-item').forEach(i => {
+                    i.classList.remove('open');
+                    i.querySelector('.qa-answer').style.display = 'none';
+                });
+
+                // 打开当前
+                if (!isOpen) {
+                    item.classList.add('open');
+                    answer.style.display = 'block';
+                }
+            });
+        });
+
+        // 初始化关闭
+        document.querySelectorAll('.qa-answer').forEach(a => {
+            a.style.display = 'none';
+        });
+    </script>
+</body>
+</html>
