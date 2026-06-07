@@ -2206,9 +2206,10 @@ async function sijichanPost(endpoint, body, token, merCode) {
   };
 }
 
-async function sijichanPagedPost(endpoint, baseBody, token, merCode, pageSize = 1000) {
+async function sijichanPagedPost(endpoint, baseBody, token, merCode, pageSize = 1000, options = {}) {
   const pages = [];
   const rows = [];
+  const maxPages = Number(options.maxPages || 0);
   let totalCount = 0;
   let totalPages = 1;
   for (let currentPage = 1; currentPage <= totalPages; currentPage += 1) {
@@ -2221,8 +2222,20 @@ async function sijichanPagedPost(endpoint, baseBody, token, merCode, pageSize = 
       totalPages = explicitPages || Math.max(1, Math.ceil(totalCount / pageSize));
     }
     rows.push(...rowsFromPaged(data));
+    if (maxPages > 0 && currentPage >= maxPages && currentPage < totalPages) break;
   }
-  return { endpoint, baseRequest: baseBody, pageSize, totalCount, totalPages, rows, pages, fetchedAt: new Date().toISOString() };
+  return {
+    endpoint,
+    baseRequest: baseBody,
+    pageSize,
+    totalCount,
+    totalPages,
+    fetchedPages: pages.length,
+    truncated: totalPages > pages.length,
+    rows,
+    pages,
+    fetchedAt: new Date().toISOString(),
+  };
 }
 
 function sanitizeSijichanRequest(value) {
@@ -2259,6 +2272,8 @@ function emptySijichanPagedResult(endpoint, body, error, pageSize = 1000) {
     pageSize,
     totalCount: 0,
     totalPages: 0,
+    fetchedPages: 0,
+    truncated: false,
     rows: [],
     pages: [],
     error: error.message || String(error),
@@ -2287,11 +2302,19 @@ function buildSijichanDiagnostic({ label, endpoint, kind, request, result, rows 
     业务消息: result?.response?.msg || "",
     明细行数: rows.length,
     指标数量: metricRows.length,
+    总明细数: result?.totalCount ?? "",
+    总页数: result?.totalPages ?? "",
+    已取页数: result?.fetchedPages ?? "",
+    是否截断: result?.truncated ? "是" : "",
     请求参数: JSON.stringify(sanitizeSijichanRequest(request || result?.request || result?.baseRequest || {})),
     取数时间: result?.fetchedAt || new Date().toISOString(),
     message: error?.message || result?.error || "",
     rowCount: rows.length,
     metricCount: metricRows.length,
+    totalCount: result?.totalCount ?? null,
+    totalPages: result?.totalPages ?? null,
+    fetchedPages: result?.fetchedPages ?? null,
+    truncated: Boolean(result?.truncated),
     hasNonZeroMetric: hasNonZeroMetric(metricRows),
     status: failed ? "failed" : "success",
   };
@@ -2313,9 +2336,9 @@ function createSijichanClient(token, merCode, diagnostics) {
         return result;
       }
     },
-    async paged(label, endpoint, body, pageSize = 1000) {
+    async paged(label, endpoint, body, pageSize = 1000, options = {}) {
       try {
-        const result = await sijichanPagedPost(endpoint, body, token, merCode, pageSize);
+        const result = await sijichanPagedPost(endpoint, body, token, merCode, pageSize, options);
         diagnostics.push(buildSijichanDiagnostic({ label, endpoint, kind: "paged", request: body, result, rows: result.rows || [] }));
         return result;
       } catch (error) {
@@ -2781,7 +2804,7 @@ async function collectSijichanData(body) {
     rewardDistribution: {
       nearHalf: {
         statistics: await client.post("奖励发放统计-近半年", "imActivityReward/queryRewardStatistics", rewardDistributionBody),
-        rows: await client.paged("奖励发放明细-近半年", "imActivityReward/queryRewardList", rewardDistributionBody),
+        rows: await client.paged("奖励发放明细-近半年", "imActivityReward/queryRewardList", rewardDistributionBody, 1000, { maxPages: 20 }),
       },
     },
     activityCatalog: {
