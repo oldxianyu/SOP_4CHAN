@@ -1446,7 +1446,14 @@ async function callConfiguredAI(config, prompt) {
 
 function parseReportJson(text) {
   const clean = String(text || "").replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/i, "").trim();
-  return JSON.parse(clean);
+  try {
+    return JSON.parse(clean);
+  } catch (error) {
+    const start = clean.indexOf("{");
+    const end = clean.lastIndexOf("}");
+    if (start >= 0 && end > start) return JSON.parse(clean.slice(start, end + 1));
+    throw error;
+  }
 }
 
 function arrayOfText(value) {
@@ -1481,6 +1488,54 @@ function normalizeReport(report) {
       : arrayOfText(safe.sections).map((item, index) => ({ heading: `复盘模块${index + 1}`, bullets: [item] })),
     nextActions: arrayOfText(safe.nextActions || safe.actions || safe.recommendations),
   };
+}
+
+function fallbackReportFromSummary(summary, reason = "") {
+  const insights = summary?.operationInsights || {};
+  const files = summary?.datasetFiles || [];
+  const detailFiles = files.filter((file) => (file.rowCount || 0) > 0);
+  const metricFiles = files.filter((file) => (file.metricCount || 0) > 0 && !(file.rowCount || 0));
+  const metrics = insights.metrics || {};
+  const health = insights.healthScore ?? "暂无";
+  const risk = insights.retentionRisk || "待判断";
+  return normalizeReport({
+    title: "四季蝉客户数据复盘报告",
+    executiveSummary: `本次复盘已完成数据读取和运营洞察计算。客户续用健康度为 ${health}，续用风险为 ${risk}。${reason ? "AI返回格式异常，系统已基于结构化数据生成兜底报告。" : ""}`,
+    highlights: [
+      ...((insights.valueProofPoints || []).length ? insights.valueProofPoints : ["已完成销售、活动、奖励、培训、厂家协同等数据源识别。"]),
+      detailFiles.length ? `识别到 ${detailFiles.length} 个有明细的数据源：${detailFiles.map((file) => file.label || file.name).join("、")}。` : "",
+      metricFiles.length ? `识别到 ${metricFiles.length} 个指标型数据源：${metricFiles.map((file) => file.label || file.name).join("、")}。` : "",
+    ].filter(Boolean),
+    risks: [
+      ...((insights.riskItems || []).map((item) => item.explanation || item.label).filter(Boolean)),
+      !(metrics.usedRewardPlayCount > 0) ? "当前激励玩法使用信号偏弱，需要避免客户只把四季蝉理解为单次活动工具。" : "",
+      !(metrics.shareRecordCount > 0 || metrics.shareRewardAmount > 0) ? "厂家晒单/打赏信号不足，厂家资源协同价值还需要继续放大。" : "",
+    ].filter(Boolean),
+    sections: [
+      {
+        heading: "续用健康度",
+        bullets: [
+          `健康度评分：${health}`,
+          `续用风险：${risk}`,
+          `活动覆盖率：${metrics.activityCoverageRate ?? 0}%`,
+          `已使用激励玩法数：${metrics.usedRewardPlayCount ?? 0}`,
+        ],
+      },
+      {
+        heading: "数据源状态",
+        bullets: files.map((file) => `${file.label || file.name}：${file.statusText || file.status || ""}，明细 ${file.rowCount || 0} 行，指标 ${file.metricCount || 0} 项。`),
+      },
+      {
+        heading: "运营提升方向",
+        bullets: insights.recommendedActions || [],
+      },
+    ],
+    nextActions: insights.recommendedActions || [
+      "围绕AAA主力赚钱品扩大活动覆盖。",
+      "把培训、考试、激励、销售和提现放到同一张复盘表中向客户展示闭环价值。",
+      "推动厂家晒单打赏或活动费用支持，形成厂家复投证据。",
+    ],
+  });
 }
 
 function reportToMarkdown(report) {
@@ -1953,7 +2008,12 @@ async function generateReportFromSummary(summary) {
 
   const prompt = buildPrompt(summary);
   const reportText = await callConfiguredAI(config, prompt);
-  const report = parseReportJson(reportText);
+  let report;
+  try {
+    report = normalizeReport(parseReportJson(reportText));
+  } catch (error) {
+    report = fallbackReportFromSummary(summary, error.message);
+  }
   const markdown = reportToMarkdown(report);
   const artifact = await persistReportArtifact({ report, markdown, summary });
   return { report, markdown, ...artifact };
