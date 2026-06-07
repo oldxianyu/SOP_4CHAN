@@ -890,6 +890,36 @@
         font-weight: 800;
       }
 
+      .answer-list {
+        display: grid;
+        gap: 12px;
+        max-height: 62vh;
+        overflow: auto;
+        padding-right: 4px;
+      }
+
+      .answer-item {
+        border: 1px solid rgba(42, 75, 255, 0.12);
+        border-radius: 8px;
+        background: #fbfcff;
+        padding: 12px;
+      }
+
+      .answer-question {
+        display: block;
+        margin: 6px 0;
+        color: #182b68;
+        line-height: 1.55;
+      }
+
+      .answer-text {
+        margin: 0;
+        color: #4c5878;
+        line-height: 1.7;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+
       .calendar-shell .ant-alert,
       .summary-row {
         margin-bottom: 16px;
@@ -1667,6 +1697,14 @@
 
         .qr-modal-image {
           width: min(210px, 68vw);
+        }
+
+        .answer-list {
+          max-height: 58vh;
+        }
+
+        .answer-item {
+          padding: 10px;
         }
       }
 
@@ -2767,6 +2805,107 @@
         );
       }
 
+      function CapabilitySubmissionsPage({ auth, onLogin, onRegister }) {
+        if (!auth?.user) {
+          return h(GateCard, { title: "登录后查看测评数据", text: "五大金刚综合能力评估测试的提交数据仅管理员可查看。", onLogin, onRegister });
+        }
+        if (auth.user.role !== "admin") {
+          return h(
+            Card,
+            { bordered: false, className: "history-card" },
+            h(Alert, { type: "warning", showIcon: true, message: "仅管理员可查看测评数据" }),
+          );
+        }
+
+        const [loading, setLoading] = React.useState(false);
+        const [submissions, setSubmissions] = React.useState([]);
+        const loadSubmissions = React.useCallback(async () => {
+          setLoading(true);
+          try {
+            const data = await apiJson("/api/capability-test-submissions");
+            setSubmissions(data.submissions || []);
+          } catch (err) {
+            message.error(err.message || "测评数据加载失败");
+          } finally {
+            setLoading(false);
+          }
+        }, []);
+        React.useEffect(() => {
+          loadSubmissions();
+        }, [loadSubmissions]);
+
+        const showAnswers = (row) => {
+          Modal.info({
+            title: `${row.name || "未命名"}的测评答案`,
+            icon: null,
+            width: 820,
+            centered: true,
+            content: h(
+              "div",
+              { className: "answer-list" },
+              (row.answers || []).map((item, index) =>
+                h(
+                  "div",
+                  { className: "answer-item", key: `${item.number || index}-${index}` },
+                  h(Space, { wrap: true, size: [6, 6] }, h(Tag, { color: "blue" }, item.number || index + 1), item.section ? h(Tag, null, item.section) : null, item.score ? h(Tag, { color: "gold" }, item.score) : null),
+                  h(Text, { strong: true, className: "answer-question" }, item.question || "未命名题目"),
+                  h("pre", { className: "answer-text" }, item.answer || "未作答"),
+                ),
+              ),
+            ),
+          });
+        };
+
+        const columns = [
+          { title: "姓名", dataIndex: "name", width: 120, render: (value) => h(Text, { strong: true }, value || "未填写") },
+          { title: "部门", dataIndex: "department", width: 160, render: (value) => value || "未填写" },
+          { title: "测试日期", dataIndex: "testDate", width: 130, render: (value) => value || "未填写" },
+          {
+            title: "完成度",
+            width: 170,
+            render: (_, row) => h(Space, { wrap: true, size: [6, 6] }, h(Tag, { color: row.completionRate >= 80 ? "green" : "orange" }, `${row.answeredQuestions}/${row.totalQuestions}`), h(Text, null, `${row.completionRate}%`)),
+          },
+          { title: "提交时间", dataIndex: "createdAt", width: 180, render: (value) => (value ? dayjs(value).format("YYYY-MM-DD HH:mm") : "") },
+          { title: "操作", width: 120, render: (_, row) => h(Button, { onClick: () => showAnswers(row) }, "查看答案") },
+        ];
+
+        const mobileSubmissions = h(
+          "div",
+          { className: "mobile-only mobile-card-list" },
+          submissions.map((row) =>
+            h(
+              Card,
+              { key: row.id, bordered: false, className: "mobile-report-card" },
+              h("div", { className: "mobile-card-head" }, h("div", { className: "mobile-card-title" }, row.name || "未填写姓名"), h(Tag, { color: row.completionRate >= 80 ? "green" : "orange" }, `${row.completionRate}%`)),
+              h(
+                "div",
+                { className: "mobile-meta-grid" },
+                h(MobileMetaItem, { label: "部门" }, row.department || "未填写"),
+                h(MobileMetaItem, { label: "测试日期" }, row.testDate || "未填写"),
+                h(MobileMetaItem, { label: "完成题数" }, `${row.answeredQuestions}/${row.totalQuestions}`),
+                h(MobileMetaItem, { label: "提交时间" }, row.createdAt ? dayjs(row.createdAt).format("YYYY-MM-DD HH:mm") : "暂无"),
+              ),
+              h(Button, { block: true, onClick: () => showAnswers(row) }, "查看答案"),
+            ),
+          ),
+        );
+
+        return h(
+          "div",
+          { className: "history-shell" },
+          h(
+            Card,
+            { bordered: false, className: "history-card" },
+            h(Tag, { color: "blue", className: "hero-platform-tag" }, "测评数据"),
+            h(Title, { level: 2, className: "june-title" }, "五大金刚综合能力评估提交"),
+            h(Paragraph, null, "这里汇总友链测评页提交的数据，管理员可查看提交人、部门、完成度和每题答案。"),
+            h(Space, { style: { marginBottom: 16 }, wrap: true }, h(Button, { onClick: loadSubmissions, loading }, "刷新数据"), h(Text, { type: "secondary" }, `共 ${submissions.length} 条提交`)),
+            h("div", { className: "desktop-only" }, h(Table, { rowKey: "id", loading, columns, dataSource: submissions, pagination: { pageSize: 10 }, scroll: { x: 900 } })),
+            loading ? h(Alert, { className: "mobile-only", type: "info", showIcon: true, message: "测评数据加载中" }) : mobileSubmissions,
+          ),
+        );
+      }
+
       function HomePage({ onOpenCalendar }) {
         const stakeholderCards = [
           ["连锁总部", "提升重点品、高毛利品动销，把活动过程、费用核算和执行结果集中管理。"],
@@ -3591,7 +3730,12 @@
           { key: "june", label: "6月营销推荐", children: h(JuneMarketingPage) },
           { key: "aiReview", label: "AI复盘报告", children: h(AIReviewPage, authProps) },
           { key: "history", label: "历史报告", children: h(HistoryPage, authProps) },
-          ...(auth.user?.role === "admin" ? [{ key: "aiConfig", label: "AI配置", children: h(AIConfigPage, authProps) }] : []),
+          ...(auth.user?.role === "admin"
+            ? [
+                { key: "capabilityData", label: "测评数据", children: h(CapabilitySubmissionsPage, authProps) },
+                { key: "aiConfig", label: "AI配置", children: h(AIConfigPage, authProps) },
+              ]
+            : []),
         ];
 
         if (authPage && !auth.user) {

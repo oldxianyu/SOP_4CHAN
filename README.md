@@ -17,6 +17,8 @@ https://sijichan.top
 - **6 月营销推荐**：结合月度营销节点、热卖品和赚钱品，提供品类与重点品种推荐。
 - **AI 复盘报告**：登录后支持上传 Excel 模板或通过“四季蝉登录获取”读取客户数据，由 AI 生成复盘报告、独立分享网页、SVG 长图、二维码和 Excel 汇总。
 - **历史报告**：保存用户生成过的复盘报告，支持打开分享页、二维码弹框、下载 SVG、下载 Excel、接口诊断、标准化数据和复制链接。
+- **相关工具与资料**：首页底部提供 4 个友链资料页，包括华南连锁 6 月营销方案、医药连锁四季营销日历、四季蝉产品学习手册和五大金刚综合能力评估测试。
+- **测评数据**：五大金刚测评页支持提交答题结果，管理员可在门户内查看提交人、部门、完成度和每题答案。
 - **AI 配置**：管理员维护 AI API Key、Base URL、模型名称和调用协议，支持 DeepSeek / OpenAI-compatible Chat Completions。
 
 ## 技术架构
@@ -27,6 +29,7 @@ https://sijichan.top
 - **数据解析**：后端解析四季蝉复盘标准 Excel，也可通过内置导出器登录 `merchants.hydee.cn` 临时取数。
 - **AI 调用**：支持 OpenAI Responses 协议和 OpenAI-compatible Chat Completions 协议；DeepSeek 推荐配置为 `https://api.deepseek.com` + `deepseek-v4-flash`。
 - **报告产物**：每次 AI 复盘会生成 `.server/reports/{reportId}/index.html`、`report.svg`、`qr.svg`、`review.xlsx`、接口诊断 JSON 和标准化数据 JSON。
+- **测评收集**：公开友链页 `links/five-core-capability-test.html` 调用 `POST /api/capability-test-submissions` 保存开放题答案，管理员通过 `GET /api/capability-test-submissions` 查看。
 - **数据存储**：优先使用 Supabase/Postgres；未配置数据库时回退到 `.server/portal-data.json` 本地存储。
 
 ## 本地运行
@@ -98,6 +101,7 @@ npx skills add supabase/agent-skills
 - `ai_configs`
 - `customer_datasets`
 - `review_reports`
+- `capability_test_submissions`
 
 ## 用户与权限
 
@@ -106,6 +110,23 @@ npx skills add supabase/agent-skills
 - 未登录用户可以浏览：首页、对接行事历、激励玩法、选品思路、6 月营销推荐。
 - 登录用户可以使用 AI 复盘报告和历史报告。
 - 只有管理员可以进入 AI 配置页并维护模型配置。
+- 只有管理员可以进入测评数据页并查看五大金刚评估测试提交记录。
+
+## 友链资料与测评
+
+首页底部的“相关工具与资料”包含 4 个独立 HTML 资料页：
+
+- `links/south-chain-june-marketing.html`
+- `links/pharmacy-seasonal-marketing-calendar.html`
+- `links/sijichan-product-handbook-v2.html`
+- `links/five-core-capability-test.html`
+
+四个友链页均增加了手机端适配，适合通过微信、手机浏览器和客户分享链接打开。五大金刚综合能力评估测试额外支持：
+
+- 填写姓名、部门、日期。
+- 提交 17 道开放题的答题内容。
+- 后端保存提交记录、答题完成数量和完成率。
+- 管理员登录主站后在“测评数据”页查看提交明细。
 
 ## AI 复盘数据来源
 
@@ -140,6 +161,7 @@ AI 复盘成功后会返回：
 - AI 复盘按钮、下载入口和二维码入口在手机端使用两列或单列按钮。
 - 二维码在当前页面弹框展示，不跳转到二维码网页。
 - 长标签、品种名称、材料下载按钮和说明文字均允许自然换行。
+- 首页底部 4 个友链资料页也做了手机端保护：头部压缩、网格改单列、表格横向滚动、长文本自动换行。
 
 ## 部署
 
@@ -175,3 +197,4 @@ https://sijichan.top
 - AI API Key、数据库密码、四季蝉账号密码、业务 token 不写入前端代码。
 - 客户上传的原始 Excel 不长期保存；系统只保存解析摘要、AI 报告、历史报告记录和分享产物。
 - 历史报告保存的是报告结果和下载链接，不保存四季蝉登录凭证。
+- 五大金刚测评会保存用户主动填写的姓名、部门、日期和答题内容；仅管理员可在后台查看。

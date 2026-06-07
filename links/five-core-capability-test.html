@@ -298,6 +298,53 @@
     color: #aaa;
     font-size: 13px;
   }
+  .submit-panel {
+    background: #fff;
+    border: 1px solid #dbe4ff;
+    border-left: 4px solid #4f46e5;
+    border-radius: 10px;
+    padding: 18px 22px;
+    margin: 22px 0;
+    box-shadow: 0 8px 24px rgba(26,26,46,0.07);
+  }
+  .submit-panel h2 {
+    font-size: 18px;
+    color: #1a1a2e;
+    margin-bottom: 6px;
+  }
+  .submit-panel p {
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 14px;
+  }
+  .submit-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .submit-button {
+    border: 0;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #4f46e5, #2563eb);
+    color: #fff;
+    min-height: 40px;
+    padding: 0 18px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 10px 22px rgba(79,70,229,0.22);
+  }
+  .submit-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+  }
+  .submit-status {
+    color: #64748b;
+    font-size: 13px;
+  }
+  .submit-status.success { color: #059669; font-weight: 700; }
+  .submit-status.error { color: #dc2626; font-weight: 700; }
   /* Print */
   @media print {
     body { background: #fff; padding: 0; }
@@ -305,6 +352,7 @@
     .section { box-shadow: none; border: 1px solid #eee; }
     .answer-area { border: 1px dashed #ccc; }
     .option input { visibility: visible; }
+    .submit-panel { display: none; }
     @page { margin: 15mm; }
   }
   /* Collapsible */
@@ -320,6 +368,117 @@
   .section-header.collapsed .arrow {
     transform: rotate(-90deg);
   }
+  @media (max-width: 640px) {
+    body {
+      padding: 12px;
+      font-size: 14px;
+      line-height: 1.7;
+    }
+    .container {
+      max-width: 100%;
+    }
+    .header {
+      padding: 24px 16px;
+      border-radius: 8px;
+      text-align: left;
+    }
+    .header h1 {
+      font-size: 24px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+    .header .subtitle {
+      line-height: 1.55;
+      margin-bottom: 16px;
+    }
+    .header .info-row {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+      font-size: 14px;
+    }
+    .header .info-row span {
+      width: 100%;
+      justify-content: space-between;
+    }
+    .header .info-row input {
+      width: min(68vw, 230px);
+    }
+    .score-summary {
+      grid-template-columns: 1fr;
+      padding: 12px;
+      gap: 8px;
+    }
+    .score-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      text-align: left;
+    }
+    .section {
+      border-radius: 8px;
+      margin-bottom: 14px;
+    }
+    .section-header {
+      padding: 14px;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .section-header .left {
+      align-items: flex-start;
+      flex-wrap: wrap;
+      line-height: 1.45;
+    }
+    .section-header .right {
+      white-space: nowrap;
+      padding-top: 3px;
+    }
+    .section-body {
+      padding: 14px;
+    }
+    .context-box {
+      padding: 12px;
+      overflow-x: auto;
+    }
+    .q-body {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    table {
+      min-width: 620px;
+      font-size: 12px;
+    }
+    .q-title {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 6px 8px;
+      line-height: 1.55;
+    }
+    .q-title .q-score {
+      grid-column: 2;
+      margin-left: 0;
+    }
+    .answer-area,
+    .answer-area.large,
+    .answer-area.small {
+      min-height: 132px;
+      font-size: 14px;
+    }
+    .submit-panel {
+      padding: 16px;
+      border-radius: 8px;
+    }
+    .submit-actions,
+    .submit-button {
+      width: 100%;
+    }
+    .submit-button {
+      min-height: 42px;
+    }
+    .footer {
+      padding: 22px 8px;
+    }
+  }
 </style>
 </head>
 <body>
@@ -330,9 +489,9 @@
   <h1>五大金刚 · 综合能力评估测试</h1>
   <div class="subtitle">基于企业数据与行业数据的经营诊断与商务引出能力考核</div>
   <div class="info-row">
-    <span>姓名：<input type="text" placeholder="请填写"></span>
-    <span>部门：<input type="text" placeholder="请填写"></span>
-    <span>日期：<input type="text" placeholder="YYYY-MM-DD"></span>
+    <span>姓名：<input id="testerName" type="text" placeholder="请填写"></span>
+    <span>部门：<input id="testerDepartment" type="text" placeholder="请填写"></span>
+    <span>日期：<input id="testDate" type="text" placeholder="YYYY-MM-DD"></span>
   </div>
   <div class="badge">满分 150 分 · 建议时长 90 分钟 · 闭卷考试</div>
 </div>
@@ -793,6 +952,15 @@
   </div>
 </div>
 
+<div class="submit-panel">
+  <h2>提交测评结果</h2>
+  <p>填写完成后提交，数据会保存到海典四季蝉门户后台，管理员可查看答题完成度和每题答案。</p>
+  <div class="submit-actions">
+    <button class="submit-button" id="submitCapabilityTest" type="button">提交测评结果</button>
+    <span class="submit-status" id="submitStatus">建议提交前确认姓名已填写。</span>
+  </div>
+</div>
+
 <!-- Footer -->
 <div class="footer">
   <p>五大金刚综合能力评估测试 · 海典软件 · 保密资料</p>
@@ -806,6 +974,74 @@ function toggleSection(header) {
   const arrow = header.querySelector('.arrow');
   body.classList.toggle('collapsed');
   header.classList.toggle('collapsed');
+}
+
+function closestSectionTitle(question) {
+  const section = question.closest('.section');
+  if (!section) return '';
+  const left = section.querySelector('.section-header .left');
+  return left ? left.innerText.replace(/\s+/g, ' ').trim() : '';
+}
+
+function collectCapabilityAnswers() {
+  return Array.from(document.querySelectorAll('.question')).map((question, index) => {
+    const title = question.querySelector('.q-title');
+    const number = question.querySelector('.q-num')?.innerText || String(index + 1);
+    const score = question.querySelector('.q-score')?.innerText || '';
+    const titleClone = title ? title.cloneNode(true) : null;
+    titleClone?.querySelector('.q-num')?.remove();
+    titleClone?.querySelector('.q-score')?.remove();
+    const textarea = question.querySelector('textarea');
+    return {
+      index: index + 1,
+      number,
+      section: closestSectionTitle(question),
+      question: titleClone ? titleClone.innerText.replace(/\s+/g, ' ').trim() : '',
+      score,
+      answer: textarea ? textarea.value.trim() : '',
+    };
+  });
+}
+
+async function submitCapabilityTest() {
+  const button = document.getElementById('submitCapabilityTest');
+  const status = document.getElementById('submitStatus');
+  const payload = {
+    name: document.getElementById('testerName')?.value.trim() || '',
+    department: document.getElementById('testerDepartment')?.value.trim() || '',
+    testDate: document.getElementById('testDate')?.value.trim() || '',
+    answers: collectCapabilityAnswers(),
+  };
+  if (!payload.name) {
+    status.className = 'submit-status error';
+    status.textContent = '请先填写姓名。';
+    document.getElementById('testerName')?.focus();
+    return;
+  }
+  button.disabled = true;
+  status.className = 'submit-status';
+  status.textContent = '提交中，请稍候...';
+  try {
+    const response = await fetch('/api/capability-test-submissions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || '提交失败。');
+    status.className = 'submit-status success';
+    status.textContent = `提交成功：已作答 ${data.submission.answeredQuestions}/${data.submission.totalQuestions} 题，完成度 ${data.submission.completionRate}%。`;
+  } catch (error) {
+    status.className = 'submit-status error';
+    status.textContent = error.message || '提交失败，请稍后重试。';
+  } finally {
+    button.disabled = false;
+  }
+}
+
+document.getElementById('submitCapabilityTest')?.addEventListener('click', submitCapabilityTest);
+if (!document.getElementById('testDate')?.value) {
+  document.getElementById('testDate').value = new Date().toISOString().slice(0, 10);
 }
 </script>
 </body>

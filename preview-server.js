@@ -132,12 +132,20 @@ function clearSessionCookie(res) {
 
 function readLocalData() {
   if (!fs.existsSync(localDataPath)) {
-    return { users: [], customerProfiles: [], aiConfigs: [], customerDatasets: [], reviewReports: [] };
+    return { users: [], customerProfiles: [], aiConfigs: [], customerDatasets: [], reviewReports: [], capabilityTestSubmissions: [] };
   }
   try {
-    return JSON.parse(fs.readFileSync(localDataPath, "utf8"));
+    const data = JSON.parse(fs.readFileSync(localDataPath, "utf8"));
+    return {
+      users: data.users || [],
+      customerProfiles: data.customerProfiles || [],
+      aiConfigs: data.aiConfigs || [],
+      customerDatasets: data.customerDatasets || [],
+      reviewReports: data.reviewReports || [],
+      capabilityTestSubmissions: data.capabilityTestSubmissions || [],
+    };
   } catch {
-    return { users: [], customerProfiles: [], aiConfigs: [], customerDatasets: [], reviewReports: [] };
+    return { users: [], customerProfiles: [], aiConfigs: [], customerDatasets: [], reviewReports: [], capabilityTestSubmissions: [] };
   }
 }
 
@@ -355,8 +363,22 @@ async function ensureDatabase() {
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     );
+    create table if not exists capability_test_submissions (
+      id text primary key default gen_random_uuid()::text,
+      name text not null,
+      department text,
+      test_date text,
+      total_questions integer not null default 0,
+      answered_questions integer not null default 0,
+      completion_rate numeric(5,2) not null default 0,
+      answers_json jsonb not null,
+      user_agent text,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
     create index if not exists idx_review_reports_user_created on review_reports(user_id, created_at desc);
     create index if not exists idx_customer_datasets_user_created on customer_datasets(user_id, created_at desc);
+    create index if not exists idx_capability_test_submissions_created on capability_test_submissions(created_at desc);
   `);
     dbReady = true;
     return true;
@@ -724,6 +746,112 @@ async function saveReviewReportRecord(userId, sourceType, sourceName, summary, g
   data.reviewReports.push(record);
   writeLocalData(data);
   return record.id;
+}
+
+function normalizeCapabilityAnswer(item, index) {
+  const question = String(item?.question || "").trim().slice(0, 500);
+  const answer = String(item?.answer || "").trim().slice(0, 6000);
+  const section = String(item?.section || "").trim().slice(0, 120);
+  const score = String(item?.score || "").trim().slice(0, 40);
+  return {
+    index: Number(item?.index || index + 1),
+    number: String(item?.number || `${index + 1}`).trim().slice(0, 20),
+    section,
+    question,
+    score,
+    answer,
+    answered: Boolean(answer),
+  };
+}
+
+function normalizeCapabilitySubmissionRow(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    department: row.department || "",
+    testDate: row.test_date || row.testDate || "",
+    totalQuestions: Number(row.total_questions || row.totalQuestions || 0),
+    answeredQuestions: Number(row.answered_questions || row.answeredQuestions || 0),
+    completionRate: Number(row.completion_rate || row.completionRate || 0),
+    answers: row.answers_json || row.answersJson || [],
+    createdAt: row.created_at || row.createdAt,
+  };
+}
+
+async function saveCapabilitySubmission(body, req) {
+  const rawAnswers = Array.isArray(body.answers) ? body.answers : [];
+  const answers = rawAnswers.map(normalizeCapabilityAnswer);
+  const totalQuestions = answers.length;
+  const answeredQuestions = answers.filter((item) => item.answered).length;
+  const completionRate = totalQuestions ? Math.round((answeredQuestions / totalQuestions) * 10000) / 100 : 0;
+  const submission = {
+    name: String(body.name || "").trim().slice(0, 80),
+    department: String(body.department || "").trim().slice(0, 120),
+    testDate: String(body.testDate || "").trim().slice(0, 40),
+    totalQuestions,
+    answeredQuestions,
+    completionRate,
+    answers,
+    userAgent: String(req.headers["user-agent"] || "").slice(0, 500),
+  };
+  if (!submission.name) {
+    const error = new Error("请先填写姓名。");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!submission.totalQuestions) {
+    const error = new Error("未找到可提交的测评题目。");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (await isDbAvailable()) {
+    const result = await queryDb(
+      `insert into capability_test_submissions(name, department, test_date, total_questions, answered_questions, completion_rate, answers_json, user_agent)
+       values($1,$2,$3,$4,$5,$6,$7,$8) returning *`,
+      [
+        submission.name,
+        submission.department,
+        submission.testDate,
+        submission.totalQuestions,
+        submission.answeredQuestions,
+        submission.completionRate,
+        jsonClone(submission.answers),
+        submission.userAgent,
+      ],
+    );
+    return normalizeCapabilitySubmissionRow(result.rows[0]);
+  }
+
+  const data = readLocalData();
+  const record = {
+    id: createId("cap"),
+    name: submission.name,
+    department: submission.department,
+    testDate: submission.testDate,
+    totalQuestions: submission.totalQuestions,
+    answeredQuestions: submission.answeredQuestions,
+    completionRate: submission.completionRate,
+    answersJson: submission.answers,
+    userAgent: submission.userAgent,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  data.capabilityTestSubmissions.push(record);
+  writeLocalData(data);
+  return normalizeCapabilitySubmissionRow(record);
+}
+
+async function listCapabilitySubmissions() {
+  if (await isDbAvailable()) {
+    const result = await queryDb("select * from capability_test_submissions order by created_at desc limit 200");
+    return result.rows.map(normalizeCapabilitySubmissionRow);
+  }
+  return readLocalData().capabilityTestSubmissions
+    .slice()
+    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
+    .slice(0, 200)
+    .map(normalizeCapabilitySubmissionRow);
 }
 
 function normalizePublicArtifactUrl(value) {
@@ -2629,6 +2757,18 @@ async function handleGetReport(req, res, id) {
   sendJson(res, 200, { report });
 }
 
+async function handleSubmitCapabilityTest(req, res) {
+  const body = await readJsonBody(req, 1024 * 1024 * 2);
+  const submission = await saveCapabilitySubmission(body, req);
+  sendJson(res, 200, { ok: true, submission });
+}
+
+async function handleListCapabilityTests(req, res) {
+  const user = await requireAdmin(req, res);
+  if (!user) return;
+  sendJson(res, 200, { submissions: await listCapabilitySubmissions() });
+}
+
 function serveStatic(req, res) {
   const url = new URL(req.url, "http://localhost");
   if (url.pathname.startsWith("/reports/")) {
@@ -2696,11 +2836,13 @@ function createServer() {
       if (url.pathname === "/api/review-report" && req.method === "POST") return await handleReviewReport(req, res);
       if (url.pathname === "/api/sijichan-review-report" && req.method === "POST") return await handleSijichanReviewReport(req, res);
       if (url.pathname === "/api/review-reports" && req.method === "GET") return await handleListReports(req, res);
+      if (url.pathname === "/api/capability-test-submissions" && req.method === "POST") return await handleSubmitCapabilityTest(req, res);
+      if (url.pathname === "/api/capability-test-submissions" && req.method === "GET") return await handleListCapabilityTests(req, res);
       const reportMatch = url.pathname.match(/^\/api\/review-reports\/([^/]+)$/);
       if (reportMatch && req.method === "GET") return await handleGetReport(req, res, decodeURIComponent(reportMatch[1]));
       return serveStatic(req, res);
     } catch (error) {
-      const status = error.message && error.message.includes("超过10MB") ? 413 : 500;
+      const status = error.statusCode || (error.message && error.message.includes("超过10MB") ? 413 : 500);
       sendJson(res, status, { error: error.message || "服务器处理失败。" });
     }
   });

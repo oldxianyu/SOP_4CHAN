@@ -305,6 +305,77 @@ footer {
   .rec-table { font-size: 11px; }
   .rec-table th, .rec-table td { padding: 8px 6px; }
 }
+@media (max-width: 640px) {
+  html, body { max-width: 100%; overflow-x: hidden; }
+  body { font-size: 14px; }
+  .header { position: relative; }
+  .header-inner {
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .header-brand {
+    align-items: flex-start;
+    gap: 10px;
+    min-width: 0;
+  }
+  .header-logo {
+    width: 38px;
+    height: 38px;
+    border-radius: 8px;
+    font-size: 20px;
+    flex: 0 0 auto;
+  }
+  .header-text { min-width: 0; }
+  .header-text h1 {
+    font-size: 18px;
+    line-height: 1.28;
+    overflow-wrap: anywhere;
+  }
+  .header-text p {
+    font-size: 12px;
+    line-height: 1.55;
+  }
+  .intro-banner {
+    padding: 22px 16px;
+    border-radius: 8px;
+  }
+  .intro-banner h2 {
+    font-size: 22px;
+    line-height: 1.25;
+  }
+  .section-title {
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .section-title h2 {
+    font-size: 18px;
+    line-height: 1.35;
+  }
+  .data-card,
+  .rhythm-card,
+  .method-card,
+  .warning-box {
+    border-radius: 8px;
+    padding: 14px;
+  }
+  .rec-table-wrap,
+  .main div[style*="overflow-x:auto"] {
+    margin-inline: -12px;
+    padding-inline: 12px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .rec-table,
+  .method-map-table {
+    min-width: 760px;
+  }
+  .prod-tag,
+  .action-item,
+  .badge {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
 </style>
 </head>
 <body>

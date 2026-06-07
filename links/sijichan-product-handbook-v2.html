@@ -808,6 +808,100 @@
             .section-title { font-size: 22px; }
         }
 
+        @media (max-width: 640px) {
+            html, body { max-width: 100%; overflow-x: hidden; }
+            body { font-size: 14px; }
+            .nav { position: sticky; top: 0; }
+            .nav-content {
+                padding: 10px 12px;
+                gap: 10px;
+                align-items: center;
+            }
+            .nav-brand { min-width: 0; }
+            .nav-brand-text {
+                font-size: 16px;
+                overflow-wrap: anywhere;
+            }
+            .nav-links {
+                overflow-x: auto;
+                white-space: nowrap;
+                gap: 8px;
+                padding-bottom: 2px;
+                -webkit-overflow-scrolling: touch;
+            }
+            .nav-links a {
+                flex: 0 0 auto;
+                padding: 8px 10px;
+                font-size: 13px;
+            }
+            .container {
+                padding: 0 12px;
+            }
+            .hero {
+                padding: 30px 16px;
+                border-radius: 8px;
+            }
+            .hero h1 {
+                font-size: 25px;
+                line-height: 1.2;
+            }
+            .hero-subtitle {
+                font-size: 14px;
+                line-height: 1.65;
+            }
+            .hero-stats,
+            .card-grid,
+            .card-grid-2,
+            .card-grid-3,
+            .card-grid-4,
+            .card-grid-5,
+            .role-cards,
+            .compare-grid,
+            .case-grid {
+                grid-template-columns: 1fr !important;
+                gap: 12px;
+            }
+            .module-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+                gap: 10px;
+            }
+            .section {
+                padding: 24px 0;
+            }
+            .section-title {
+                font-size: 22px;
+                line-height: 1.25;
+            }
+            .section-subtitle {
+                font-size: 14px;
+                line-height: 1.65;
+            }
+            .card,
+            .feature-card,
+            .case-card,
+            .compare-card,
+            .role-card {
+                border-radius: 8px;
+                padding: 16px;
+            }
+            .table-wrap {
+                margin-inline: -12px;
+                padding-inline: 12px;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+            table {
+                min-width: 720px;
+            }
+            .tag,
+            .pill,
+            .module-items,
+            .card p,
+            .feature-card p {
+                overflow-wrap: anywhere;
+            }
+        }
+
         /* 平滑滚动 */
         html {
             scroll-behavior: smooth;
