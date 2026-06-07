@@ -1378,14 +1378,20 @@
 
       function DatasetStatusTags({ summary }) {
         if (!summary || !summary.datasetFiles) return null;
+        const colorByStatus = {
+          detail: "blue",
+          metrics: "purple",
+          empty: "gold",
+          error: "red",
+        };
         return h(
           Space,
           { wrap: true, className: "sheet-status", size: [8, 8] },
           summary.datasetFiles.map((file) =>
             h(
               Tag,
-              { key: file.name, color: file.rowCount > 0 ? "blue" : "gold" },
-              `${file.name}：${file.rowCount}行`,
+              { key: file.name, color: colorByStatus[file.status] || (file.rowCount > 0 ? "blue" : "gold") },
+              `${file.label || file.name}：${file.statusText || `${file.rowCount}行`}`,
             ),
           ),
         );

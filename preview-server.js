@@ -1,4 +1,4 @@
-const http = require("http");
+﻿const http = require("http");
 const dns = require("dns");
 const fs = require("fs");
 const path = require("path");
@@ -1508,12 +1508,33 @@ function worksheetXml(matrix) {
 function workbookSheets(summary, report) {
   const raw = summary.rawData || {};
   const windows = summary.windows || {};
+  const metrics = summary.metricRows || {};
+  const statusRows = (summary.datasetFiles || []).map((file) => ({
+    数据源: file.label || file.name,
+    文件标识: file.name,
+    状态: file.statusText || "",
+    明细行数: file.rowCount || 0,
+    指标数量: file.metricCount || 0,
+    说明: file.note || "",
+  }));
   const overviewRows = [
-    { 指标: "奖励统计行数", 明细值: summary.rowCounts?.["reward_statistics.json"] || 0, 校验结果: "已取数", 说明: "来自奖励统计接口" },
-    { 指标: "销售明细行数", 明细值: summary.rowCounts?.["sales.json"] || 0, 校验结果: "已取数", 说明: "来自销售汇总接口" },
-    { 指标: "活动汇总行数", 明细值: summary.rowCounts?.["activity_summary.json"] || 0, 校验结果: "已取数", 说明: "来自活动汇总接口" },
-    { 指标: "培训明细行数", 明细值: summary.rowCounts?.["training.json"] || 0, 校验结果: (summary.rowCounts?.["training.json"] || 0) > 0 ? "已取数" : "无明细", 说明: "无明细时作为运营链路缺口" },
-    { 指标: "厂家打赏行数", 明细值: summary.rowCounts?.["manufacturer_tips.json"] || 0, 校验结果: (summary.rowCounts?.["manufacturer_tips.json"] || 0) > 0 ? "已取数" : "无明细", 说明: "无明细时作为厂家参与缺口" },
+    { 指标: "销售明细行数", 明细值: summary.rowCounts?.["sales.json"] || 0, 校验结果: (summary.rowCounts?.["sales.json"] || 0) > 0 ? "有明细" : "无明细", 说明: "来自销售汇总接口" },
+    { 指标: "活动汇总行数", 明细值: summary.rowCounts?.["activity_summary.json"] || 0, 校验结果: (summary.rowCounts?.["activity_summary.json"] || 0) > 0 ? "有明细" : "无明细", 说明: "来自活动汇总接口" },
+    { 指标: "奖励统计行数", 明细值: summary.rowCounts?.["reward_statistics.json"] || 0, 校验结果: (summary.rowCounts?.["reward_statistics.json"] || 0) > 0 ? "有明细" : "无明细", 说明: "来自奖励统计接口" },
+    { 指标: "培训明细行数", 明细值: summary.rowCounts?.["training.json"] || 0, 校验结果: (summary.rowCounts?.["training.json"] || 0) > 0 ? "有明细" : "接口成功，业务值为0", 说明: "培训概览指标见“培训情况”页" },
+    { 指标: "厂家打赏行数", 明细值: summary.rowCounts?.["manufacturer_tips.json"] || 0, 校验结果: (summary.rowCounts?.["manufacturer_tips.json"] || 0) > 0 ? "有明细" : "接口成功，业务值为0", 说明: "厂家打赏汇总见“厂家打赏”页" },
+    ...((metrics.overview || []).map((row) => ({ 指标: row.数据路径, 明细值: row.指标值, 校验结果: "有指标", 说明: "来自四季蝉概览页指标接口" }))),
+  ];
+  const trainingRows = [
+    ...((metrics.training || []).map((row) => ({ 类型: "培训概览指标", 指标路径: row.数据路径, 指标: row.指标, 指标值: row.指标值 }))),
+    ...((raw.training?.roleLearning || []).map((row) => ({ 类型: "角色学习明细", ...row }))),
+    ...((raw.training?.storeLearning || []).map((row) => ({ 类型: "门店学习明细", ...row }))),
+    ...((raw.training?.employeeLearning || []).map((row) => ({ 类型: "员工学习明细", ...row }))),
+    ...((raw.training?.courseLearning || []).map((row) => ({ 类型: "课程学习明细", ...row }))),
+  ];
+  const manufacturerTipRows = [
+    ...((metrics.manufacturerTips || []).map((row) => ({ 类型: "厂家打赏汇总", 指标路径: row.数据路径, 指标: row.指标, 指标值: row.指标值 }))),
+    ...((raw.manufacturerTips?.rows || []).map((row) => ({ 类型: "厂家打赏明细", ...row }))),
   ];
   return [
     { name: "数据口径说明", rows: [
@@ -1526,13 +1547,14 @@ function workbookSheets(summary, report) {
       { 项目: "近半年", 内容: `${windows.nearHalf?.start || ""} 至 ${windows.nearHalf?.end || ""}` },
       { 项目: "上期半年", 内容: `${windows.previousHalf?.start || ""} 至 ${windows.previousHalf?.end || ""}` },
     ] },
+    { name: "数据源状态", rows: statusRows },
     { name: "概览校验", rows: overviewRows },
     { name: "奖励统计-半年", rows: raw.rewardStatistics?.nearHalf?.rows || [] },
     { name: "销售汇总-上月_vs_前两月", rows: raw.sales?.lastMonth_vs_priorTwoMonths?.rows || [] },
     { name: "销售汇总-近半年_vs_上期", rows: raw.sales?.nearHalf_vs_previousHalf?.rows || [] },
     { name: "活动汇总-5月_vs_4月", rows: [...(raw.activitySummary?.lastMonth?.rows || []), ...(raw.activitySummary?.previousMonth?.rows || [])] },
-    { name: "培训情况", rows: [...(raw.training?.roleLearning || []), ...(raw.training?.storeLearning || []), ...(raw.training?.employeeLearning || []), ...(raw.training?.courseLearning || [])] },
-    { name: "厂家打赏", rows: raw.manufacturerTips?.rows || [] },
+    { name: "培训情况", rows: trainingRows },
+    { name: "厂家打赏", rows: manufacturerTipRows.length ? manufacturerTipRows : [{ 类型: "厂家打赏汇总", 指标: "当前口径厂家打赏", 指标值: 0, 说明: "接口成功返回，但无打赏金额和明细记录" }] },
     { name: "经营复盘结论", rows: [
       { 类型: "Executive Summary", 内容: report?.executiveSummary || "" },
       ...((report?.highlights || []).map((item) => ({ 类型: "关键发现", 内容: item }))),
@@ -1732,6 +1754,15 @@ function randomClientId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+function networkErrorMessage(error) {
+  const parts = [error?.message].filter(Boolean);
+  const cause = error?.cause;
+  if (cause?.code) parts.push(cause.code);
+  if (cause?.message && cause.message !== error?.message) parts.push(cause.message);
+  if (cause?.errno && !parts.includes(String(cause.errno))) parts.push(String(cause.errno));
+  return parts.join(" / ") || "未知网络错误";
+}
+
 async function sijichanLogin({ username, password }) {
   const account = String(username || "").trim();
   const pwd = String(password || "");
@@ -1751,7 +1782,7 @@ async function sijichanLogin({ username, password }) {
       }),
     });
   } catch (error) {
-    throw new Error(`四季蝉登录接口请求失败：${error.message}`);
+    throw new Error(`四季蝉登录接口请求失败：${networkErrorMessage(error)}`);
   }
   const text = await response.text();
   let json;
@@ -1792,7 +1823,7 @@ async function sijichanPost(endpoint, body, token, merCode) {
       body: JSON.stringify(body || {}),
     });
   } catch (error) {
-    throw new Error(`${endpoint} 接口请求失败：${error.message}`);
+    throw new Error(`${endpoint} 接口请求失败：${networkErrorMessage(error)}`);
   }
   const text = await response.text();
   let json;
@@ -1946,6 +1977,70 @@ function headersFromRows(rows) {
   return headers;
 }
 
+function metricRowsFromObject(value, fileName, basePath = "") {
+  const rows = [];
+  const visit = (node, pathParts = []) => {
+    if (node === null || node === undefined) return;
+    if (Array.isArray(node)) return;
+    if (typeof node !== "object") {
+      rows.push({
+        数据文件: fileName,
+        数据路径: [basePath, ...pathParts].filter(Boolean).join("."),
+        指标: pathParts[pathParts.length - 1] || basePath || "value",
+        指标值: node,
+      });
+      return;
+    }
+    for (const [key, child] of Object.entries(node)) {
+      visit(child, [...pathParts, key]);
+    }
+  };
+  visit(value);
+  return rows.filter((row) => hasValue(row.指标值));
+}
+
+function hasNonZeroMetric(rows) {
+  return rows.some((row) => {
+    const value = row.指标值;
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value !== 0;
+    const text = String(value ?? "").trim();
+    if (!text) return false;
+    if (/^(true|yes|是|有)$/i.test(text)) return true;
+    return toNumber(text) !== 0;
+  });
+}
+
+function datasetStatus({ name, rows = [], metricRows = [], label = name, note = "" }) {
+  const rowCount = rows.length;
+  const metricCount = metricRows.length;
+  let status = "empty";
+  let statusText = "业务为0";
+  if (rowCount > 0) {
+    status = "detail";
+    statusText = `有明细 ${rowCount}行`;
+  } else if (metricCount > 0 && hasNonZeroMetric(metricRows)) {
+    status = "metrics";
+    statusText = "有指标无明细";
+  } else if (metricCount > 0) {
+    status = "empty";
+    statusText = "接口成功，业务值为0";
+  } else if (rowCount === 0 && name === "manufacturer_tips.json") {
+    status = "empty";
+    statusText = "接口成功，业务值为0";
+  }
+  return {
+    name,
+    label,
+    status,
+    statusText,
+    rowCount,
+    metricCount,
+    headers: headersFromRows(rows),
+    note,
+  };
+}
+
 function pickField(row, candidates) {
   for (const key of candidates) {
     if (row && row[key] !== undefined && row[key] !== "") return row[key];
@@ -2086,13 +2181,38 @@ function summarizeSijichanRaw(raw) {
     ...withDataMeta(rowsFromPaged(raw.training.courseLearning), "training.json", "courseLearning"),
   ];
   const tipsRows = withDataMeta(rowsFromPaged(raw.manufacturerTips.rows), "manufacturer_tips.json", "rows");
+  const rawData = {
+    meta: raw.meta,
+    sales: Object.fromEntries(Object.entries(raw.sales).map(([key, value]) => [key, { overview: responseData(value.overview), rows: rowsFromPaged(value.products) }])),
+    rewardStatistics: { nearHalf: { rows: rowsFromPaged(raw.rewardStatistics.nearHalf.rows), sum: responseData(raw.rewardStatistics.nearHalf.sum) } },
+    activitySummary: Object.fromEntries(Object.entries(raw.activitySummary).map(([key, value]) => [key, { rows: rowsFromPaged(value.rows), sum: responseData(value.sum) }])),
+    training: {
+      courseOverview: responseData(raw.training.courseOverview),
+      resourceOverview: responseData(raw.training.resourceOverview),
+      roleLearning: rowsFromPaged(raw.training.roleLearning),
+      storeLearning: rowsFromPaged(raw.training.storeLearning),
+      employeeLearning: rowsFromPaged(raw.training.employeeLearning),
+      courseLearning: rowsFromPaged(raw.training.courseLearning),
+    },
+    manufacturerTips: { summary: responseData(raw.manufacturerTips.summary), rows: rowsFromPaged(raw.manufacturerTips.rows) },
+    overview: Object.fromEntries(Object.entries(raw.overview).map(([key, value]) => [key, responseData(value)])),
+  };
+  const trainingMetricRows = [
+    ...metricRowsFromObject(rawData.training.courseOverview, "training.json", "courseOverview"),
+    ...metricRowsFromObject(rawData.training.resourceOverview, "training.json", "resourceOverview"),
+  ];
+  const tipsMetricRows = metricRowsFromObject(rawData.manufacturerTips.summary, "manufacturer_tips.json", "summary");
+  const overviewMetricRows = Object.entries(rawData.overview).flatMap(([key, value]) => metricRowsFromObject(value, "overview.json", key));
+  const salesMetricRows = Object.entries(rawData.sales).flatMap(([key, value]) => metricRowsFromObject(value.overview, "sales.json", `${key}.overview`));
+  const activityMetricRows = Object.entries(rawData.activitySummary).flatMap(([key, value]) => metricRowsFromObject(value.sum, "activity_summary.json", `${key}.sum`));
+  const rewardMetricRows = metricRowsFromObject(rawData.rewardStatistics.nearHalf.sum, "reward_statistics.json", "nearHalf.sum");
   const files = [
-    { name: "sales.json", rows: salesRows },
-    { name: "activity_summary.json", rows: activityRows },
-    { name: "reward_statistics.json", rows: rewardRows },
-    { name: "training.json", rows: trainingRows },
-    { name: "manufacturer_tips.json", rows: tipsRows },
-    { name: "overview.json", rows: [] },
+    { name: "sales.json", label: "销售汇总", rows: salesRows, metricRows: salesMetricRows, note: "销售商品明细接口，同时包含销售概览指标。" },
+    { name: "activity_summary.json", label: "活动汇总", rows: activityRows, metricRows: activityMetricRows, note: "活动商品明细接口，同时包含活动汇总合计。" },
+    { name: "reward_statistics.json", label: "奖励统计", rows: rewardRows, metricRows: rewardMetricRows, note: "奖励统计明细接口，同时包含奖励金额合计。" },
+    { name: "training.json", label: "培训情况", rows: trainingRows, metricRows: trainingMetricRows, note: "培训接口成功返回；明细为0时以课程/资源概览判断是否有培训承接。" },
+    { name: "manufacturer_tips.json", label: "厂家打赏", rows: tipsRows, metricRows: tipsMetricRows, note: "厂家打赏接口成功返回；金额和明细为0代表当前口径未发生厂家额外激励。" },
+    { name: "overview.json", label: "概览校验", rows: [], metricRows: overviewMetricRows, note: "首页概览是指标型数据，不产生明细行。" },
   ];
   const allRows = files.flatMap((file) => file.rows);
   const productName = [{ name: "商品名称", candidates: ["commodityName", "productName", "goodsName", "skuName", "name", "商品名称"] }];
@@ -2111,24 +2231,17 @@ function summarizeSijichanRaw(raw) {
     },
     windows: raw.meta.windows,
     generatedAt: raw.meta.generatedAt,
-    datasetFiles: files.map(({ name, rows }) => ({ name, rowCount: rows.length, headers: headersFromRows(rows) })),
+    datasetFiles: files.map(datasetStatus),
     rowCounts: Object.fromEntries(files.map((file) => [file.name, file.rows.length])),
-    rawData: {
-      meta: raw.meta,
-      sales: Object.fromEntries(Object.entries(raw.sales).map(([key, value]) => [key, { overview: responseData(value.overview), rows: rowsFromPaged(value.products) }])),
-      rewardStatistics: { nearHalf: { rows: rowsFromPaged(raw.rewardStatistics.nearHalf.rows), sum: responseData(raw.rewardStatistics.nearHalf.sum) } },
-      activitySummary: Object.fromEntries(Object.entries(raw.activitySummary).map(([key, value]) => [key, { rows: rowsFromPaged(value.rows), sum: responseData(value.sum) }])),
-      training: {
-        courseOverview: responseData(raw.training.courseOverview),
-        resourceOverview: responseData(raw.training.resourceOverview),
-        roleLearning: rowsFromPaged(raw.training.roleLearning),
-        storeLearning: rowsFromPaged(raw.training.storeLearning),
-        employeeLearning: rowsFromPaged(raw.training.employeeLearning),
-        courseLearning: rowsFromPaged(raw.training.courseLearning),
-      },
-      manufacturerTips: { summary: responseData(raw.manufacturerTips.summary), rows: rowsFromPaged(raw.manufacturerTips.rows) },
-      overview: Object.fromEntries(Object.entries(raw.overview).map(([key, value]) => [key, responseData(value)])),
+    metricRows: {
+      sales: salesMetricRows,
+      activitySummary: activityMetricRows,
+      rewardStatistics: rewardMetricRows,
+      training: trainingMetricRows,
+      manufacturerTips: tipsMetricRows,
+      overview: overviewMetricRows,
     },
+    rawData,
     salesChange: {
       topSalesAmount: topGenericRows(allRows, salesMetric, commonFields, 10, true),
       topQuantityGrowth: topGenericRows(allRows, growthMetric, commonFields, 10, true),
@@ -2445,7 +2558,11 @@ function listenOn(portIndex = 0) {
 
   server.on("error", () => listenOn(portIndex + 1));
   server.listen(port, host, () => {
-    fs.writeFileSync(path.join(root, ".preview-url"), `http://localhost:${port}/?v=preview-server\n`, "utf8");
+    try {
+      fs.writeFileSync(path.join(root, ".preview-url"), `http://localhost:${port}/?v=preview-server\n`, "utf8");
+    } catch (error) {
+      console.warn(`Preview URL file write skipped: ${error.message}`);
+    }
     console.log(`Preview: http://localhost:${port}/?v=preview-server`);
   });
 }
@@ -2454,3 +2571,4 @@ refreshExistingReportArtifacts().catch((error) => {
   console.warn(`Refresh existing reports failed: ${error.message}`);
 });
 listenOn();
+
