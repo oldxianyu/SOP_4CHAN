@@ -1874,12 +1874,54 @@ function arrayOfText(value) {
   }
   if (value && typeof value === "object") {
     return Object.entries(value)
-      .map(([key, item]) => `${key}：${typeof item === "object" ? JSON.stringify(item) : item}`)
+      .flatMap(([key, item]) => {
+        const label = reportActionLabel(key);
+        if (Array.isArray(item)) return arrayOfText(item).map((text) => `${label}：${text}`);
+        if (item && typeof item === "object") return arrayOfText(item).map((text) => `${label}：${text}`);
+        return [`${label}：${item}`];
+      })
       .map((item) => item.trim())
       .filter(Boolean);
   }
   const text = String(value || "").trim();
+  const labeledItems = parseLabeledActionItems(text);
+  if (labeledItems) return labeledItems;
   return text ? [text] : [];
+}
+
+function reportActionLabel(key) {
+  const labels = {
+    headquarters: "总部",
+    headquarter: "总部",
+    hq: "总部",
+    stores: "门店",
+    store: "门店",
+    shops: "门店",
+    clerks: "店员",
+    clerk: "店员",
+    factories: "厂家",
+    factory: "厂家",
+    manufacturers: "厂家",
+    manufacturer: "厂家",
+    chain: "连锁总部",
+  };
+  return labels[String(key || "").trim()] || String(key || "").trim();
+}
+
+function parseLabeledActionItems(text) {
+  const match = String(text || "").match(/^([A-Za-z_][\w-]*)\s*[：:]\s*([\s\S]+)$/);
+  if (!match) return null;
+  const payload = match[2].trim();
+  if (!/^[\[{]/.test(payload)) return null;
+  try {
+    const parsed = JSON.parse(payload);
+    const label = reportActionLabel(match[1]);
+    return arrayOfText(parsed)
+      .map((item) => `${label}：${item}`)
+      .filter(Boolean);
+  } catch (_error) {
+    return null;
+  }
 }
 
 function normalizeReport(report) {
@@ -2396,9 +2438,11 @@ async function persistReportArtifact({ report, markdown, summary }) {
   return { reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl };
 }
 
-async function refreshExistingReportArtifacts() {
+async function refreshExistingReportArtifacts(targetReportId = "") {
   if (!fs.existsSync(reportsDir)) return;
-  const entries = fs.readdirSync(reportsDir, { withFileTypes: true }).filter((entry) => entry.isDirectory());
+  const entries = fs
+    .readdirSync(reportsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && (!targetReportId || entry.name === targetReportId));
   for (const entry of entries) {
     const reportDir = path.join(reportsDir, entry.name);
     const jsonPath = path.join(reportDir, "report.json");
@@ -2406,6 +2450,8 @@ async function refreshExistingReportArtifacts() {
     try {
       const saved = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
       if (!saved.report || !saved.shareUrl) continue;
+      const report = normalizeReport(saved.report);
+      const markdown = reportToMarkdown(report);
       const qrSvg = await QRCode.toString(saved.shareUrl, {
         type: "svg",
         errorCorrectionLevel: "M",
@@ -2414,21 +2460,22 @@ async function refreshExistingReportArtifacts() {
       });
       const svgUrl = saved.svgUrl || `${saved.shareUrl.replace(/\/+$/, "")}/report.svg`;
       const qrSvgUrl = saved.qrSvgUrl || `${saved.shareUrl.replace(/\/+$/, "")}/qr.svg`;
-      const reportSvg = renderReportSvg({ report: saved.report, summary: saved.summary, shareUrl: saved.shareUrl, qrSvg });
+      const reportSvg = renderReportSvg({ report, summary: saved.summary, shareUrl: saved.shareUrl, qrSvg });
       const html = renderReportHtml({
-        report: saved.report,
-        markdown: saved.markdown || "",
+        report,
+        markdown,
         summary: saved.summary,
         shareUrl: saved.shareUrl,
         svgUrl,
         qrSvgUrl,
       });
+      fs.writeFileSync(path.join(reportDir, "report.json"), JSON.stringify({ ...saved, report, markdown, svgUrl, qrSvgUrl }, null, 2), "utf8");
       fs.writeFileSync(path.join(reportDir, "index.html"), html, "utf8");
       fs.writeFileSync(path.join(reportDir, "report.svg"), reportSvg, "utf8");
       fs.writeFileSync(path.join(reportDir, "qr.svg"), qrSvg, "utf8");
       fs.writeFileSync(path.join(reportDir, "四季蝉登录获取标准化数据.json"), JSON.stringify(saved.summary?.rawData || {}, null, 2), "utf8");
       fs.writeFileSync(path.join(reportDir, "四季蝉接口诊断.json"), JSON.stringify(saved.summary?.interfaceDiagnostics || [], null, 2), "utf8");
-      await writeReviewWorkbook(path.join(reportDir, "review.xlsx"), saved.summary || {}, saved.report);
+      await writeReviewWorkbook(path.join(reportDir, "review.xlsx"), saved.summary || {}, report);
     } catch (error) {
       console.warn(`Refresh report artifact failed for ${entry.name}: ${error.message}`);
     }
@@ -3793,10 +3840,19 @@ function listenOn(portIndex = 0) {
   });
 }
 
-if (process.env.REFRESH_EXISTING_REPORTS === "true") {
-  refreshExistingReportArtifacts().catch((error) => {
-    console.warn(`Refresh existing reports failed: ${error.message}`);
-  });
+if (process.env.REFRESH_ONLY === "true") {
+  refreshExistingReportArtifacts(process.env.REFRESH_REPORT_ID || "")
+    .then(() => process.exit(0))
+    .catch((error) => {
+      console.error(`Refresh existing reports failed: ${error.message}`);
+      process.exit(1);
+    });
+} else {
+  if (process.env.REFRESH_EXISTING_REPORTS === "true" || process.env.REFRESH_REPORT_ID) {
+    refreshExistingReportArtifacts(process.env.REFRESH_REPORT_ID || "").catch((error) => {
+      console.warn(`Refresh existing reports failed: ${error.message}`);
+    });
+  }
+  listenOn();
 }
-listenOn();
 
