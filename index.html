@@ -3040,7 +3040,7 @@
                                         ? "gold"
                                         : weComBrowserSession.scanStage === "merchant"
                                           ? "green"
-                                          : weComBrowserSession.scanStage === "qr_expired" || weComBrowserSession.scanStage === "failed"
+                                          : weComBrowserSession.scanStage === "qr_expired" || weComBrowserSession.scanStage === "failed" || weComBrowserSession.scanStage === "login_expired"
                                             ? "red"
                                             : "blue",
                                       className: "large-tag",

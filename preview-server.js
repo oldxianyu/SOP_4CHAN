@@ -4099,6 +4099,7 @@ function isMerchantRuntimeUrl(url) {
   try {
     const parsed = new URL(String(url || ""), sijichanApiOrigin);
     if (parsed.hostname !== "merchants.hydee.cn") return false;
+    if (/\/app-login/i.test(parsed.pathname)) return false;
     const routeText = `${parsed.pathname}${parsed.hash}${parsed.search}`;
     return parsed.pathname === "/"
       || /businesses-gateway|app-jump|super-admin|merchant|mer-manager|report|activity|industryOrder|imActivityReward|orderShareMoment/i.test(routeText);
@@ -4158,6 +4159,11 @@ async function createWeComBrowserSession(user, body = {}) {
   };
   const refreshScanStage = async () => {
     if (!session.page || session.page.isClosed()) return;
+    if (/merchants\.hydee\.cn\/app-login/i.test(session.page.url())) {
+      session.scanStage = "login_expired";
+      session.scanHint = "服务器登录态已失效，请重新企微扫码";
+      return;
+    }
     if (isMerchantRuntimeUrl(session.page.url())) {
       session.scanStage = "merchant";
       session.scanHint = "已进入新零售管理平台";
