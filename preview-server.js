@@ -4136,6 +4136,26 @@ async function createWeComBrowserSession(user, body = {}) {
       session.updatedAt = new Date().toISOString();
     }
   };
+  const triggerMerchantProbe = async () => {
+    if (!session.page || session.page.isClosed() || !isMerchantRuntimeUrl(session.page.url()) || session.probeTriggered) return;
+    session.probeTriggered = true;
+    const probeUrls = [
+      `${sijichanMerchantBase}report/activityReward/queryTopStatisticData`,
+      `${sijichanMerchantBase}report/account/emp/overview/queryRewardStat`,
+      `${sijichanMerchantBase}report/order_share/orderShareMomentSummary`,
+    ];
+    for (const url of probeUrls) {
+      await session.page.evaluate((nextUrl) => {
+        fetch(nextUrl, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({}),
+          credentials: "include",
+        }).catch(() => null);
+      }, url).catch(() => null);
+    }
+    session.updatedAt = new Date().toISOString();
+  };
   try {
     const browser = await chromium.launch(playwrightLaunchOptions());
     session.browser = browser;
@@ -4179,6 +4199,7 @@ async function createWeComBrowserSession(user, body = {}) {
         session.updatedAt = new Date().toISOString();
         scanMerchantPageStorage().catch(() => null);
         tryFillMerchantCode().catch(() => null);
+        triggerMerchantProbe().catch(() => null);
       }
     });
     await page.goto(merchantWecomSsoUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
@@ -4213,6 +4234,7 @@ async function createWeComBrowserSession(user, body = {}) {
           session.updatedAt = new Date().toISOString();
           await scanMerchantPageStorage();
           await tryFillMerchantCode();
+          await triggerMerchantProbe();
         }
       } catch {
         // keep session alive until expiry
@@ -5758,6 +5780,28 @@ function listenOn(portIndex = 0) {
     console.log(`Preview: http://localhost:${port}/?v=preview-server`);
   });
 }
+
+async function closeActiveWeComBrowserSessions() {
+  const sessions = Array.from(activeWeComBrowserSessions.values());
+  await Promise.allSettled(sessions.map((session) => closeWeComBrowserSession(session, session.status === "captured" ? "" : "closed")));
+}
+
+let shutdownStarted = false;
+function installShutdownHandlers() {
+  const shutdown = async (signal) => {
+    if (shutdownStarted) return;
+    shutdownStarted = true;
+    try {
+      await closeActiveWeComBrowserSessions();
+    } finally {
+      process.exit(signal === "SIGTERM" ? 0 : 1);
+    }
+  };
+  process.once("SIGTERM", () => shutdown("SIGTERM"));
+  process.once("SIGINT", () => shutdown("SIGINT"));
+}
+
+installShutdownHandlers();
 
 if (process.env.REFRESH_ONLY === "true") {
   refreshExistingReportArtifacts(process.env.REFRESH_REPORT_ID || "")
