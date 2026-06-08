@@ -1561,7 +1561,7 @@ async function createSijichanTokenHandoff(user, body = {}) {
   const id = createId("whf");
   const merCode = String(body.merCode || "").trim();
   const merName = String(body.merName || "").trim();
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
   await queryDb(
     `insert into sijichan_token_handoffs(id, user_id, mer_name, mer_code, status, expires_at)
      values($1,$2,$3,$4,'pending',$5)`,
@@ -4179,6 +4179,14 @@ async function createWeComBrowserSession(user, body = {}) {
     if (!token || token.length < 20 || !/^[A-Za-z0-9._\-]+$/.test(token)) return;
     try {
       await markSijichanHandoffCapturedById(handoff.id, user.id, token, { from, href: runtimeUrl });
+      await upsertSijichanTokenAuthorization(user.id, {
+        token,
+        merCode: handoff.merCode,
+        merName: handoff.merName,
+        username: `wecom_${handoff.merCode || handoff.id}`,
+      }, { requestInfo: { merCode: handoff.merCode, merName: handoff.merName } }).catch((error) => {
+        console.warn(`[wecom-browser] token authorization persist skipped: ${error.message}`);
+      });
       session.status = "captured";
       session.lastError = "";
       session.updatedAt = new Date().toISOString();
@@ -6037,6 +6045,11 @@ async function handleWeComBrowserSessionReviewReport(req, res) {
     return;
   }
   const handoff = await getSijichanTokenHandoffForUser(user, session.handoff.id, true).catch(() => null);
+  if (handoff?.token && session.status !== "captured") {
+    session.status = "captured";
+    session.updatedAt = new Date().toISOString();
+    logWeComSessionState(session, "handoff-token-ready");
+  }
   if (session.exportReady && session.page && !session.page.isClosed()) {
     await generateWeComBrowserSessionReportForUser(user, res, session, body);
     return;
