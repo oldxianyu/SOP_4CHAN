@@ -4171,6 +4171,32 @@ async function createWeComBrowserSession(user, body = {}) {
       session.scanHint = text.slice(0, 160);
     }
   };
+  const refreshWeComQrImage = async (reason = "") => {
+    if (!session.page || session.page.isClosed() || isMerchantRuntimeUrl(session.page.url())) return false;
+    const now = Date.now();
+    if (reason === "expired" && session.lastQrReloadAt && now - session.lastQrReloadAt < 60000) return false;
+    if (reason === "expired") {
+      session.qrRefreshCount = Number(session.qrRefreshCount || 0) + 1;
+      if (session.qrRefreshCount > 8) return false;
+      session.lastQrReloadAt = now;
+      await session.page.goto(merchantWecomSsoUrl, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => null);
+    }
+    const qrImageUrl = await session.page.evaluate(() => {
+      const image = document.querySelector(".wwLogin_qrcode_img") || [...document.images].find((img) => /qrcode/i.test(img.src || ""));
+      return image ? image.src : "";
+    }).catch(() => "");
+    if (qrImageUrl) {
+      session.qrImage = await dataUrlFromRemoteImage(qrImageUrl);
+      session.currentUrl = session.page.url();
+      session.pageTitle = await session.page.title().catch(() => session.pageTitle || "");
+      await refreshOpenPages().catch(() => null);
+      await refreshScanStage().catch(() => null);
+      session.updatedAt = new Date().toISOString();
+      logWeComSessionState(session, reason === "expired" ? "qr-refreshed" : "qr-image");
+      return true;
+    }
+    return false;
+  };
   const maybeCapture = async (raw, from, sourceUrl = "") => {
     if (session.status === "captured") return;
     const runtimeUrl = sourceUrl || session.currentUrl || "";
@@ -4522,13 +4548,8 @@ async function createWeComBrowserSession(user, body = {}) {
     await refreshOpenPages().catch(() => null);
     await refreshScanStage().catch(() => null);
     if (page.isClosed()) throw new Error("服务器浏览器页面已关闭，无法生成企微二维码。");
-    const qrImageUrl = await page.evaluate(() => {
-      const image = document.querySelector(".wwLogin_qrcode_img") || [...document.images].find((img) => /qrcode/i.test(img.src || ""));
-      return image ? image.src : "";
-    }).catch(() => "");
-    session.qrImage = qrImageUrl
-      ? await dataUrlFromRemoteImage(qrImageUrl)
-      : `data:image/png;base64,${(await page.screenshot({ fullPage: false })).toString("base64")}`;
+    const qrLoaded = await refreshWeComQrImage("initial");
+    if (!qrLoaded) session.qrImage = `data:image/png;base64,${(await page.screenshot({ fullPage: false })).toString("base64")}`;
     page.waitForTimeout(1000)
       .then(async () => {
         if (!page.isClosed() && session.status === "waiting_scan") {
@@ -4555,6 +4576,7 @@ async function createWeComBrowserSession(user, body = {}) {
           session.pageTitle = await session.page.title().catch(() => session.pageTitle || "");
           await refreshOpenPages();
           await refreshScanStage();
+          if (session.scanStage === "qr_expired") await refreshWeComQrImage("expired");
           session.updatedAt = new Date().toISOString();
           await scanMerchantPageStorage();
           await scanMerchantCookies();
