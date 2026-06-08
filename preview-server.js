@@ -2297,6 +2297,8 @@ function arrayOfText(value) {
       .filter(Boolean);
   }
   if (value && typeof value === "object") {
+    const roleItems = roleActionItems(value);
+    if (roleItems) return roleItems;
     return Object.entries(value)
       .flatMap(([key, item]) => {
         const label = reportActionLabel(key);
@@ -2313,8 +2315,25 @@ function arrayOfText(value) {
   return text ? [text] : [];
 }
 
+function roleActionItems(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const hasRole = Object.prototype.hasOwnProperty.call(value, "role") || Object.prototype.hasOwnProperty.call(value, "角色");
+  const actionValue = value.actions ?? value.action ?? value.items ?? value.tasks ?? value["动作"] ?? value["行动"];
+  if (!hasRole || actionValue === undefined) return null;
+  const role = reportActionLabel(value.role || value["角色"] || "动作");
+  const actions = arrayOfText(actionValue)
+    .map((item) => String(item || "").replace(/^(actions?|动作|行动)\s*[：:]\s*/i, "").trim())
+    .filter(Boolean);
+  if (!actions.length) return role ? [`${role}：待补充动作`] : [];
+  return actions.map((item) => `${role}：${item}`);
+}
+
 function reportActionLabel(key) {
   const labels = {
+    role: "角色",
+    roles: "角色",
+    actions: "动作",
+    action: "动作",
     headquarters: "总部",
     headquarter: "总部",
     hq: "总部",
@@ -2348,6 +2367,27 @@ function parseLabeledActionItems(text) {
   }
 }
 
+function normalizeNextActions(value) {
+  const items = arrayOfText(value);
+  const normalized = [];
+  let currentRole = "";
+  for (const item of items) {
+    const roleMatch = String(item).match(/^role\s*[：:]\s*(.+)$/i);
+    if (roleMatch) {
+      currentRole = reportActionLabel(roleMatch[1]);
+      continue;
+    }
+    const actionMatch = String(item).match(/^actions?\s*[：:]\s*(.+)$/i);
+    if (actionMatch) {
+      const action = actionMatch[1].trim();
+      normalized.push(currentRole ? `${currentRole}：${action}` : action);
+      continue;
+    }
+    normalized.push(item);
+  }
+  return normalized;
+}
+
 function normalizeReport(report) {
   const safe = report && typeof report === "object" ? report : {};
   return {
@@ -2361,7 +2401,7 @@ function normalizeReport(report) {
           bullets: arrayOfText(section?.bullets || section?.items || section?.content),
         }))
       : arrayOfText(safe.sections).map((item, index) => ({ heading: `复盘模块${index + 1}`, bullets: [item] })),
-    nextActions: arrayOfText(safe.nextActions || safe.actions || safe.recommendations),
+    nextActions: normalizeNextActions(safe.nextActions || safe.actions || safe.recommendations),
   };
 }
 
