@@ -1299,6 +1299,57 @@
         background: linear-gradient(135deg, #f7f9ff, #ffffff);
       }
 
+      .data-guard-panel {
+        margin-top: 16px;
+        padding: 16px;
+        border: 1px solid rgba(42, 75, 255, 0.18);
+        border-radius: 14px;
+        background: linear-gradient(135deg, rgba(247, 250, 255, 0.98), rgba(255, 249, 244, 0.86));
+      }
+
+      .data-guard-head {
+        display: grid;
+        grid-template-columns: 34px minmax(0, 1fr);
+        gap: 10px;
+        align-items: start;
+        margin-bottom: 12px;
+      }
+
+      .data-guard-dot {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        color: #ffffff;
+        background: linear-gradient(135deg, #2a4bff, #ff8a3d);
+        font-size: 18px;
+        font-weight: 900;
+        box-shadow: 0 10px 22px rgba(42, 75, 255, 0.18);
+      }
+
+      .data-guard-list {
+        margin: 0;
+        padding-left: 18px;
+        color: #2d3852;
+        line-height: 1.72;
+      }
+
+      .data-guard-list li + li {
+        margin-top: 6px;
+      }
+
+      .data-guard-note {
+        margin-top: 12px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        color: #7a3d12;
+        background: rgba(255, 138, 61, 0.12);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
       .sheet-status {
         margin-top: 14px;
       }
@@ -2641,6 +2692,30 @@
                 message: "数据安全说明",
                 description: "上传文件和登录获取的数据只用于本次解析和AI生成，不在服务器落盘保存。API Key只保存在服务器本地配置文件中，不进入网页代码和GitHub。",
               }),
+              h(
+                "div",
+                { className: "data-guard-panel" },
+                h(
+                  "div",
+                  { className: "data-guard-head" },
+                  h("span", { className: "data-guard-dot" }, "!"),
+                  h(
+                    "div",
+                    null,
+                    h(Text, { strong: true }, "数据说明与分享边界"),
+                    h("br"),
+                    h(Text, { type: "secondary" }, "复盘报告包含客户经营、活动激励、店员提现等敏感业务信息，请按客户资料管理。"),
+                  ),
+                ),
+                h(
+                  "ul",
+                  { className: "data-guard-list" },
+                  h("li", null, "生成后的分享页、二维码、SVG长图、Excel汇总，仅发送给客户授权人员和项目相关同事。"),
+                  h("li", null, "不要转发到公开群、朋友圈、外部供应商或无关人员；转发前请确认客户同意。"),
+                  h("li", null, "报告链接用于复盘沟通，不作为公开宣传材料；涉及门店、店员、金额数据时需谨慎截屏。"),
+                ),
+                h("div", { className: "data-guard-note" }, "如发现链接误发，请及时通知管理员重新生成报告或处理访问入口。"),
+              ),
             ),
           ),
           h(ReportView, { report, markdown, artifact }),
