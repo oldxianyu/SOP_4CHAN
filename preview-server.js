@@ -4035,6 +4035,16 @@ async function dataUrlFromRemoteImage(url) {
   return `data:${contentType.split(";")[0]};base64,${bytes.toString("base64")}`;
 }
 
+function isMerchantRuntimeUrl(url) {
+  try {
+    const parsed = new URL(String(url || ""), sijichanApiOrigin);
+    if (parsed.hostname !== "merchants.hydee.cn") return false;
+    return /businesses-gateway|app-jump|super-admin|merchant|mer-manager|report|activity|industryOrder|imActivityReward|orderShareMoment/i.test(parsed.pathname);
+  } catch {
+    return false;
+  }
+}
+
 async function createWeComBrowserSession(user, body = {}) {
   let chromium;
   try {
@@ -4062,15 +4072,6 @@ async function createWeComBrowserSession(user, body = {}) {
   };
   activeWeComBrowserSessions.set(session.id, session);
   const tokenPattern = /(?:Authorization|authorization)\s*[:=]\s*["']?(?:Bearer\s+)?([A-Za-z0-9._\-]{20,})|(?:token|access_token|merchant_token|accessToken)\s*["']?\s*[:=]\s*["']([A-Za-z0-9._\-]{20,})["']/i;
-  const isMerchantRuntimeUrl = (url) => {
-    try {
-      const parsed = new URL(String(url || ""), sijichanApiOrigin);
-      if (parsed.hostname !== "merchants.hydee.cn") return false;
-      return /businesses-gateway|app-jump|super-admin|merchant|mer-manager|report|activity|industryOrder|imActivityReward|orderShareMoment/i.test(parsed.pathname);
-    } catch {
-      return false;
-    }
-  };
   const maybeCapture = async (raw, from, sourceUrl = "") => {
     if (session.status === "captured") return;
     const runtimeUrl = sourceUrl || session.currentUrl || "";
@@ -4582,6 +4583,109 @@ function createSijichanClient(token, merCode, diagnostics) {
   };
 }
 
+function createSijichanBrowserClient(page, merCode, diagnostics) {
+  const browserPost = async (endpoint, body) => {
+    if (!page || page.isClosed()) throw new Error("服务器浏览器会话已关闭，无法继续取数。");
+    const url = `${sijichanManagerBase}${endpoint}`;
+    const result = await page.evaluate(
+      async ({ url, body, merCode }) => {
+        const headers = { "content-type": "application/json" };
+        if (merCode) {
+          headers.merCode = merCode;
+          headers.isSuper = "1";
+        }
+        const response = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body || {}),
+          credentials: "include",
+        });
+        const text = await response.text();
+        let json;
+        try {
+          json = JSON.parse(text);
+        } catch {
+          json = { raw: text };
+        }
+        return {
+          status: response.status,
+          response: json,
+        };
+      },
+      { url, body: body || {}, merCode },
+    );
+    if (result.response?.code && String(result.response.code) !== "10000") {
+      if (String(result.response.code) === "40301") {
+        throw new Error(`${endpoint} 接口返回 40301：服务器浏览器已打开页面，但当前登录态无权限或已失效。`);
+      }
+      throw new Error(`${endpoint} 接口返回失败：${result.response.msg || result.response.code}`);
+    }
+    return {
+      endpoint,
+      status: result.status,
+      request: body || {},
+      response: result.response,
+      fetchedAt: new Date().toISOString(),
+    };
+  };
+  const browserPaged = async (endpoint, baseBody, pageSize = 1000, options = {}) => {
+    const pages = [];
+    const rows = [];
+    const maxPages = Number(options.maxPages || 0);
+    let totalCount = 0;
+    let totalPages = 1;
+    for (let currentPage = 1; currentPage <= totalPages; currentPage += 1) {
+      const result = await browserPost(endpoint, { ...baseBody, currentPage, pageSize });
+      pages.push(result);
+      const data = result.response?.data;
+      if (currentPage === 1) {
+        totalCount = Number(data?.totalCount || data?.total || data?.count || 0);
+        const explicitPages = Number(data?.totalPages || data?.totalPage || data?.pages || 0);
+        totalPages = explicitPages || Math.max(1, Math.ceil(totalCount / pageSize));
+      }
+      rows.push(...rowsFromPaged(data));
+      if (maxPages > 0 && currentPage >= maxPages && currentPage < totalPages) break;
+    }
+    return {
+      endpoint,
+      baseRequest: baseBody,
+      pageSize,
+      totalCount,
+      totalPages,
+      fetchedPages: pages.length,
+      truncated: totalPages > pages.length,
+      rows,
+      pages,
+      fetchedAt: new Date().toISOString(),
+    };
+  };
+  return {
+    async post(label, endpoint, body) {
+      try {
+        const result = await browserPost(endpoint, body);
+        const metricRows = metricRowsFromObject(responseData(result), `${endpoint}.json`, "data");
+        diagnostics.push(buildSijichanDiagnostic({ label, endpoint, kind: "post", request: body, result, metricRows }));
+        return result;
+      } catch (error) {
+        const result = emptySijichanPostResult(endpoint, body, error);
+        diagnostics.push(buildSijichanDiagnostic({ label, endpoint, kind: "post", request: body, result, error }));
+        return result;
+      }
+    },
+    async paged(label, endpoint, body, pageSize = 1000, options = {}) {
+      try {
+        const result = await browserPaged(endpoint, body, pageSize, options);
+        diagnostics.push(buildSijichanDiagnostic({ label, endpoint, kind: "paged", request: body, result, rows: result.rows || [] }));
+        return result;
+      } catch (error) {
+        const result = emptySijichanPagedResult(endpoint, body, error, pageSize);
+        diagnostics.push(buildSijichanDiagnostic({ label, endpoint, kind: "paged", request: body, result, error }));
+        return result;
+      }
+    },
+  };
+}
+
 function saleBody(window, comparison) {
   return {
     beginTime: window.start,
@@ -4988,10 +5092,33 @@ async function collectSijichanDataWithToken({ token, merCode: inputMerCode = "",
   const normalizedToken = assertSijichanTokenFormat(token);
   const merCode = String(inputMerCode || "").trim();
   const merName = String(inputMerName || "").trim();
-  const windows = buildSijichanWindows(asOf || "2026-06-06");
-  const withMerCode = (payload = {}) => (merCode ? { merCode, ...payload } : payload);
   const diagnostics = [];
   const client = createSijichanClient(normalizedToken, merCode, diagnostics);
+  return collectSijichanDataWithClient({ client, diagnostics, merCode, merName, loginUserName, loginSystem, source, asOf });
+}
+
+async function collectSijichanDataWithBrowserSession(session, { merCode: inputMerCode = "", merName: inputMerName = "", source = "企微扫码授权", asOf = "" } = {}) {
+  if (!session?.page || session.page.isClosed()) throw new Error("服务器扫码浏览器会话已关闭，请重新扫码。");
+  if (!isMerchantRuntimeUrl(session.page.url())) throw new Error("服务器浏览器尚未进入新零售管理平台，请扫码确认登录后再生成报告。");
+  const merCode = String(inputMerCode || session.handoff?.merCode || "").trim();
+  const merName = String(inputMerName || session.handoff?.merName || "").trim();
+  const diagnostics = [];
+  const client = createSijichanBrowserClient(session.page, merCode, diagnostics);
+  return collectSijichanDataWithClient({
+    client,
+    diagnostics,
+    merCode,
+    merName,
+    loginUserName: "企微扫码服务器浏览器",
+    loginSystem: "wecom-browser-session",
+    source,
+    asOf,
+  });
+}
+
+async function collectSijichanDataWithClient({ client, diagnostics, merCode = "", merName = "", loginUserName = "", loginSystem = "", source = "企微扫码授权", asOf = "" } = {}) {
+  const windows = buildSijichanWindows(asOf || "2026-06-06");
+  const withMerCode = (payload = {}) => (merCode ? { merCode, ...payload } : payload);
 
   const salesPeriods = {
     lastMonth_vs_priorTwoMonths: [windows.lastMonth, windows.priorTwoMonths],
@@ -5605,6 +5732,66 @@ async function handleWeComHandoffReviewReport(req, res) {
   await generateWeComTokenReportForUser(user, res, { token: handoff.token, merCode: body.merCode || handoff.merCode, merName: body.merName || handoff.merName });
 }
 
+async function generateWeComBrowserSessionReportForUser(user, res, session, body = {}) {
+  const config = await loadAiConfigForUser(user);
+  if (!config.apiKey || !config.model) {
+    sendJson(res, 400, { error: "AI服务未配置，请在AI配置页面保存自己的API Key，或联系管理员hydee配置兜底API。" });
+    return;
+  }
+  const jobKey = `wecom-browser:${user.id}`;
+  const startedAt = beginReviewJob(jobKey);
+  let datasetId = "";
+  console.log(`[review] start ${jobKey} ${String(body.merCode || session.handoff?.merCode || "").trim()}`);
+  try {
+    const raw = await collectSijichanDataWithBrowserSession(session, {
+      merCode: body.merCode || session.handoff?.merCode,
+      merName: body.merName || session.handoff?.merName,
+      source: "企微扫码服务器登录",
+      asOf: body.asOf,
+    });
+    const summary = summarizeSijichanRaw(raw);
+    const files = summary.datasetFiles || [];
+    if (!files.some((file) => file.rowCount > 0)) {
+      sendJson(res, 422, { error: "服务器浏览器已登录新零售，但当前账号/客户在当前口径无可复盘明细数据。", summary: summaryForResponse(summary) });
+      finishReviewJob(jobKey, startedAt, "empty");
+      return;
+    }
+    datasetId = await saveDatasetRecord(user.id, "wecom_browser", summary, summary.source || "企微扫码服务器登录");
+    const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary, user);
+    const dbReportId = await saveReviewReportRecord(user.id, "wecom_browser", "企微扫码服务器登录", summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
+    await linkDatasetToReviewReport(datasetId, dbReportId, "completed");
+    finishReviewJob(jobKey, startedAt, reportId);
+    sendJson(res, 200, { ok: true, id: dbReportId, summary: summaryForResponse(summary), report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
+  } catch (error) {
+    activeReviewJobs.delete(jobKey);
+    await linkDatasetToReviewReport(datasetId, null, "failed", error.message);
+    console.error(`[review] failed ${jobKey}:`, error);
+    throw error;
+  }
+}
+
+async function handleWeComBrowserSessionReviewReport(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const body = await readJsonBody(req, 1024 * 128);
+  const session = activeWeComBrowserSessions.get(String(body.sessionId || ""));
+  if (!session || (user.role !== "admin" && session.userId !== user.id)) {
+    sendJson(res, 404, { error: "服务器扫码会话不存在或已过期，请重新生成企微二维码。" });
+    return;
+  }
+  const handoff = await getSijichanTokenHandoffForUser(user, session.handoff.id, true).catch(() => null);
+  if (handoff?.token) {
+    await queryDb("update sijichan_token_handoffs set used_at=now(), status='used', updated_at=now() where id=$1", [handoff.id]).catch(() => null);
+    await generateWeComTokenReportForUser(user, res, { token: handoff.token, merCode: body.merCode || handoff.merCode, merName: body.merName || handoff.merName });
+    return;
+  }
+  if (session.status === "expired" || session.status === "error" || session.page?.isClosed?.()) {
+    sendJson(res, 409, { error: session.lastError || "服务器扫码会话不可用，请重新生成二维码并扫码。" });
+    return;
+  }
+  await generateWeComBrowserSessionReportForUser(user, res, session, body);
+}
+
 async function handleListMonthlyMarketing(req, res) {
   const user = await requireUser(req, res);
   if (!user) return;
@@ -5824,6 +6011,7 @@ function createServer() {
       if (url.pathname === "/api/wecom-token-capture" && req.method === "OPTIONS") return sendNoContent(res, weComCaptureCorsHeaders(req));
       if (url.pathname === "/api/wecom-token-capture" && req.method === "POST") return await handleCaptureWeComToken(req, res);
       if (url.pathname === "/api/wecom-handoff-review-report" && req.method === "POST") return await handleWeComHandoffReviewReport(req, res);
+      if (url.pathname === "/api/wecom-browser-session-review-report" && req.method === "POST") return await handleWeComBrowserSessionReviewReport(req, res);
       if (url.pathname === "/api/wecom-sso/callback" && req.method === "GET") return await handleWeComSsoCallback(req, res);
       if (url.pathname === "/api/monthly-marketing-recommendations" && req.method === "GET") return await handleListMonthlyMarketing(req, res);
       if (url.pathname === "/api/monthly-marketing-recommendations/generate" && req.method === "POST") return await handleGenerateMonthlyMarketing(req, res);
