@@ -174,6 +174,10 @@ function jsonClone(value) {
   return JSON.parse(JSON.stringify(value ?? null));
 }
 
+function jsonParam(value, fallback = null) {
+  return JSON.stringify(value ?? fallback);
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -933,7 +937,7 @@ async function recordAuthOperation(req, { userId = null, loginIdentifier = "", o
         failureReason ? String(failureReason).slice(0, 500) : null,
         getClientIp(req),
         String(req.headers["user-agent"] || "").slice(0, 500),
-        jsonClone(metadata || {}),
+        jsonParam(metadata || {}, {}),
       ],
     );
     return result.rows[0]?.id || null;
@@ -954,14 +958,14 @@ async function saveDatasetRecord(userId, sourceType, summary, filename = "") {
   if (await isDbAvailable()) {
     const result = await queryDb(
       `insert into customer_datasets(user_id, source_type, filename, row_counts_json, sheet_status_json, metadata_json)
-       values($1,$2,$3,$4,$5,$6) returning id`,
-      [userId, sourceType, filename, jsonClone(rowCounts), jsonClone(sheetStatus), jsonClone(metadata)],
+       values($1,$2,$3,$4::jsonb,$5::jsonb,$6::jsonb) returning id`,
+      [userId, sourceType, filename, jsonParam(rowCounts, {}), jsonParam(sheetStatus, []), jsonParam(metadata, {})],
     );
     const datasetId = result.rows[0].id;
     await queryDb(
       `insert into ai_review_uploads(user_id, dataset_id, source_type, source_name, filename, row_counts_json, status)
-       values($1,$2,$3,$4,$5,$6,'parsed')`,
-      [userId, datasetId, sourceType, summary.source || sourceType, filename, jsonClone(rowCounts)],
+       values($1,$2,$3,$4,$5,$6::jsonb,'parsed')`,
+      [userId, datasetId, sourceType, summary.source || sourceType, filename, jsonParam(rowCounts, {})],
     );
     return datasetId;
   }
@@ -1034,7 +1038,7 @@ async function saveReviewReportRecord(userId, sourceType, sourceName, summary, g
           user_id, customer_profile_id, source_type, source_name, status, report_title, row_counts_json, health_score, risk_level,
           summary_json, report_json, markdown, report_id, share_url, svg_url, qr_svg_url, excel_url, normalized_data_url, diagnostics_url
         )
-         values($1,$2,$3,$4,'completed',$5,$6,$7,$8,$9,$10,'',$11,$12,$13,$14,$15,$16,$17)
+         values($1,$2,$3,$4,'completed',$5,$6::jsonb,$7,$8,$9::jsonb,$10::jsonb,'',$11,$12,$13,$14,$15,$16,$17)
          returning id`,
         [
           userId,
@@ -1042,11 +1046,11 @@ async function saveReviewReportRecord(userId, sourceType, sourceName, summary, g
           sourceType,
           sourceName,
           reportTitle,
-          jsonClone(summary.rowCounts || {}),
+          jsonParam(summary.rowCounts || {}, {}),
           numericOrNull(summary.operationInsights?.healthScore),
           summary.operationInsights?.retentionRisk || "",
-          jsonClone(digest),
-          jsonClone({ title: reportTitle, executiveSummary: generated.report?.executiveSummary || "" }),
+          jsonParam(digest, {}),
+          jsonParam({ title: reportTitle, executiveSummary: generated.report?.executiveSummary || "" }, {}),
           generated.reportId,
           generated.shareUrl,
           generated.svgUrl,
@@ -1059,9 +1063,9 @@ async function saveReviewReportRecord(userId, sourceType, sourceName, summary, g
       const id = result.rows[0].id;
       await client.query(
         `insert into review_report_payloads(report_db_id, summary_json, report_json, markdown)
-         values($1,$2,$3,$4)
+         values($1,$2::jsonb,$3::jsonb,$4)
          on conflict(report_db_id) do update set summary_json=excluded.summary_json, report_json=excluded.report_json, markdown=excluded.markdown, updated_at=now()`,
-        [id, jsonClone(summary), jsonClone(generated.report), generated.markdown || ""],
+        [id, jsonParam(summary, {}), jsonParam(generated.report, {}), generated.markdown || ""],
       );
       await client.query("commit");
       return id;
@@ -1157,7 +1161,7 @@ async function saveCapabilitySubmission(body, req) {
   if (await isDbAvailable()) {
     const result = await queryDb(
       `insert into capability_test_submissions(name, department, test_date, total_questions, answered_questions, completion_rate, answers_json, user_agent)
-       values($1,$2,$3,$4,$5,$6,$7,$8) returning *`,
+       values($1,$2,$3,$4,$5,$6,$7::jsonb,$8) returning *`,
       [
         submission.name,
         submission.department,
@@ -1165,7 +1169,7 @@ async function saveCapabilitySubmission(body, req) {
         submission.totalQuestions,
         submission.answeredQuestions,
         submission.completionRate,
-        jsonClone(submission.answers),
+        jsonParam(submission.answers, []),
         submission.userAgent,
       ],
     );
@@ -1629,6 +1633,40 @@ function summaryForAi(summary) {
   if (!summary || typeof summary !== "object") return summary;
   const { rawData, ...rest } = summary;
   return rest;
+}
+
+function summaryForResponse(summary) {
+  if (!summary || typeof summary !== "object") return summary;
+  const responseKeys = [
+    "source",
+    "requestInfo",
+    "windows",
+    "generatedAt",
+    "sheetStatus",
+    "datasetFiles",
+    "rowCounts",
+    "operationInsights",
+    "salesChange",
+    "activity",
+    "cashout",
+    "incentive",
+    "shareReward",
+  ];
+  const next = {};
+  for (const key of responseKeys) {
+    if (summary[key] !== undefined) next[key] = summary[key];
+  }
+  if (Array.isArray(summary.interfaceDiagnostics)) {
+    next.interfaceDiagnostics = summary.interfaceDiagnostics.slice(0, 80).map((item) => ({
+      module: item.module || item.label || item.name || "",
+      endpoint: item.endpoint || item.url || "",
+      status: item.status || item.statusText || "",
+      statusCode: item.statusCode || item.code || "",
+      rowCount: item.rowCount ?? item.rows ?? "",
+      error: item.error || item.message || "",
+    }));
+  }
+  return next;
 }
 
 function buildPrompt(summary) {
@@ -3480,7 +3518,7 @@ async function handleReviewReport(req, res) {
 
   const summary = await parseWorkbook(buffer, filename);
   if (!hasUsableDetail(summary)) {
-    sendJson(res, 422, { error: "缺少明细数据。请在标准模板的Sheet3之后粘贴客户明细数据后再上传。", summary });
+    sendJson(res, 422, { error: "缺少明细数据。请在标准模板的Sheet3之后粘贴客户明细数据后再上传。", summary: summaryForResponse(summary) });
     return;
   }
 
@@ -3497,7 +3535,7 @@ async function handleReviewReport(req, res) {
     sendJson(res, 200, {
       ok: true,
       id: dbReportId,
-      summary,
+      summary: summaryForResponse(summary),
       report,
       markdown,
       reportId,
@@ -3534,7 +3572,7 @@ async function handleSijichanReviewReport(req, res) {
     const summary = await runSijichanExport(body);
     const files = summary.datasetFiles || [];
     if (!files.some((file) => file.rowCount > 0)) {
-      sendJson(res, 422, { error: "接口成功返回，但该账号/客户在当前口径无可复盘明细数据。", summary });
+      sendJson(res, 422, { error: "接口成功返回，但该账号/客户在当前口径无可复盘明细数据。", summary: summaryForResponse(summary) });
       finishReviewJob(jobKey, startedAt, "empty");
       return;
     }
@@ -3543,7 +3581,7 @@ async function handleSijichanReviewReport(req, res) {
     const dbReportId = await saveReviewReportRecord(user.id, "login", "登录获取", summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
     await linkDatasetToReviewReport(datasetId, dbReportId, "completed");
     finishReviewJob(jobKey, startedAt, reportId);
-    sendJson(res, 200, { ok: true, id: dbReportId, summary, report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
+    sendJson(res, 200, { ok: true, id: dbReportId, summary: summaryForResponse(summary), report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
   } catch (error) {
     activeReviewJobs.delete(jobKey);
     await linkDatasetToReviewReport(datasetId, null, "failed", error.message);
