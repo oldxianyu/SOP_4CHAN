@@ -4076,7 +4076,9 @@ function isMerchantRuntimeUrl(url) {
   try {
     const parsed = new URL(String(url || ""), sijichanApiOrigin);
     if (parsed.hostname !== "merchants.hydee.cn") return false;
-    return /businesses-gateway|app-jump|super-admin|merchant|mer-manager|report|activity|industryOrder|imActivityReward|orderShareMoment/i.test(parsed.pathname);
+    const routeText = `${parsed.pathname}${parsed.hash}${parsed.search}`;
+    return parsed.pathname === "/"
+      || /businesses-gateway|app-jump|super-admin|merchant|mer-manager|report|activity|industryOrder|imActivityReward|orderShareMoment/i.test(routeText);
   } catch {
     return false;
   }
@@ -4269,6 +4271,65 @@ async function createWeComBrowserSession(user, body = {}) {
       }
     });
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const attachMerchantPage = (nextPage) => {
+      if (!nextPage || nextPage === session.page || nextPage.isClosed()) return;
+      session.page = nextPage;
+      session.currentUrl = nextPage.url();
+      nextPage.title().then((title) => {
+        session.pageTitle = title || session.pageTitle || "";
+        session.updatedAt = new Date().toISOString();
+        logWeComSessionState(session, "merchant-popup");
+      }).catch(() => null);
+      nextPage.on("close", () => {
+        if (session.page === nextPage && session.status !== "captured" && session.status !== "expired" && session.status !== "error") {
+          session.status = "error";
+          session.lastError = "服务器浏览器页面已关闭，请重新创建扫码会话。";
+          session.updatedAt = new Date().toISOString();
+        }
+      });
+      nextPage.on("request", (request) => {
+        session.lastRequestUrl = request.url();
+        const headers = request.headers();
+        maybeCapture(headers.authorization || headers.Authorization, "server-browser-request-header", request.url());
+        maybeCapture(request.url(), "server-browser-request-url", request.url());
+        const postData = request.postData();
+        if (postData) maybeCapture(postData, "server-browser-request-body", request.url());
+      });
+      nextPage.on("response", async (response) => {
+        session.lastRequestUrl = response.url();
+        const headers = response.headers();
+        maybeCapture(headers.authorization || headers.Authorization, "server-browser-response-header", response.url());
+        const contentType = headers["content-type"] || "";
+        if (/json|text|javascript/i.test(contentType)) {
+          response.text().then((text) => maybeCapture(text, "server-browser-response-body", response.url())).catch(() => null);
+        }
+      });
+      nextPage.on("framenavigated", (frame) => {
+        if (frame === nextPage.mainFrame()) {
+          session.currentUrl = frame.url();
+          nextPage.title().then((title) => {
+            session.pageTitle = title || "";
+            session.updatedAt = new Date().toISOString();
+            logWeComSessionState(session, "navigate");
+          }).catch(() => null);
+          session.updatedAt = new Date().toISOString();
+          logWeComSessionState(session, "navigate");
+          scanMerchantPageStorage().catch(() => null);
+          scanMerchantCookies().catch(() => null);
+          tryFillMerchantCode().catch(() => null);
+          triggerMerchantProbe().catch(() => null);
+          probeExportReady().catch(() => null);
+        }
+      });
+    };
+    context.on("page", (nextPage) => {
+      nextPage.waitForLoadState("domcontentloaded", { timeout: 15000 }).catch(() => null).finally(() => {
+        if (isMerchantRuntimeUrl(nextPage.url())) attachMerchantPage(nextPage);
+      });
+      nextPage.on("framenavigated", () => {
+        if (isMerchantRuntimeUrl(nextPage.url())) attachMerchantPage(nextPage);
+      });
+    });
     await context.exposeBinding("sop4chanCaptureToken", async (source, payload = {}) => {
       const from = payload.from || `server-browser-binding:${source.frame?.url?.() || ""}`;
       const href = payload.href || source.frame?.url?.() || session.currentUrl;
@@ -4343,7 +4404,7 @@ async function createWeComBrowserSession(user, body = {}) {
     const page = await context.newPage();
     session.page = page;
     page.on("close", () => {
-      if (session.status !== "captured" && session.status !== "expired" && session.status !== "error") {
+      if (session.page === page && session.status !== "captured" && session.status !== "expired" && session.status !== "error") {
         session.status = "error";
         session.lastError = "服务器浏览器页面已关闭，请重新创建扫码会话。";
         session.updatedAt = new Date().toISOString();
