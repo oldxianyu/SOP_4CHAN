@@ -4088,6 +4088,54 @@ async function createWeComBrowserSession(user, body = {}) {
       session.updatedAt = new Date().toISOString();
     }
   };
+  const scanMerchantPageStorage = async () => {
+    if (!session.page || session.page.isClosed() || !isMerchantRuntimeUrl(session.page.url())) return;
+    const storageItems = await session.page.evaluate(() => {
+      const items = [];
+      const readStore = (store, storeName) => {
+        for (let index = 0; index < store.length; index += 1) {
+          const key = store.key(index);
+          const value = store.getItem(key) || "";
+          if (/token|authorization|access/i.test(key) || /token|authorization|access_token|Bearer\s+/i.test(value)) {
+            items.push({ key, value, storeName });
+          }
+        }
+      };
+      try { readStore(localStorage, "localStorage"); } catch {}
+      try { readStore(sessionStorage, "sessionStorage"); } catch {}
+      return items.slice(0, 30);
+    }).catch(() => []);
+    for (const item of storageItems) {
+      await maybeCapture(item.value, `server-browser-${item.storeName}:${item.key}`, session.page.url());
+    }
+  };
+  const tryFillMerchantCode = async () => {
+    if (!handoff.merCode || !session.page || session.page.isClosed() || !isMerchantRuntimeUrl(session.page.url()) || session.merCodeFilled) return;
+    const filled = await session.page.evaluate((merCode) => {
+      const candidates = Array.from(document.querySelectorAll("input, textarea"));
+      const target = candidates.find((input) => {
+        const text = [
+          input.name,
+          input.id,
+          input.placeholder,
+          input.getAttribute("aria-label"),
+          input.closest("label")?.textContent,
+          input.parentElement?.textContent,
+        ].filter(Boolean).join(" ");
+        return /客户编码|客户代码|商户编码|门店编码|merCode|merchantCode|customerCode/i.test(text);
+      });
+      if (!target) return false;
+      target.focus();
+      target.value = merCode;
+      target.dispatchEvent(new Event("input", { bubbles: true }));
+      target.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    }, handoff.merCode).catch(() => false);
+    if (filled) {
+      session.merCodeFilled = true;
+      session.updatedAt = new Date().toISOString();
+    }
+  };
   try {
     const browser = await chromium.launch(playwrightLaunchOptions());
     session.browser = browser;
@@ -4129,6 +4177,8 @@ async function createWeComBrowserSession(user, body = {}) {
       if (frame === page.mainFrame()) {
         session.currentUrl = frame.url();
         session.updatedAt = new Date().toISOString();
+        scanMerchantPageStorage().catch(() => null);
+        tryFillMerchantCode().catch(() => null);
       }
     });
     await page.goto(merchantWecomSsoUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
@@ -4161,6 +4211,8 @@ async function createWeComBrowserSession(user, body = {}) {
         if (session.page && session.status !== "captured") {
           session.currentUrl = session.page.url();
           session.updatedAt = new Date().toISOString();
+          await scanMerchantPageStorage();
+          await tryFillMerchantCode();
         }
       } catch {
         // keep session alive until expiry
