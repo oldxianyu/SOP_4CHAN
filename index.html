@@ -2595,6 +2595,23 @@
           browserSessionPollRef.current = setInterval(check, 4000);
         }, []);
 
+        const refreshWeComBrowserSession = async () => {
+          if (!weComBrowserSession?.id) {
+            message.warning("请先生成企微扫码二维码");
+            return;
+          }
+          try {
+            const response = await fetch(`/api/wecom-browser-session/${encodeURIComponent(weComBrowserSession.id)}`);
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error || "扫码状态刷新失败");
+            setWeComBrowserSession(data.session);
+            if (data.handoff) setWeComHandoff((prev) => ({ ...(prev || {}), ...data.handoff }));
+            message.success(data.session?.exportReady ? "服务器已具备导出能力" : data.session?.merchantReady ? "已进入新零售，正在等待接口探测" : "扫码状态已刷新");
+          } catch (err) {
+            message.error(err.message || "扫码状态刷新失败");
+          }
+        };
+
         const createWeComHandoff = async () => {
           const values = sourceForm.getFieldsValue();
           try {
@@ -2907,6 +2924,7 @@
                           Space,
                           { wrap: true },
                           h(Button, { type: "primary", loading, onClick: createWeComBrowserSession }, "生成企微扫码二维码"),
+                          h(Button, { disabled: !weComBrowserSession?.id, onClick: refreshWeComBrowserSession }, "刷新扫码状态"),
                           h(Button, { type: "primary", loading, disabled: !weComBrowserSession?.exportReady && !weComHandoff?.captured, onClick: generateFromWeComHandoff }, weComHandoff?.captured ? "用已捕获授权生成报告" : "用服务器登录态生成报告"),
                           h(Button, {
                             onClick: () => {
