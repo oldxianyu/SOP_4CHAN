@@ -2948,6 +2948,14 @@
                                 h(Tag, { color: weComBrowserSession.merchantReady ? "green" : "blue", className: "large-tag" }, weComBrowserSession.merchantReady ? "已进入新零售" : "等待扫码登录"),
                                 h(Tag, { color: weComBrowserSession.exportReady ? "green" : "orange", className: "large-tag" }, weComBrowserSession.exportReady ? "接口可导出" : "等待接口探测"),
                                 weComBrowserSession.exportProbeAt ? h(Tag, { color: "default", className: "large-tag" }, `探测时间 ${dayjs(weComBrowserSession.exportProbeAt).format("HH:mm:ss")}`) : null,
+                                weComBrowserSession.screenshotUrl ? h(Button, { size: "small", onClick: () => window.open(weComBrowserSession.screenshotUrl, "_blank", "noopener,noreferrer") }, "查看服务器页面截图") : null,
+                              ),
+                              h(
+                                "div",
+                                { className: "diagnostic-mini", style: { marginTop: 10 } },
+                                weComBrowserSession.pageTitle ? h(Text, { type: "secondary" }, `页面标题：${weComBrowserSession.pageTitle}`) : null,
+                                weComBrowserSession.currentUrl ? h(Text, { type: "secondary", style: { display: "block", wordBreak: "break-all" } }, `主页面：${weComBrowserSession.currentUrl}`) : null,
+                                weComBrowserSession.lastRequestUrl ? h(Text, { type: "secondary", style: { display: "block", wordBreak: "break-all" } }, `最近请求：${weComBrowserSession.lastRequestUrl}`) : null,
                               ),
                             )
                           : null,

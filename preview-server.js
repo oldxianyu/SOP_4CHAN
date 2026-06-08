@@ -4004,6 +4004,8 @@ function getWeComBrowserSessionPublic(session) {
     qrImage: session.qrImage || "",
     currentUrl: session.currentUrl || "",
     lastRequestUrl: session.lastRequestUrl || "",
+    pageTitle: session.pageTitle || "",
+    screenshotUrl: session.id ? `/api/wecom-browser-session/${encodeURIComponent(session.id)}/screenshot` : "",
     lastError: session.lastError || "",
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
@@ -4070,6 +4072,7 @@ async function createWeComBrowserSession(user, body = {}) {
     qrImage: "",
     currentUrl: "",
     lastRequestUrl: "",
+    pageTitle: "",
     lastError: "",
     browser: null,
     page: null,
@@ -4324,6 +4327,10 @@ async function createWeComBrowserSession(user, body = {}) {
     page.on("framenavigated", (frame) => {
       if (frame === page.mainFrame()) {
         session.currentUrl = frame.url();
+        page.title().then((title) => {
+          session.pageTitle = title || "";
+          session.updatedAt = new Date().toISOString();
+        }).catch(() => null);
         session.updatedAt = new Date().toISOString();
         scanMerchantPageStorage().catch(() => null);
         scanMerchantCookies().catch(() => null);
@@ -4334,6 +4341,7 @@ async function createWeComBrowserSession(user, body = {}) {
     });
     await page.goto(merchantWecomSsoUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
     session.currentUrl = page.url();
+    session.pageTitle = await page.title().catch(() => "");
     if (page.isClosed()) throw new Error("服务器浏览器页面已关闭，无法生成企微二维码。");
     const qrImageUrl = await page.evaluate(() => {
       const image = document.querySelector(".wwLogin_qrcode_img") || [...document.images].find((img) => /qrcode/i.test(img.src || ""));
@@ -4351,6 +4359,7 @@ async function createWeComBrowserSession(user, body = {}) {
           }).catch(() => "");
           if (nextQrImageUrl) session.qrImage = await dataUrlFromRemoteImage(nextQrImageUrl);
           session.currentUrl = page.url();
+          session.pageTitle = await page.title().catch(() => session.pageTitle || "");
           session.updatedAt = new Date().toISOString();
         }
       })
@@ -4361,6 +4370,7 @@ async function createWeComBrowserSession(user, body = {}) {
       try {
         if (session.page && session.status !== "captured") {
           session.currentUrl = session.page.url();
+          session.pageTitle = await session.page.title().catch(() => session.pageTitle || "");
           session.updatedAt = new Date().toISOString();
           await scanMerchantPageStorage();
           await scanMerchantCookies();
@@ -5700,6 +5710,31 @@ async function handleGetWeComBrowserSession(req, res, id) {
   sendJson(res, 200, { ok: true, session: getWeComBrowserSessionPublic(session), handoff });
 }
 
+async function handleGetWeComBrowserSessionScreenshot(req, res, id) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const session = activeWeComBrowserSessions.get(id);
+  if (!session || (user.role !== "admin" && session.userId !== user.id)) {
+    sendJson(res, 404, { error: "服务器扫码会话不存在或已过期。" });
+    return;
+  }
+  if (!session.page || session.page.isClosed()) {
+    sendJson(res, 409, { error: "服务器浏览器页面已关闭，无法截图。" });
+    return;
+  }
+  try {
+    const png = await session.page.screenshot({ fullPage: false });
+    res.writeHead(200, {
+      "Content-Type": "image/png",
+      "Cache-Control": "no-store",
+      "Content-Length": png.length,
+    });
+    res.end(png);
+  } catch (error) {
+    sendJson(res, 500, { error: error.message || "服务器浏览器截图失败。" });
+  }
+}
+
 async function handleGetWeComHandoff(req, res, id) {
   const user = await requireUser(req, res);
   if (!user) return;
@@ -6072,6 +6107,8 @@ function createServer() {
       if (adminUserMatch && req.method === "PATCH") return await handleAdminUpdateUser(req, res, decodeURIComponent(adminUserMatch[1]));
       const handoffMatch = url.pathname.match(/^\/api\/wecom-handoff\/([^/]+)$/);
       if (handoffMatch && req.method === "GET") return await handleGetWeComHandoff(req, res, decodeURIComponent(handoffMatch[1]));
+      const browserSessionScreenshotMatch = url.pathname.match(/^\/api\/wecom-browser-session\/([^/]+)\/screenshot$/);
+      if (browserSessionScreenshotMatch && req.method === "GET") return await handleGetWeComBrowserSessionScreenshot(req, res, decodeURIComponent(browserSessionScreenshotMatch[1]));
       const browserSessionMatch = url.pathname.match(/^\/api\/wecom-browser-session\/([^/]+)$/);
       if (browserSessionMatch && req.method === "GET") return await handleGetWeComBrowserSession(req, res, decodeURIComponent(browserSessionMatch[1]));
       const reportMatch = url.pathname.match(/^\/api\/review-reports\/([^/]+)$/);
