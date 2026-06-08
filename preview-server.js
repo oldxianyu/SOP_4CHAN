@@ -3779,6 +3779,164 @@ function extractSijichanTokenFromText(text) {
   return "";
 }
 
+function renderWeComHandoffHelperScript({ endpoint, handoffToken, merCode }) {
+  const helperSource = String.raw`
+(function(){
+  const endpoint = __ENDPOINT__;
+  const handoffToken = __HANDOFF_TOKEN__;
+  const merCode = __MER_CODE__;
+  if (window.__sop4chanTokenHelper) {
+    alert("四季蝉授权助手已在监听中，请在新零售页面点击首页、活动或报表页面触发接口请求。");
+    return;
+  }
+  window.__sop4chanTokenHelper = true;
+  const sent = new Set();
+  const tokenPattern = /(?:Authorization|authorization)\s*[:=]\s*["']?(?:Bearer\s+)?([A-Za-z0-9._\-]{20,})|(?:token|access_token|merchant_token|accessToken)\s*["']?\s*[:=]\s*["']([A-Za-z0-9._\-]{20,})["']/i;
+  const pick = (value) => String(value || "").replace(/^authorization\s*:\s*/i, "").replace(/^Bearer\s+/i, "").trim();
+  const looksLikeToken = (value) => {
+    const token = pick(value);
+    return token.length >= 20 && /^[A-Za-z0-9._\-]+$/.test(token);
+  };
+  const tokenFromText = (text) => {
+    const match = String(text || "").match(tokenPattern);
+    return match ? pick(match[1] || match[2] || "") : "";
+  };
+  async function send(raw, from) {
+    const token = pick(raw);
+    if (!looksLikeToken(token) || sent.has(token)) return;
+    sent.add(token);
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ handoffToken, token, merCode, from, href: location.href, capturedAt: new Date().toISOString() }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok) {
+        window.__sop4chanTokenCaptured = true;
+        alert("已捕获新零售授权token并交给四季蝉服务器，可以回到门户生成报告。");
+      } else {
+        console.warn("四季蝉授权交接失败", data);
+        alert(data.error || "授权交接失败");
+      }
+    } catch (error) {
+      console.error("四季蝉授权交接请求失败", error);
+      alert("授权交接请求失败：" + ((error && error.message) || error));
+    }
+  }
+  function scanHeaders(headers, from) {
+    if (!headers) return;
+    try {
+      const normalized = new Headers(headers);
+      send(normalized.get("Authorization") || normalized.get("authorization"), from + ":authorization");
+      normalized.forEach((value, key) => {
+        if (/token|authorization/i.test(key) || /Bearer\s+|token|access_token|merchant_token/i.test(value)) {
+          send(value, from + ":" + key);
+        }
+      });
+    } catch (error) {
+      if (Array.isArray(headers)) {
+        headers.forEach((item) => {
+          if (Array.isArray(item)) scanHeaders({ [item[0]]: item[1] }, from);
+        });
+      } else if (headers && typeof headers === "object") {
+        Object.keys(headers).forEach((key) => {
+          const value = headers[key];
+          if (/token|authorization/i.test(key) || /Bearer\s+|token|access_token|merchant_token/i.test(value)) {
+            send(value, from + ":" + key);
+          }
+        });
+      }
+    }
+  }
+  function scanText(text, from) {
+    const token = tokenFromText(text);
+    if (token) send(token, from);
+  }
+  function scanStore() {
+    [localStorage, sessionStorage].forEach((store) => {
+      try {
+        ["token", "access_token", "accessToken", "Authorization", "authorization", "sijichan_token", "merchant_token"].forEach((key) => {
+          send(store.getItem(key), "storage:" + key);
+        });
+        for (let index = 0; index < store.length; index += 1) {
+          const key = store.key(index);
+          const value = store.getItem(key) || "";
+          if (/token|authorization/i.test(key)) send(value, "storage-key:" + key);
+          scanText(value, "storage-value:" + key);
+        }
+      } catch (error) {}
+    });
+  }
+  scanStore();
+  const originalFetch = window.fetch;
+  if (originalFetch && !originalFetch.__sop4chanWrapped) {
+    const wrappedFetch = function(input, init) {
+      try {
+        scanHeaders(input && input.headers, "fetch-input");
+        scanHeaders(init && init.headers, "fetch-init");
+        if (input && input.url) scanText(input.url, "fetch-url");
+        if (typeof input === "string") scanText(input, "fetch-url");
+      } catch (error) {}
+      return originalFetch.apply(this, arguments).then((response) => {
+        try {
+          scanHeaders(response && response.headers, "fetch-response");
+          const contentType = response.headers && response.headers.get && response.headers.get("content-type");
+          if (/json|text|javascript/i.test(contentType || "")) {
+            response.clone().text().then((text) => scanText(text, "fetch-body")).catch(() => {});
+          }
+        } catch (error) {}
+        return response;
+      });
+    };
+    wrappedFetch.__sop4chanWrapped = true;
+    window.fetch = wrappedFetch;
+  }
+  const xhrProto = window.XMLHttpRequest && window.XMLHttpRequest.prototype;
+  if (xhrProto && !xhrProto.__sop4chanWrapped) {
+    xhrProto.__sop4chanWrapped = true;
+    const originalOpen = xhrProto.open;
+    const originalSetHeader = xhrProto.setRequestHeader;
+    xhrProto.open = function(method, url) {
+      this.__sop4chanUrl = url;
+      scanText(url, "xhr-url");
+      return originalOpen.apply(this, arguments);
+    };
+    xhrProto.setRequestHeader = function(key, value) {
+      if (/token|authorization/i.test(key) || /Bearer\s+|token|access_token|merchant_token/i.test(value)) {
+        send(value, "xhr-request:" + key);
+      }
+      return originalSetHeader.apply(this, arguments);
+    };
+    const originalSend = xhrProto.send;
+    xhrProto.send = function(body) {
+      scanText(this.__sop4chanUrl, "xhr-send-url");
+      scanText(body, "xhr-send-body");
+      this.addEventListener("load", function() {
+        try {
+          send(this.getResponseHeader("Authorization"), "xhr-response:authorization");
+          scanText(this.responseText, "xhr-response-body");
+        } catch (error) {}
+      });
+      return originalSend.apply(this, arguments);
+    };
+  }
+  let rounds = 0;
+  const timer = setInterval(() => {
+    scanStore();
+    rounds += 1;
+    if (window.__sop4chanTokenCaptured || rounds >= 120) clearInterval(timer);
+  }, 5000);
+  alert("四季蝉授权助手已启动：请在新零售页面点击首页/活动/报表等页面，助手会自动捕获接口token并回传服务器。");
+})();`;
+  return helperSource
+    .replace("__ENDPOINT__", JSON.stringify(endpoint))
+    .replace("__HANDOFF_TOKEN__", JSON.stringify(handoffToken))
+    .replace("__MER_CODE__", JSON.stringify(merCode || ""))
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function networkErrorMessage(error) {
   const parts = [error?.message].filter(Boolean);
   const cause = error?.cause;
@@ -4927,7 +5085,7 @@ async function handleCreateWeComHandoff(req, res) {
   const baseUrl = publicReportBaseUrl.replace(/\/+$/, "");
   const ssoRedirect = `${baseUrl}/api/wecom-sso/callback?handoffId=${encodeURIComponent(handoff.id)}`;
   const wecomSsoUrl = `https://login.work.weixin.qq.com/wwlogin/sso/login/?login_type=CorpApp&appid=ww408c023179829552&agentid=1000157&redirect_uri=${encodeURIComponent(ssoRedirect)}&state=${encodeURIComponent(handoff.handoffToken)}`;
-  const helperScript = `(async()=>{const endpoint=${JSON.stringify(`${baseUrl}/api/wecom-token-capture`)};const handoffToken=${JSON.stringify(handoff.handoffToken)};const merCode=${JSON.stringify(handoff.merCode)};const keys=['token','access_token','Authorization','authorization','sijichan_token','merchant_token'];let token='';for(const store of [localStorage,sessionStorage]){for(const key of keys){token=store.getItem(key)||token;}for(let i=0;i<store.length;i++){const key=store.key(i);const val=store.getItem(key)||'';if(!token&&/token|authorization/i.test(key)&&val.length>20)token=val;}}if(!token){token=prompt('没有自动找到token，请粘贴新零售接口请求里的Authorization token');}if(!token)return alert('未获取到token');const r=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({handoffToken,token,merCode})});const data=await r.json().catch(()=>({}));alert(r.ok?'授权token已交给四季蝉服务器，可以回到门户生成报告。':(data.error||'交接失败'));})();`;
+  const helperScript = renderWeComHandoffHelperScript({ endpoint: `${baseUrl}/api/wecom-token-capture`, handoffToken: handoff.handoffToken, merCode: handoff.merCode });
   sendJson(res, 200, { ok: true, ...handoff, wecomSsoUrl, helperScript });
 }
 
