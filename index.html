@@ -2398,6 +2398,8 @@
         const progressTimersRef = React.useRef([]);
         const handoffPollRef = React.useRef(null);
         const browserSessionPollRef = React.useRef(null);
+        const weComAutoReportRef = React.useRef({ triggered: false, running: false });
+        const generateFromWeComRef = React.useRef(null);
         const weComSsoUrl = "https://login.work.weixin.qq.com/wwlogin/sso/login/?login_type=CorpApp&appid=ww408c023179829552&agentid=1000157&redirect_uri=https%3A%2F%2Fmerchants.hydee.cn%2Fapp-jump%2Fsuper-admin-login&state=WWLogin";
 
         const loadStatus = React.useCallback(async () => {
@@ -2548,6 +2550,20 @@
           window.open(weComSsoUrl, "_blank", "noopener,noreferrer");
         };
 
+        const triggerWeComAutoReport = (reason, nextSession = null, nextHandoff = null) => {
+          if (weComAutoReportRef.current.triggered || weComAutoReportRef.current.running) return;
+          const run = generateFromWeComRef.current;
+          if (typeof run !== "function") return;
+          weComAutoReportRef.current = { triggered: true, running: true };
+          message.success(reason || "企微扫码已就绪，开始自动生成复盘报告");
+          new Promise((resolve) => setTimeout(resolve, 500))
+            .then(() => generateFromWeComRef.current?.({ auto: true, session: nextSession, handoff: nextHandoff }))
+            .catch(() => null)
+            .finally(() => {
+              weComAutoReportRef.current.running = false;
+            });
+        };
+
         const pollWeComHandoff = React.useCallback((handoffId) => {
           if (!handoffId) return;
           if (handoffPollRef.current) clearInterval(handoffPollRef.current);
@@ -2561,6 +2577,7 @@
                   clearInterval(handoffPollRef.current);
                   handoffPollRef.current = null;
                   message.success("已捕获新零售授权token，可以生成报告");
+                  triggerWeComAutoReport("已捕获新零售授权，开始自动生成复盘报告", null, data.handoff);
                 }
               }
             } catch {
@@ -2585,6 +2602,9 @@
                   clearInterval(browserSessionPollRef.current);
                   browserSessionPollRef.current = null;
                   message.success("服务器已捕获新零售授权token，可以生成报告");
+                  triggerWeComAutoReport("服务器已捕获新零售授权，开始自动生成复盘报告", data.session, data.handoff);
+                } else if (data.session.exportReady) {
+                  triggerWeComAutoReport("服务器登录态已具备导出能力，开始自动生成复盘报告", data.session, data.handoff);
                 }
               }
             } catch {
@@ -2636,6 +2656,7 @@
           try {
             setWeComBrowserSession(null);
             setWeComHandoff(null);
+            weComAutoReportRef.current = { triggered: false, running: false };
             const response = await fetch("/api/wecom-browser-session", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -2660,17 +2681,19 @@
           copyText(`javascript:${weComHandoff.helperScript}`).then(() => message.success("授权助手已复制；在新零售页面运行后，点击报表或活动页面即可自动捕获token"));
         };
 
-        const generateFromWeComHandoff = async () => {
+        const generateFromWeComHandoff = async (options = {}) => {
+          const activeSession = options.session || weComBrowserSession;
+          const activeHandoff = options.handoff || weComHandoff;
           if (!status?.configured) {
-            message.warning("请先完成AI配置");
+            if (!options.auto) message.warning("请先完成AI配置");
             return;
           }
-          if (!weComBrowserSession?.id && !weComHandoff?.id) {
-            message.warning("请先创建服务器扫码会话");
+          if (!activeSession?.id && !activeHandoff?.id) {
+            if (!options.auto) message.warning("请先创建服务器扫码会话");
             return;
           }
-          if (!weComHandoff?.captured && !weComBrowserSession?.exportReady) {
-            message.warning("服务器尚未确认新零售导出能力，请扫码登录后稍等片刻");
+          if (!activeHandoff?.captured && !activeSession?.exportReady) {
+            if (!options.auto) message.warning("服务器尚未确认新零售导出能力，请扫码登录后稍等片刻");
             return;
           }
           const values = sourceForm.getFieldsValue();
@@ -2678,11 +2701,11 @@
           resetReport({ keepWeComHandoff: true });
           startReviewProgress("sijichan");
           try {
-            const useBrowserSession = Boolean(weComBrowserSession?.id);
+            const useBrowserSession = Boolean(activeSession?.id);
             const response = await fetch(useBrowserSession ? "/api/wecom-browser-session-review-report" : "/api/wecom-handoff-review-report", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ sessionId: weComBrowserSession?.id, handoffId: weComHandoff?.id, merCode: values.merCode, merName: values.merName }),
+              body: JSON.stringify({ sessionId: activeSession?.id, handoffId: activeHandoff?.id, merCode: values.merCode, merName: values.merName }),
             });
             const data = await response.json().catch(() => ({}));
             if (!response.ok) {
@@ -2702,6 +2725,7 @@
             setLoading(false);
           }
         };
+        generateFromWeComRef.current = generateFromWeComHandoff;
 
         const generateReport = async () => {
           if (!file) {
