@@ -3576,7 +3576,6 @@
               "div",
               { className: "section-title-row" },
               h(Title, { level: 2 }, `${monthLabel}自动营销推荐`),
-              h(Paragraph, null, "每月月初可登录曾经生成过复盘报告且已授权保存的客户四季蝉账号，读取活动列表和活动商品明细，汇总生成当月营销建议。"),
             ),
             !auth?.user
               ? h(Alert, { showIcon: true, type: "info", message: "登录后查看自动推荐", description: "自动推荐结果按登录用户隔离；管理员可生成全部已授权客户的当月推荐。" })
@@ -3600,7 +3599,6 @@
                           { className: "marketing-slide", key: activeCard.id },
                           h(Space, { wrap: true, size: [8, 8] }, h(Tag, { color: "blue" }, "合并分析"), h(Tag, { color: "orange" }, "已脱敏"), h(Text, { type: "secondary" }, aggregate.monthKey || monthKey)),
                           h(Title, { level: 3 }, activeCard.title),
-                          h(Paragraph, null, activeCard.summary),
                           h(
                             "div",
                             { className: "marketing-kpi-row" },

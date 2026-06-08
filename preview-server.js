@@ -1426,7 +1426,7 @@ function anonymizedMarketingCard(index, sourceItems, monthKey) {
   return {
     id: `anonymized-${monthKey || "current"}-${index + 1}`,
     title,
-    summary: `基于 ${sourceItems.length} 组已授权客户数据合并分析，覆盖活动 ${totalActivity} 条、活动商品 ${totalProduct} 条。`,
+    summary: "",
     products: index === 0 ? allFocus.slice(0, 10) : allFocus.slice(4, 14),
     actions: allActions.slice(index * 3, index * 3 + 3).length ? allActions.slice(index * 3, index * 3 + 3) : [fallbackAction],
     tags: index === 0 ? ["合并分析", "重点品", "动销任务"] : ["激励策略", "培训承接", "周复盘"],
