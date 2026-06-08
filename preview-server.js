@@ -4015,6 +4015,31 @@ function getWeComBrowserSessionPublic(session) {
   };
 }
 
+function logWeComSessionState(session, reason = "state") {
+  if (!session) return;
+  const compactUrl = (value) => {
+    try {
+      const parsed = new URL(String(value || ""));
+      return `${parsed.origin}${parsed.pathname}`;
+    } catch {
+      return String(value || "").slice(0, 180);
+    }
+  };
+  const snapshot = {
+    status: session.status || "",
+    captured: session.status === "captured",
+    merchantReady: Boolean(session.currentUrl && isMerchantRuntimeUrl(session.currentUrl)),
+    exportReady: Boolean(session.exportReady),
+    pageTitle: session.pageTitle || "",
+    currentUrl: compactUrl(session.currentUrl || ""),
+    exportProbeError: session.exportProbeError || "",
+  };
+  const nextKey = JSON.stringify(snapshot);
+  if (session.lastLoggedStateKey === nextKey) return;
+  session.lastLoggedStateKey = nextKey;
+  console.log(`[wecom-browser] ${reason} ${session.id} ${nextKey}`);
+}
+
 async function closeWeComBrowserSession(session, status = "") {
   if (!session) return;
   if (session.pollTimer) clearInterval(session.pollTimer);
@@ -4095,6 +4120,7 @@ async function createWeComBrowserSession(user, body = {}) {
       session.status = "captured";
       session.lastError = "";
       session.updatedAt = new Date().toISOString();
+      logWeComSessionState(session, `captured:${from}`);
     } catch (error) {
       session.lastError = error.message || "服务器扫码 token 保存失败。";
       session.updatedAt = new Date().toISOString();
@@ -4211,10 +4237,12 @@ async function createWeComBrowserSession(user, body = {}) {
       }
       session.exportProbeAt = new Date().toISOString();
       session.updatedAt = session.exportProbeAt;
+      logWeComSessionState(session, "export-probe");
     } catch (error) {
       session.exportProbeError = error.message || "服务器浏览器导出探测失败。";
       session.exportProbeAt = new Date().toISOString();
       session.updatedAt = session.exportProbeAt;
+      logWeComSessionState(session, "export-probe-error");
     }
   };
   try {
@@ -4331,8 +4359,10 @@ async function createWeComBrowserSession(user, body = {}) {
         page.title().then((title) => {
           session.pageTitle = title || "";
           session.updatedAt = new Date().toISOString();
+          logWeComSessionState(session, "navigate");
         }).catch(() => null);
         session.updatedAt = new Date().toISOString();
+        logWeComSessionState(session, "navigate");
         scanMerchantPageStorage().catch(() => null);
         scanMerchantCookies().catch(() => null);
         tryFillMerchantCode().catch(() => null);
@@ -4367,6 +4397,7 @@ async function createWeComBrowserSession(user, body = {}) {
       .catch(() => null);
     session.status = "waiting_scan";
     session.updatedAt = new Date().toISOString();
+    logWeComSessionState(session, "qr-ready");
     session.pollTimer = setInterval(async () => {
       try {
         if (session.page && session.status !== "captured") {
@@ -5706,7 +5737,9 @@ async function handleGetWeComBrowserSession(req, res, id) {
   if (handoff?.captured && session.status !== "captured") {
     session.status = "captured";
     session.updatedAt = new Date().toISOString();
+    logWeComSessionState(session, "handoff-captured");
   }
+  logWeComSessionState(session, "poll");
   sendJson(res, 200, { ok: true, session: getWeComBrowserSessionPublic(session), handoff });
 }
 
