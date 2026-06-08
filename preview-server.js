@@ -4062,8 +4062,19 @@ async function createWeComBrowserSession(user, body = {}) {
   };
   activeWeComBrowserSessions.set(session.id, session);
   const tokenPattern = /(?:Authorization|authorization)\s*[:=]\s*["']?(?:Bearer\s+)?([A-Za-z0-9._\-]{20,})|(?:token|access_token|merchant_token|accessToken)\s*["']?\s*[:=]\s*["']([A-Za-z0-9._\-]{20,})["']/i;
-  const maybeCapture = async (raw, from) => {
+  const isMerchantRuntimeUrl = (url) => {
+    try {
+      const parsed = new URL(String(url || ""), sijichanApiOrigin);
+      if (parsed.hostname !== "merchants.hydee.cn") return false;
+      return /businesses-gateway|app-jump|super-admin|merchant|mer-manager|report|activity|industryOrder|imActivityReward|orderShareMoment/i.test(parsed.pathname);
+    } catch {
+      return false;
+    }
+  };
+  const maybeCapture = async (raw, from, sourceUrl = "") => {
     if (session.status === "captured") return;
+    const runtimeUrl = sourceUrl || session.currentUrl || "";
+    if (!isMerchantRuntimeUrl(runtimeUrl)) return;
     const token = normalizeSijichanToken((String(raw || "").match(tokenPattern) || [])[1] || (String(raw || "").match(tokenPattern) || [])[2] || raw);
     if (!token || token.length < 20 || !/^[A-Za-z0-9._\-]+$/.test(token)) return;
     try {
@@ -4100,18 +4111,18 @@ async function createWeComBrowserSession(user, body = {}) {
     page.on("request", (request) => {
       session.currentUrl = request.url();
       const headers = request.headers();
-      maybeCapture(headers.authorization || headers.Authorization, "server-browser-request-header");
-      maybeCapture(request.url(), "server-browser-request-url");
+      maybeCapture(headers.authorization || headers.Authorization, "server-browser-request-header", request.url());
+      maybeCapture(request.url(), "server-browser-request-url", request.url());
       const postData = request.postData();
-      if (postData) maybeCapture(postData, "server-browser-request-body");
+      if (postData) maybeCapture(postData, "server-browser-request-body", request.url());
     });
     page.on("response", async (response) => {
       session.currentUrl = response.url();
       const headers = response.headers();
-      maybeCapture(headers.authorization || headers.Authorization, "server-browser-response-header");
+      maybeCapture(headers.authorization || headers.Authorization, "server-browser-response-header", response.url());
       const contentType = headers["content-type"] || "";
       if (/json|text|javascript/i.test(contentType)) {
-        response.text().then((text) => maybeCapture(text, "server-browser-response-body")).catch(() => null);
+        response.text().then((text) => maybeCapture(text, "server-browser-response-body", response.url())).catch(() => null);
       }
     });
     page.on("framenavigated", (frame) => {
