@@ -1747,6 +1747,7 @@
         Form,
         Input,
         Modal,
+        Progress,
         Radio,
         Row,
         Space,
@@ -2289,6 +2290,7 @@
 
         const startReviewProgress = (type) => {
           progressTimersRef.current.forEach((timer) => clearTimeout(timer));
+          progressTimersRef.current = [];
           const steps =
             type === "excel"
               ? [
@@ -2304,21 +2306,73 @@
                   { title: "读取培训打赏", description: "正在读取培训情况和厂家打赏数据。" },
                   { title: "生成报告", description: "正在生成AI报告、Excel汇总、分享网页、SVG长图和二维码。" },
                 ];
-          setReviewProgress({ steps, current: 0, status: "process", text: steps[0].description });
-          [
+          const finalStep = steps.length - 1;
+          const startedAt = Date.now();
+          const waitMessages = [
+            [0, "正在排队处理请求，准备复盘数据。"],
+            [8, "已进入报告生成阶段，AI正在阅读完整数据摘要。"],
+            [20, "数据量较大时需要更久一点，正在整理核心结论和复盘建议。"],
+            [40, "仍在等待AI返回结果；系统会继续保留完整摘要，不压缩分析上下文。"],
+            [60, "AI如长时间无响应，后端会自动基于结构化数据生成兜底报告，避免一直卡住。"],
+            [90, "正在做最后等待；若外部AI超时，将继续产出分享页、SVG、二维码和Excel。"],
+          ];
+          const waitTextFor = (elapsedSeconds) => {
+            let text = waitMessages[0][1];
+            for (const [threshold, messageText] of waitMessages) {
+              if (elapsedSeconds >= threshold) text = messageText;
+            }
+            return text;
+          };
+          const progressPercentFor = (elapsedSeconds, current) => {
+            if (current < finalStep) return Math.min(72, 12 + current * 18 + Math.floor(elapsedSeconds / 2));
+            return Math.min(96, 72 + Math.floor(Math.max(0, elapsedSeconds - 8) / 3));
+          };
+          setReviewProgress({
+            steps,
+            current: 0,
+            status: "process",
+            text: steps[0].description,
+            elapsedSeconds: 0,
+            percent: 8,
+            startedAt,
+          });
+          const schedule = [
             [700, 1],
             [2200, 2],
             [5200, 3],
             [7600, 4],
-          ].forEach(([delay, current]) => {
+          ].filter(([, current]) => current <= finalStep);
+          schedule.forEach(([delay, current]) => {
             const timer = setTimeout(() => {
               setReviewProgress((prev) => {
                 if (!prev || prev.status !== "process") return prev;
-                return { ...prev, current, text: prev.steps[current].description };
+                const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
+                return {
+                  ...prev,
+                  current,
+                  elapsedSeconds,
+                  percent: progressPercentFor(elapsedSeconds, current),
+                  text: current >= finalStep ? waitTextFor(elapsedSeconds) : prev.steps[current].description,
+                };
               });
             }, delay);
             progressTimersRef.current.push(timer);
           });
+          const interval = setInterval(() => {
+            setReviewProgress((prev) => {
+              if (!prev || prev.status !== "process") return prev;
+              const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
+              const current = elapsedSeconds >= 8 ? Math.max(prev.current, finalStep) : prev.current;
+              return {
+                ...prev,
+                current,
+                elapsedSeconds,
+                percent: progressPercentFor(elapsedSeconds, current),
+                text: current >= finalStep ? waitTextFor(elapsedSeconds) : prev.steps[current].description,
+              };
+            });
+          }, 3000);
+          progressTimersRef.current.push(interval);
         };
 
         const finishReviewProgress = (ok, text) => {
@@ -2330,6 +2384,7 @@
               ...prev,
               current: ok ? prev.steps.length - 1 : Math.max(prev.current, 0),
               status: ok ? "finish" : "error",
+              percent: ok ? 100 : prev.percent,
               text: text || (ok ? "复盘报告已生成，可打开分享页或下载长图。" : "生成失败，请检查数据或稍后重试。"),
             };
           });
@@ -2541,7 +2596,24 @@
                       type: reviewProgress.status === "error" ? "error" : reviewProgress.status === "finish" ? "success" : "info",
                       showIcon: true,
                       message: reviewProgress.status === "finish" ? "处理完成" : reviewProgress.status === "error" ? "处理失败" : "正在处理",
-                      description: reviewProgress.text,
+                      description: h(
+                        "div",
+                        { className: "review-progress-copy" },
+                        h("div", null, reviewProgress.text),
+                        reviewProgress.status === "process"
+                          ? h(
+                              Text,
+                              { type: "secondary" },
+                              `已等待 ${reviewProgress.elapsedSeconds || 0} 秒，数据越大、AI响应越慢时等待时间会自动延长。`,
+                            )
+                          : null,
+                      ),
+                    }),
+                    h(Progress, {
+                      percent: reviewProgress.percent || (reviewProgress.status === "finish" ? 100 : 8),
+                      status: reviewProgress.status === "error" ? "exception" : reviewProgress.status === "finish" ? "success" : "active",
+                      showInfo: true,
+                      style: { marginTop: 12 },
                     }),
                   )
                 : null,

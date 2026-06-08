@@ -1329,17 +1329,24 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchWithRetry(url, options, label, retries = 3) {
+async function fetchWithRetry(url, options, label, retries = 1) {
   let lastError;
+  const timeoutMs = Number(process.env.AI_REQUEST_TIMEOUT_MS || 60000);
   for (let attempt = 1; attempt <= retries; attempt += 1) {
     try {
-      return await fetch(url, options);
+      return await fetch(url, {
+        ...options,
+        signal: options?.signal || AbortSignal.timeout(timeoutMs),
+      });
     } catch (error) {
       lastError = error;
       if (attempt < retries) await sleep(1500 * attempt);
     }
   }
-  throw new Error(`${label}请求失败（${url}）：${lastError?.message || "网络连接失败"}`);
+  const message = lastError?.name === "TimeoutError"
+    ? `超过 ${Math.round(timeoutMs / 1000)} 秒未返回`
+    : lastError?.message || "网络连接失败";
+  throw new Error(`${label}请求失败（${url}）：${message}`);
 }
 
 async function callOpenAI(config, input, useSchema = true) {
@@ -2028,10 +2035,10 @@ async function generateReportFromSummary(summary) {
     throw error;
   }
 
-  const prompt = buildPrompt(summary);
-  const reportText = await callConfiguredAI(config, prompt);
   let report;
   try {
+    const prompt = buildPrompt(summary);
+    const reportText = await callConfiguredAI(config, prompt);
     report = normalizeReport(parseReportJson(reportText));
   } catch (error) {
     report = fallbackReportFromSummary(summary, error.message);
