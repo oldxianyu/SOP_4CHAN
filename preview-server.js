@@ -863,6 +863,171 @@ async function saveCustomerProfile(userId, body) {
   return row;
 }
 
+function normalizeAdminUserRow(row) {
+  const user = normalizeUserRow(row);
+  if (!user) return null;
+  return {
+    id: user.id,
+    name: user.name || "",
+    phone: user.phone || "",
+    email: user.email || "",
+    role: user.role || "customer",
+    status: user.status || "active",
+    companyName: row.company_name || row.companyName || "",
+    reportCount: Number(row.report_count ?? row.reportCount ?? 0),
+    datasetCount: Number(row.dataset_count ?? row.datasetCount ?? 0),
+    aiConfigCount: Number(row.ai_config_count ?? row.aiConfigCount ?? 0),
+    lastLoginAt: row.last_login_at || row.lastLoginAt || "",
+    createdAt: user.created_at || "",
+    updatedAt: user.updated_at || "",
+  };
+}
+
+async function listAdminUsers() {
+  if (await isDbAvailable()) {
+    const result = await queryDb(
+      `select
+         u.id, u.name, u.phone, u.email, u.password_hash, u.role, u.status, u.created_at, u.updated_at,
+         coalesce(cp.company_name, '') as company_name,
+         coalesce(rr.report_count, 0)::int as report_count,
+         coalesce(cd.dataset_count, 0)::int as dataset_count,
+         coalesce(ac.ai_config_count, 0)::int as ai_config_count,
+         al.last_login_at
+       from users u
+       left join (
+         select user_id, max(company_name) as company_name
+         from customer_profiles
+         group by user_id
+       ) cp on cp.user_id = u.id
+       left join (
+         select user_id, count(*)::int as report_count
+         from review_reports
+         group by user_id
+       ) rr on rr.user_id = u.id
+       left join (
+         select user_id, count(*)::int as dataset_count
+         from customer_datasets
+         group by user_id
+       ) cd on cd.user_id = u.id
+       left join (
+         select coalesce(owner_user_id, updated_by) as user_id, count(*)::int as ai_config_count
+         from ai_configs
+         group by coalesce(owner_user_id, updated_by)
+       ) ac on ac.user_id = u.id
+       left join (
+         select user_id, max(created_at) as last_login_at
+         from auth_operation_logs
+         where operation_type = 'login' and success = true
+         group by user_id
+       ) al on al.user_id = u.id
+       order by u.created_at desc`,
+    );
+    return result.rows.map(normalizeAdminUserRow);
+  }
+
+  const data = readLocalData();
+  return data.users
+    .map((user) => {
+      const userId = user.id;
+      const profile = data.customerProfiles.find((item) => item.userId === userId || item.user_id === userId) || {};
+      return normalizeAdminUserRow({
+        ...user,
+        companyName: profile.companyName || profile.company_name || "",
+        reportCount: data.reviewReports.filter((item) => item.userId === userId || item.user_id === userId).length,
+        datasetCount: data.customerDatasets.filter((item) => item.userId === userId || item.user_id === userId).length,
+        aiConfigCount: data.aiConfigs.filter((item) => item.ownerUserId === userId || item.updatedBy === userId || item.owner_user_id === userId || item.updated_by === userId).length,
+      });
+    })
+    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+}
+
+function normalizeAdminUserUpdate(body, current) {
+  const next = {
+    name: String(body.name ?? current.name ?? "").trim(),
+    phone: String(body.phone ?? current.phone ?? "").trim(),
+    email: String(body.email ?? current.email ?? "").trim(),
+    role: String(body.role ?? current.role ?? "customer").trim(),
+    status: String(body.status ?? current.status ?? "active").trim(),
+  };
+  if (!next.name) {
+    const error = new Error("请填写用户姓名。");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!["admin", "customer"].includes(next.role)) {
+    const error = new Error("用户角色不正确。");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!["active", "disabled"].includes(next.status)) {
+    const error = new Error("用户状态不正确。");
+    error.statusCode = 400;
+    throw error;
+  }
+  return next;
+}
+
+async function updateAdminUser(adminUser, userId, body) {
+  const current = await getUserById(userId);
+  if (!current) {
+    const error = new Error("用户不存在。");
+    error.statusCode = 404;
+    throw error;
+  }
+  const next = normalizeAdminUserUpdate(body, current);
+  if (adminUser.id === userId && (next.role !== "admin" || next.status !== "active")) {
+    const error = new Error("不能停用或降级当前登录的管理员账号。");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (await isDbAvailable()) {
+    try {
+      const result = await queryDb(
+        `update users
+         set name = $2,
+             phone = nullif($3, ''),
+             email = nullif($4, ''),
+             role = $5,
+             status = $6,
+             updated_at = now()
+         where id = $1
+         returning *`,
+        [userId, next.name, next.phone, next.email, next.role, next.status],
+      );
+      return normalizeAdminUserRow(result.rows[0]);
+    } catch (error) {
+      if (error.code === "23505") {
+        const friendly = new Error("手机号或邮箱已被其他用户使用。");
+        friendly.statusCode = 409;
+        throw friendly;
+      }
+      throw error;
+    }
+  }
+
+  const data = readLocalData();
+  const index = data.users.findIndex((user) => user.id === userId);
+  if (index < 0) {
+    const error = new Error("用户不存在。");
+    error.statusCode = 404;
+    throw error;
+  }
+  if (next.phone && data.users.some((user) => user.id !== userId && user.phone === next.phone)) {
+    const error = new Error("手机号已被其他用户使用。");
+    error.statusCode = 409;
+    throw error;
+  }
+  if (next.email && data.users.some((user) => user.id !== userId && String(user.email || "").toLowerCase() === next.email.toLowerCase())) {
+    const error = new Error("邮箱已被其他用户使用。");
+    error.statusCode = 409;
+    throw error;
+  }
+  Object.assign(data.users[index], next, { updatedAt: new Date().toISOString() });
+  writeLocalData(data);
+  return (await listAdminUsers()).find((user) => user.id === userId) || normalizeAdminUserRow(data.users[index]);
+}
+
 function encryptSecret(value) {
   const secret = crypto.createHash("sha256").update(getSessionSecret()).digest();
   const iv = crypto.randomBytes(12);
@@ -4312,6 +4477,24 @@ async function handleListReports(req, res) {
   sendJson(res, 200, { reports });
 }
 
+async function handleAdminListUsers(req, res) {
+  const user = await requireAdmin(req, res);
+  if (!user) return;
+  sendJson(res, 200, { users: await listAdminUsers() });
+}
+
+async function handleAdminUpdateUser(req, res, id) {
+  const user = await requireAdmin(req, res);
+  if (!user) return;
+  const body = await readJsonBody(req, 1024 * 256);
+  try {
+    const updated = await updateAdminUser(user, id, body);
+    sendJson(res, 200, { ok: true, user: updated });
+  } catch (error) {
+    sendJson(res, error.statusCode || 500, { error: error.message || "用户信息更新失败。" });
+  }
+}
+
 async function handleGetReport(req, res, id) {
   const user = await requireUser(req, res);
   if (!user) return;
@@ -4404,8 +4587,11 @@ function createServer() {
       if (url.pathname === "/api/monthly-marketing-recommendations" && req.method === "GET") return await handleListMonthlyMarketing(req, res);
       if (url.pathname === "/api/monthly-marketing-recommendations/generate" && req.method === "POST") return await handleGenerateMonthlyMarketing(req, res);
       if (url.pathname === "/api/review-reports" && req.method === "GET") return await handleListReports(req, res);
+      if (url.pathname === "/api/admin/users" && req.method === "GET") return await handleAdminListUsers(req, res);
       if (url.pathname === "/api/capability-test-submissions" && req.method === "POST") return await handleSubmitCapabilityTest(req, res);
       if (url.pathname === "/api/capability-test-submissions" && req.method === "GET") return await handleListCapabilityTests(req, res);
+      const adminUserMatch = url.pathname.match(/^\/api\/admin\/users\/([^/]+)$/);
+      if (adminUserMatch && req.method === "PATCH") return await handleAdminUpdateUser(req, res, decodeURIComponent(adminUserMatch[1]));
       const reportMatch = url.pathname.match(/^\/api\/review-reports\/([^/]+)$/);
       if (reportMatch && req.method === "GET") return await handleGetReport(req, res, decodeURIComponent(reportMatch[1]));
       return serveStatic(req, res);
