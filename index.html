@@ -2942,6 +2942,13 @@
                                     : weComBrowserSession.lastError || "请使用企业微信扫描上方二维码；扫码确认后如果进入新零售管理平台，服务器会自动尝试获取授权并填入客户编码。",
                                 },
                               ),
+                              h(
+                                Space,
+                                { wrap: true, style: { marginTop: 10 } },
+                                h(Tag, { color: weComBrowserSession.merchantReady ? "green" : "blue", className: "large-tag" }, weComBrowserSession.merchantReady ? "已进入新零售" : "等待扫码登录"),
+                                h(Tag, { color: weComBrowserSession.exportReady ? "green" : "orange", className: "large-tag" }, weComBrowserSession.exportReady ? "接口可导出" : "等待接口探测"),
+                                weComBrowserSession.exportProbeAt ? h(Tag, { color: "default", className: "large-tag" }, `探测时间 ${dayjs(weComBrowserSession.exportProbeAt).format("HH:mm:ss")}`) : null,
+                              ),
                             )
                           : null,
                         weComHandoff && !weComBrowserSession?.captured
