@@ -4003,6 +4003,7 @@ function getWeComBrowserSessionPublic(session) {
     exportProbeError: session.exportProbeError || "",
     qrImage: session.qrImage || "",
     currentUrl: session.currentUrl || "",
+    lastRequestUrl: session.lastRequestUrl || "",
     lastError: session.lastError || "",
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
@@ -4068,6 +4069,7 @@ async function createWeComBrowserSession(user, body = {}) {
     status: "opening",
     qrImage: "",
     currentUrl: "",
+    lastRequestUrl: "",
     lastError: "",
     browser: null,
     page: null,
@@ -4084,7 +4086,7 @@ async function createWeComBrowserSession(user, body = {}) {
     const token = normalizeSijichanToken((String(raw || "").match(tokenPattern) || [])[1] || (String(raw || "").match(tokenPattern) || [])[2] || raw);
     if (!token || token.length < 20 || !/^[A-Za-z0-9._\-]+$/.test(token)) return;
     try {
-      await markSijichanHandoffCapturedById(handoff.id, user.id, token, { from, href: session.currentUrl });
+      await markSijichanHandoffCapturedById(handoff.id, user.id, token, { from, href: runtimeUrl });
       session.status = "captured";
       session.lastError = "";
       session.updatedAt = new Date().toISOString();
@@ -4303,7 +4305,7 @@ async function createWeComBrowserSession(user, body = {}) {
       }
     });
     page.on("request", (request) => {
-      session.currentUrl = request.url();
+      session.lastRequestUrl = request.url();
       const headers = request.headers();
       maybeCapture(headers.authorization || headers.Authorization, "server-browser-request-header", request.url());
       maybeCapture(request.url(), "server-browser-request-url", request.url());
@@ -4311,7 +4313,7 @@ async function createWeComBrowserSession(user, body = {}) {
       if (postData) maybeCapture(postData, "server-browser-request-body", request.url());
     });
     page.on("response", async (response) => {
-      session.currentUrl = response.url();
+      session.lastRequestUrl = response.url();
       const headers = response.headers();
       maybeCapture(headers.authorization || headers.Authorization, "server-browser-response-header", response.url());
       const contentType = headers["content-type"] || "";
