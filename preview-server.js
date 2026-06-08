@@ -4003,6 +4003,8 @@ function getWeComBrowserSessionPublic(session) {
     exportReady: Boolean(session.exportReady),
     exportProbeAt: session.exportProbeAt || "",
     exportProbeError: session.exportProbeError || "",
+    merCodeFilled: Boolean(session.merCodeFilled),
+    merCodeSubmitTried: Boolean(session.merCodeSubmitTried),
     qrImage: session.qrImage || "",
     currentUrl: session.currentUrl || "",
     lastRequestUrl: session.lastRequestUrl || "",
@@ -4178,11 +4180,22 @@ async function createWeComBrowserSession(user, body = {}) {
       target.value = merCode;
       target.dispatchEvent(new Event("input", { bubbles: true }));
       target.dispatchEvent(new Event("change", { bubbles: true }));
-      return true;
+      ["keydown", "keypress", "keyup"].forEach((type) => {
+        target.dispatchEvent(new KeyboardEvent(type, { key: "Enter", code: "Enter", bubbles: true }));
+      });
+      const buttons = Array.from(document.querySelectorAll("button, [role='button'], .ant-btn"));
+      const action = buttons.find((button) => /确认|确定|登录|进入|查询|切换|提交|搜索|下一步|授权/i.test(button.textContent || button.getAttribute("aria-label") || ""));
+      if (action) {
+        action.click();
+        return "filled-clicked";
+      }
+      return "filled";
     }, handoff.merCode).catch(() => false);
     if (filled) {
       session.merCodeFilled = true;
+      session.merCodeSubmitTried = filled === "filled-clicked";
       session.updatedAt = new Date().toISOString();
+      logWeComSessionState(session, `mer-code-${filled}`);
     }
   };
   const triggerMerchantProbe = async () => {
