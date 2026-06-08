@@ -4413,7 +4413,7 @@ async function createWeComBrowserSession(user, body = {}) {
     logWeComSessionState(session, "qr-ready");
     session.pollTimer = setInterval(async () => {
       try {
-        if (session.page && session.status !== "captured") {
+        if (session.page && !["expired", "error"].includes(session.status)) {
           session.currentUrl = session.page.url();
           session.pageTitle = await session.page.title().catch(() => session.pageTitle || "");
           session.updatedAt = new Date().toISOString();
