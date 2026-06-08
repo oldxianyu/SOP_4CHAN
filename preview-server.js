@@ -2103,6 +2103,7 @@ function buildPrompt(summary) {
     "请关注：品种增长/下滑、活动商品销售与奖励闭环、激励方式使用/未使用价值、店员提现参与、厂家晒单打赏、下一步动作。",
     "新增复盘目标：通过数据证明四季蝉价值，引导客户持续使用，降低流失风险。必须使用 operationInsights 中的健康度、续用风险、价值证明点和建议动作。",
     "请明确输出：1）客户继续使用四季蝉的价值证据；2）可能导致客户流失的风险信号；3）下月应推动客户多用哪些模块或玩法；4）总部、门店、厂家三方各自的跟进动作。",
+    "报告面向中国医药连锁客户阅读，所有可见文字必须使用中文。不要在报告正文中出现 role、actions、bullets、headquarters、stores、factories 等英文键名；下一步动作请写成“总部：……”“门店：……”“厂家：……”这类中文句子。",
     "输出必须是JSON，不要输出Markdown代码块。",
     "数据摘要如下：",
     JSON.stringify(summaryForAi(summary)),
@@ -2317,12 +2318,25 @@ function arrayOfText(value) {
 
 function roleActionItems(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const hasRole = Object.prototype.hasOwnProperty.call(value, "role") || Object.prototype.hasOwnProperty.call(value, "角色");
-  const actionValue = value.actions ?? value.action ?? value.items ?? value.tasks ?? value["动作"] ?? value["行动"];
+  const hasRole =
+    Object.prototype.hasOwnProperty.call(value, "role") ||
+    Object.prototype.hasOwnProperty.call(value, "roles") ||
+    Object.prototype.hasOwnProperty.call(value, "角色");
+  const actionValue =
+    value.actions ??
+    value.action ??
+    value.bullets ??
+    value.bullet ??
+    value.items ??
+    value.tasks ??
+    value["动作"] ??
+    value["行动"] ??
+    value["要点"] ??
+    value["建议"];
   if (!hasRole || actionValue === undefined) return null;
-  const role = reportActionLabel(value.role || value["角色"] || "动作");
+  const role = reportActionLabel(value.role || value.roles || value["角色"] || "动作");
   const actions = arrayOfText(actionValue)
-    .map((item) => String(item || "").replace(/^(actions?|动作|行动)\s*[：:]\s*/i, "").trim())
+    .map((item) => stripActionKeyPrefix(item))
     .filter(Boolean);
   if (!actions.length) return role ? [`${role}：待补充动作`] : [];
   return actions.map((item) => `${role}：${item}`);
@@ -2334,6 +2348,8 @@ function reportActionLabel(key) {
     roles: "角色",
     actions: "动作",
     action: "动作",
+    bullets: "要点",
+    bullet: "要点",
     headquarters: "总部",
     headquarter: "总部",
     hq: "总部",
@@ -2367,19 +2383,25 @@ function parseLabeledActionItems(text) {
   }
 }
 
+function stripActionKeyPrefix(value) {
+  return String(value || "")
+    .replace(/^(actions?|bullets?|items?|tasks?|动作|行动|要点|建议)\s*[：:]\s*/i, "")
+    .trim();
+}
+
 function normalizeNextActions(value) {
   const items = arrayOfText(value);
   const normalized = [];
   let currentRole = "";
   for (const item of items) {
-    const roleMatch = String(item).match(/^role\s*[：:]\s*(.+)$/i);
+    const roleMatch = String(item).match(/^(role|roles|角色)\s*[：:]\s*(.+)$/i);
     if (roleMatch) {
-      currentRole = reportActionLabel(roleMatch[1]);
+      currentRole = reportActionLabel(roleMatch[2]);
       continue;
     }
-    const actionMatch = String(item).match(/^actions?\s*[：:]\s*(.+)$/i);
+    const actionMatch = String(item).match(/^(actions?|bullets?|items?|tasks?|动作|行动|要点|建议)\s*[：:]\s*(.+)$/i);
     if (actionMatch) {
-      const action = actionMatch[1].trim();
+      const action = stripActionKeyPrefix(actionMatch[2]);
       normalized.push(currentRole ? `${currentRole}：${action}` : action);
       continue;
     }
