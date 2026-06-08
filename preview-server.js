@@ -27,6 +27,8 @@ const sessionSecretPath = path.join(serverDir, "session-secret");
 const reportsDir = path.join(serverDir, "reports");
 const publicReportBaseUrl = (process.env.PUBLIC_REPORT_BASE_URL || `http://localhost:${configuredPort}`).replace(/\/+$/, "");
 const sijichanApiOrigin = "https://merchants.hydee.cn";
+const sijichanManagerPathBase = "/businesses-gateway/mer-manager/1.0/";
+const sijichanMerchantPathBase = "/businesses-gateway/merchant/1.0/";
 const sijichanManagerBase = `${sijichanApiOrigin}/businesses-gateway/mer-manager/1.0/`;
 const sijichanMerchantBase = `${sijichanApiOrigin}/businesses-gateway/merchant/1.0/`;
 const supabaseProjectRef = "gqinewwwnfdxwqtnapjl";
@@ -4164,9 +4166,9 @@ async function createWeComBrowserSession(user, body = {}) {
     if (session.lastProbeAt && now - session.lastProbeAt < 8000) return;
     session.lastProbeAt = now;
     const probeUrls = [
-      `${sijichanMerchantBase}report/activityReward/queryTopStatisticData`,
-      `${sijichanMerchantBase}report/account/emp/overview/queryRewardStat`,
-      `${sijichanMerchantBase}report/order_share/orderShareMomentSummary`,
+      `${sijichanMerchantPathBase}report/activityReward/queryTopStatisticData`,
+      `${sijichanMerchantPathBase}report/account/emp/overview/queryRewardStat`,
+      `${sijichanMerchantPathBase}report/order_share/orderShareMomentSummary`,
     ];
     for (const url of probeUrls) {
       await session.page.evaluate((nextUrl) => {
@@ -4201,7 +4203,7 @@ async function createWeComBrowserSession(user, body = {}) {
           json = { raw: text };
         }
         return { status: response.status, code: json?.code || "", msg: json?.msg || "", hasData: Boolean(json?.data) };
-      }, { url: `${sijichanManagerBase}report/activityReward/queryTopStatisticData` });
+      }, { url: `${sijichanManagerPathBase}report/activityReward/queryTopStatisticData` });
       if (result.status >= 200 && result.status < 500 && (!result.code || String(result.code) === "10000")) {
         session.exportReady = true;
         session.exportProbeError = "";
@@ -4641,7 +4643,7 @@ function createSijichanClient(token, merCode, diagnostics) {
 function createSijichanBrowserClient(page, merCode, diagnostics) {
   const browserPost = async (endpoint, body) => {
     if (!page || page.isClosed()) throw new Error("服务器浏览器会话已关闭，无法继续取数。");
-    const url = `${sijichanManagerBase}${endpoint}`;
+    const url = `${sijichanManagerPathBase}${endpoint}`;
     const result = await page.evaluate(
       async ({ url, body, merCode }) => {
         const headers = { "content-type": "application/json" };
