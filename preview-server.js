@@ -3991,11 +3991,13 @@ async function markSijichanHandoffCapturedById(handoffId, userId, token, details
 }
 
 function getWeComBrowserSessionPublic(session) {
+  const merchantReady = Boolean(session.currentUrl && isMerchantRuntimeUrl(session.currentUrl));
   return {
     id: session.id,
     handoffId: session.handoff?.id || "",
     status: session.status,
     captured: session.status === "captured",
+    merchantReady,
     qrImage: session.qrImage || "",
     currentUrl: session.currentUrl || "",
     lastError: session.lastError || "",
