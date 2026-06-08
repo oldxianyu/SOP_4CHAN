@@ -4006,6 +4006,8 @@ function getWeComBrowserSessionPublic(session) {
     exportProbeError: session.exportProbeError || "",
     merCodeFilled: Boolean(session.merCodeFilled),
     merCodeSubmitTried: Boolean(session.merCodeSubmitTried),
+    scanStage: session.scanStage || "",
+    scanHint: session.scanHint || "",
     qrImage: session.qrImage || "",
     currentUrl: session.currentUrl || "",
     lastRequestUrl: session.lastRequestUrl || "",
@@ -4035,6 +4037,8 @@ function logWeComSessionState(session, reason = "state") {
     merchantReady: Boolean(session.currentUrl && isMerchantRuntimeUrl(session.currentUrl)),
     exportReady: Boolean(session.exportReady),
     pageTitle: session.pageTitle || "",
+    scanStage: session.scanStage || "",
+    scanHint: session.scanHint || "",
     currentUrl: compactUrl(session.currentUrl || ""),
     openPages: Array.isArray(session.openPages) ? session.openPages.slice(-4).map((page) => ({
       title: page.title || "",
@@ -4112,6 +4116,8 @@ async function createWeComBrowserSession(user, body = {}) {
     lastRequestUrl: "",
     openPages: [],
     pageTitle: "",
+    scanStage: "",
+    scanHint: "",
     lastError: "",
     browser: null,
     page: null,
@@ -4134,6 +4140,36 @@ async function createWeComBrowserSession(user, body = {}) {
     }
     session.openPages = items.slice(-10);
     session.updatedAt = new Date().toISOString();
+  };
+  const refreshScanStage = async () => {
+    if (!session.page || session.page.isClosed()) return;
+    if (isMerchantRuntimeUrl(session.page.url())) {
+      session.scanStage = "merchant";
+      session.scanHint = "已进入新零售管理平台";
+      return;
+    }
+    const state = await session.page.evaluate(() => {
+      const text = (document.body?.innerText || "").replace(/\s+/g, " ").trim();
+      const image = document.querySelector(".wwLogin_qrcode_img") || [...document.images].find((img) => /qrcode/i.test(img.src || ""));
+      return { text: text.slice(0, 500), hasQr: Boolean(image) };
+    }).catch(() => ({ text: "", hasQr: false }));
+    const text = state.text || "";
+    if (/已扫码|扫描成功|请在企业微信中确认|请在手机上确认|请确认|确认登录/i.test(text)) {
+      session.scanStage = "confirming";
+      session.scanHint = "已扫码，等待企业微信手机端确认";
+    } else if (/二维码已失效|二维码失效|已过期|重新刷新|刷新二维码/i.test(text)) {
+      session.scanStage = "qr_expired";
+      session.scanHint = "二维码已过期，请重新生成";
+    } else if (/登录失败|扫码失败|无权限|未授权|拒绝/i.test(text)) {
+      session.scanStage = "failed";
+      session.scanHint = text.slice(0, 160) || "企微扫码失败";
+    } else if (state.hasQr || /扫码|二维码|企业微信/i.test(text)) {
+      session.scanStage = "waiting_scan";
+      session.scanHint = "等待企业微信扫码";
+    } else {
+      session.scanStage = "unknown";
+      session.scanHint = text.slice(0, 160);
+    }
   };
   const maybeCapture = async (raw, from, sourceUrl = "") => {
     if (session.status === "captured") return;
@@ -4301,6 +4337,7 @@ async function createWeComBrowserSession(user, body = {}) {
         session.pageTitle = title || session.pageTitle || "";
         session.updatedAt = new Date().toISOString();
         refreshOpenPages().catch(() => null);
+        refreshScanStage().catch(() => null);
         logWeComSessionState(session, "merchant-popup");
       }).catch(() => null);
       nextPage.on("close", () => {
@@ -4334,6 +4371,7 @@ async function createWeComBrowserSession(user, body = {}) {
             session.pageTitle = title || "";
             session.updatedAt = new Date().toISOString();
             refreshOpenPages().catch(() => null);
+            refreshScanStage().catch(() => null);
             logWeComSessionState(session, "navigate");
           }).catch(() => null);
           session.updatedAt = new Date().toISOString();
@@ -4458,6 +4496,7 @@ async function createWeComBrowserSession(user, body = {}) {
           session.pageTitle = title || "";
           session.updatedAt = new Date().toISOString();
           refreshOpenPages().catch(() => null);
+          refreshScanStage().catch(() => null);
           logWeComSessionState(session, "navigate");
         }).catch(() => null);
         session.updatedAt = new Date().toISOString();
@@ -4473,6 +4512,7 @@ async function createWeComBrowserSession(user, body = {}) {
     session.currentUrl = page.url();
     session.pageTitle = await page.title().catch(() => "");
     await refreshOpenPages().catch(() => null);
+    await refreshScanStage().catch(() => null);
     if (page.isClosed()) throw new Error("服务器浏览器页面已关闭，无法生成企微二维码。");
     const qrImageUrl = await page.evaluate(() => {
       const image = document.querySelector(".wwLogin_qrcode_img") || [...document.images].find((img) => /qrcode/i.test(img.src || ""));
@@ -4492,6 +4532,7 @@ async function createWeComBrowserSession(user, body = {}) {
           session.currentUrl = page.url();
           session.pageTitle = await page.title().catch(() => session.pageTitle || "");
           await refreshOpenPages().catch(() => null);
+          await refreshScanStage().catch(() => null);
           session.updatedAt = new Date().toISOString();
         }
       })
@@ -4505,6 +4546,7 @@ async function createWeComBrowserSession(user, body = {}) {
           session.currentUrl = session.page.url();
           session.pageTitle = await session.page.title().catch(() => session.pageTitle || "");
           await refreshOpenPages();
+          await refreshScanStage();
           session.updatedAt = new Date().toISOString();
           await scanMerchantPageStorage();
           await scanMerchantCookies();

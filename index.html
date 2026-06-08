@@ -2964,6 +2964,18 @@
                                 Space,
                                 { wrap: true, style: { marginTop: 10 } },
                                 h(Tag, { color: weComBrowserSession.merchantReady ? "green" : "blue", className: "large-tag" }, weComBrowserSession.merchantReady ? "已进入新零售" : "等待扫码登录"),
+                                weComBrowserSession.scanHint
+                                  ? h(Tag, {
+                                      color: weComBrowserSession.scanStage === "confirming"
+                                        ? "gold"
+                                        : weComBrowserSession.scanStage === "merchant"
+                                          ? "green"
+                                          : weComBrowserSession.scanStage === "qr_expired" || weComBrowserSession.scanStage === "failed"
+                                            ? "red"
+                                            : "blue",
+                                      className: "large-tag",
+                                    }, weComBrowserSession.scanHint)
+                                  : null,
                                 h(Tag, { color: weComBrowserSession.exportReady ? "green" : "orange", className: "large-tag" }, weComBrowserSession.exportReady ? "接口可导出" : "等待接口探测"),
                                 weComBrowserSession.merCodeFilled ? h(Tag, { color: weComBrowserSession.merCodeSubmitTried ? "green" : "blue", className: "large-tag" }, weComBrowserSession.merCodeSubmitTried ? "客户编码已提交" : "客户编码已填入") : null,
                                 weComBrowserSession.exportProbeAt ? h(Tag, { color: "default", className: "large-tag" }, `探测时间 ${dayjs(weComBrowserSession.exportProbeAt).format("HH:mm:ss")}`) : null,
