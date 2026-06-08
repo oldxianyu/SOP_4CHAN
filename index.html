@@ -2400,6 +2400,8 @@
         const browserSessionPollRef = React.useRef(null);
         const weComAutoReportRef = React.useRef({ triggered: false, running: false });
         const generateFromWeComRef = React.useRef(null);
+        const createWeComBrowserSessionRef = React.useRef(null);
+        const weComQrRefreshRef = React.useRef({ count: 0, running: false, lastAt: 0 });
         const weComSsoUrl = "https://login.work.weixin.qq.com/wwlogin/sso/login/?login_type=CorpApp&appid=ww408c023179829552&agentid=1000157&redirect_uri=https%3A%2F%2Fmerchants.hydee.cn%2Fapp-jump%2Fsuper-admin-login&state=WWLogin";
 
         const loadStatus = React.useCallback(async () => {
@@ -2564,6 +2566,21 @@
             });
         };
 
+        const refreshExpiredWeComQr = () => {
+          const state = weComQrRefreshRef.current || { count: 0, running: false, lastAt: 0 };
+          const now = Date.now();
+          if (state.running || state.count >= 6 || now - state.lastAt < 30000) return;
+          const createSession = createWeComBrowserSessionRef.current;
+          if (typeof createSession !== "function") return;
+          weComQrRefreshRef.current = { count: state.count + 1, running: true, lastAt: now };
+          message.info("企微二维码已过期，正在自动刷新二维码");
+          Promise.resolve(createSession({ autoRefresh: true }))
+            .catch(() => null)
+            .finally(() => {
+              weComQrRefreshRef.current.running = false;
+            });
+        };
+
         const pollWeComHandoff = React.useCallback((handoffId) => {
           if (!handoffId) return;
           if (handoffPollRef.current) clearInterval(handoffPollRef.current);
@@ -2605,6 +2622,8 @@
                   triggerWeComAutoReport("服务器已捕获新零售授权，开始自动生成复盘报告", data.session, data.handoff);
                 } else if (data.session.exportReady) {
                   triggerWeComAutoReport("服务器登录态已具备导出能力，开始自动生成复盘报告", data.session, data.handoff);
+                } else if (data.session.scanStage === "qr_expired") {
+                  refreshExpiredWeComQr();
                 }
               }
             } catch {
@@ -2651,12 +2670,15 @@
           }
         };
 
-        const createWeComBrowserSession = async () => {
+        const createWeComBrowserSession = async (options = {}) => {
           const values = sourceForm.getFieldsValue();
           try {
             setWeComBrowserSession(null);
             setWeComHandoff(null);
-            weComAutoReportRef.current = { triggered: false, running: false };
+            if (!options.autoRefresh) {
+              weComAutoReportRef.current = { triggered: false, running: false };
+              weComQrRefreshRef.current = { count: 0, running: false, lastAt: 0 };
+            }
             const response = await fetch("/api/wecom-browser-session", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -2667,11 +2689,12 @@
             setWeComBrowserSession(data.session);
             setWeComHandoff({ id: data.session.handoffId, captured: data.session.captured });
             pollWeComBrowserSession(data.session.id);
-            message.success("服务器扫码会话已创建，请用企业微信扫描页面二维码");
+            message.success(options.autoRefresh ? "企微二维码已自动刷新，请扫描新的二维码" : "服务器扫码会话已创建，请用企业微信扫描页面二维码");
           } catch (err) {
             message.error(err.message || "服务器扫码会话创建失败");
           }
         };
+        createWeComBrowserSessionRef.current = createWeComBrowserSession;
 
         const copyWeComHelperScript = () => {
           if (!weComHandoff?.helperScript) {
