@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node preview-server.js",
     "dev": "node preview-server.js",
+    "monthly:marketing": "node -e \"process.env.MONTHLY_MARKETING_ONLY='true'; require('./preview-server.js')\"",
     "migrate:local-data": "node scripts/migrate-local-data-to-postgres.js",
     "backup:db": "bash scripts/backup-postgres.sh"
   },

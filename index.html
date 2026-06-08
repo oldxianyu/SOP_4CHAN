@@ -3453,7 +3453,41 @@
         },
       ];
 
-      function JuneMarketingPage() {
+      function JuneMarketingPage({ auth }) {
+        const now = new Date();
+        const monthLabel = `${now.getMonth() + 1}月`;
+        const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+        const [monthly, setMonthly] = React.useState({ recommendations: [], loading: false, generating: false, loaded: false });
+        const loadMonthly = React.useCallback(async () => {
+          if (!auth?.user) return;
+          setMonthly((prev) => ({ ...prev, loading: true }));
+          try {
+            const data = await apiJson(`/api/monthly-marketing-recommendations?month=${monthKey}`);
+            setMonthly((prev) => ({ ...prev, recommendations: data.recommendations || [], loading: false, loaded: true }));
+          } catch (error) {
+            setMonthly((prev) => ({ ...prev, loading: false, loaded: true, error: error.message }));
+          }
+        }, [auth?.user?.id, monthKey]);
+        React.useEffect(() => {
+          loadMonthly();
+        }, [loadMonthly]);
+        const generateMonthly = async () => {
+          setMonthly((prev) => ({ ...prev, generating: true, error: "" }));
+          try {
+            const data = await apiJson("/api/monthly-marketing-recommendations/generate", {
+              method: "POST",
+              body: JSON.stringify({ monthKey }),
+            });
+            message.success(`当月营销推荐已生成：成功${data.success}个，失败${data.failed}个`);
+            await loadMonthly();
+          } catch (error) {
+            message.error(error.message || "当月营销推荐生成失败");
+            setMonthly((prev) => ({ ...prev, error: error.message }));
+          } finally {
+            setMonthly((prev) => ({ ...prev, generating: false }));
+          }
+        };
+        const recommendations = monthly.recommendations || [];
         return h(
           "div",
           { className: "june-shell" },
@@ -3463,12 +3497,12 @@
             h(
               Card,
               { bordered: false },
-              h(Tag, { color: "blue", className: "hero-platform-tag" }, "6月品种营销推荐"),
+              h(Tag, { color: "blue", className: "hero-platform-tag" }, "当月品种营销推荐"),
               h(Title, { className: "june-title" }, "把节点、品类和AAA主力品种串成活动"),
               h(
                 Paragraph,
                 { className: "incentive-lede" },
-                "6月不只做季节品，还要把高考、618、端午回娘家、蚊虫叮咬和肠胃高发场景串起来。四季蝉更适合把这些节点拆成可配置、可激励、可复盘的店员任务。",
+                "当月营销推荐优先参考客户活动列表和活动商品明细；未生成自动结果时，可先使用节点、品类和AAA主力品种的基线模板拆活动。",
               ),
             ),
             h(
@@ -3486,8 +3520,57 @@
             h(
               "div",
               { className: "section-title-row" },
-              h(Title, { level: 2 }, "6月营销节点及日历"),
-              h(Paragraph, null, "每个节点对应一批品种和一种四季蝉玩法，方便直接拆活动。"),
+              h(Title, { level: 2 }, `${monthLabel}自动营销推荐`),
+              h(Paragraph, null, "每月月初可登录曾经生成过复盘报告且已授权保存的客户四季蝉账号，读取活动列表和活动商品明细，汇总生成当月营销建议。"),
+            ),
+            !auth?.user
+              ? h(Alert, { showIcon: true, type: "info", message: "登录后查看自动推荐", description: "自动推荐结果按登录用户隔离；管理员可生成全部已授权客户的当月推荐。" })
+              : h(
+                  React.Fragment,
+                  null,
+                  h(
+                    Space,
+                    { wrap: true, style: { marginBottom: 14 } },
+                    h(Button, { onClick: loadMonthly, loading: monthly.loading }, "刷新推荐结果"),
+                    auth.user.role === "admin" ? h(Button, { type: "primary", loading: monthly.generating, onClick: generateMonthly }, "生成当月推荐") : null,
+                    h(Text, { type: "secondary" }, `当前月份：${monthKey}`),
+                  ),
+                  monthly.error ? h(Alert, { showIcon: true, type: "warning", message: monthly.error, style: { marginBottom: 14 } }) : null,
+                  recommendations.length
+                    ? h(
+                        Row,
+                        { gutter: [12, 12] },
+                        recommendations.map((item) => {
+                          const recommendation = item.recommendation || {};
+                          const focusProducts = recommendation.focusProducts || [];
+                          const nextActions = recommendation.nextActions || [];
+                          return h(
+                            Col,
+                            { xs: 24, lg: 12, key: item.id },
+                            h(
+                              Card,
+                              { bordered: false, className: "category-play-card" },
+                              h(Space, { wrap: true, size: [8, 8] }, h(Tag, { color: item.status === "completed" ? "blue" : "red" }, item.status === "completed" ? "已生成" : "失败"), h(Text, { type: "secondary" }, item.monthKey)),
+                              h(Title, { level: 4 }, recommendation.title || item.customerName || "当月营销推荐"),
+                              h(Paragraph, null, recommendation.executiveSummary || item.errorMessage || "暂无推荐摘要。"),
+                              h(Space, { wrap: true, size: [6, 6] }, h(Tag, { color: "geekblue" }, `活动${item.activityCount || 0}条`), h(Tag, { color: "purple" }, `商品${item.productCount || 0}条`)),
+                              focusProducts.length ? h("div", { className: "category-products" }, focusProducts.slice(0, 10).map((name) => h(Tag, { key: name, color: "blue" }, name))) : null,
+                              nextActions.length ? h("ul", { className: "data-guard-list" }, nextActions.slice(0, 3).map((action) => h("li", { key: action }, action))) : null,
+                            ),
+                          );
+                        }),
+                      )
+                    : h(Alert, { showIcon: true, type: "info", message: "暂无当月自动推荐", description: auth.user.role === "admin" ? "点击“生成当月推荐”后，系统会读取已授权客户账号的活动数据。" : "当前账号还没有生成过当月营销推荐。" }),
+                ),
+          ),
+          h(
+            Card,
+            { className: "section-card", bordered: false },
+            h(
+              "div",
+              { className: "section-title-row" },
+              h(Title, { level: 2 }, "当月营销节点及日历"),
+              h(Paragraph, null, "每个节点对应一批品种和一种四季蝉玩法，方便直接拆活动；自动推荐生成后，以客户活动数据为优先。"),
             ),
             h(
               Row,
@@ -3874,7 +3957,7 @@
           { key: "calendar", label: "对接行事历", children: h(CalendarPage, { dates }) },
           { key: "incentive", label: "激励玩法", children: h(IncentivePage) },
           { key: "selection", label: "选品思路", children: h(SelectionPage) },
-          { key: "june", label: "6月营销推荐", children: h(JuneMarketingPage) },
+          { key: "june", label: "当月营销推荐", children: h(JuneMarketingPage, authProps) },
           { key: "aiReview", label: "AI复盘报告", children: h(AIReviewPage, authProps) },
           { key: "history", label: "历史报告", children: h(HistoryPage, authProps) },
           ...(auth.user?.role === "admin"

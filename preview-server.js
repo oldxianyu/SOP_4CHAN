@@ -435,6 +435,38 @@ async function ensureDatabase() {
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     );
+    create table if not exists sijichan_account_authorizations (
+      id text primary key default gen_random_uuid()::text,
+      user_id text references users(id) on delete set null,
+      username text not null,
+      password_encrypted text not null,
+      mer_name text,
+      mer_code text not null default '',
+      status text not null default 'active',
+      last_report_db_id text references review_reports(id) on delete set null,
+      last_success_at timestamptz,
+      last_error text,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists monthly_marketing_recommendations (
+      id text primary key default gen_random_uuid()::text,
+      month_key text not null,
+      auth_id text references sijichan_account_authorizations(id) on delete set null,
+      user_id text references users(id) on delete set null,
+      customer_name text,
+      customer_code text,
+      status text not null default 'completed',
+      activity_count integer not null default 0,
+      product_count integer not null default 0,
+      summary_json jsonb not null default '{}'::jsonb,
+      recommendation_json jsonb not null default '{}'::jsonb,
+      markdown text,
+      error_message text,
+      generated_at timestamptz not null default now(),
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
     create index if not exists idx_customer_datasets_user_created on customer_datasets(user_id, created_at desc);
     create index if not exists idx_ai_review_uploads_user_created on ai_review_uploads(user_id, created_at desc);
     create unique index if not exists idx_ai_review_uploads_dataset_unique on ai_review_uploads(dataset_id) where dataset_id is not null;
@@ -444,6 +476,11 @@ async function ensureDatabase() {
     create index if not exists idx_auth_logs_user_created on auth_operation_logs(user_id, created_at desc);
     create index if not exists idx_auth_logs_identifier_created on auth_operation_logs(login_identifier, created_at desc);
     create index if not exists idx_auth_logs_success_created on auth_operation_logs(success, created_at desc);
+    create unique index if not exists idx_sijichan_auth_unique on sijichan_account_authorizations(user_id, username, mer_code);
+    create index if not exists idx_sijichan_auth_status_updated on sijichan_account_authorizations(status, updated_at desc);
+    create unique index if not exists idx_monthly_marketing_unique_all on monthly_marketing_recommendations(month_key, auth_id);
+    create index if not exists idx_monthly_marketing_month_created on monthly_marketing_recommendations(month_key, created_at desc);
+    create index if not exists idx_monthly_marketing_user_created on monthly_marketing_recommendations(user_id, created_at desc);
   `);
     await activePool.query(`
       create or replace function set_updated_at()
@@ -544,7 +581,9 @@ async function ensureDatabase() {
           'review_reports',
           'review_report_payloads',
           'capability_test_submissions',
-          'auth_operation_logs'
+          'auth_operation_logs',
+          'sijichan_account_authorizations',
+          'monthly_marketing_recommendations'
         ]
         loop
           trigger_name := 'trg_' || t || '_updated_at';
@@ -565,6 +604,10 @@ async function ensureDatabase() {
       alter table ai_review_uploads add column if not exists report_db_id text references review_reports(id) on delete set null;
       alter table ai_review_uploads add column if not exists error_message text;
       alter table auth_operation_logs add column if not exists metadata_json jsonb not null default '{}'::jsonb;
+      alter table sijichan_account_authorizations add column if not exists last_report_db_id text references review_reports(id) on delete set null;
+      alter table sijichan_account_authorizations add column if not exists last_success_at timestamptz;
+      alter table sijichan_account_authorizations add column if not exists last_error text;
+      alter table monthly_marketing_recommendations add column if not exists error_message text;
       create index if not exists idx_review_reports_user_created on review_reports(user_id, created_at desc);
       create index if not exists idx_review_reports_created on review_reports(created_at desc);
       create index if not exists idx_review_reports_status_created on review_reports(status, created_at desc);
@@ -575,6 +618,11 @@ async function ensureDatabase() {
       create index if not exists idx_auth_logs_user_created on auth_operation_logs(user_id, created_at desc);
       create index if not exists idx_auth_logs_identifier_created on auth_operation_logs(login_identifier, created_at desc);
       create index if not exists idx_auth_logs_success_created on auth_operation_logs(success, created_at desc);
+      create unique index if not exists idx_sijichan_auth_unique on sijichan_account_authorizations(user_id, username, mer_code);
+      create index if not exists idx_sijichan_auth_status_updated on sijichan_account_authorizations(status, updated_at desc);
+      create unique index if not exists idx_monthly_marketing_unique_all on monthly_marketing_recommendations(month_key, auth_id);
+      create index if not exists idx_monthly_marketing_month_created on monthly_marketing_recommendations(month_key, created_at desc);
+      create index if not exists idx_monthly_marketing_user_created on monthly_marketing_recommendations(user_id, created_at desc);
       insert into ai_review_uploads(user_id, dataset_id, source_type, source_name, filename, row_counts_json, status, created_at, updated_at)
       select
         d.user_id,
@@ -1099,6 +1147,304 @@ async function saveReviewReportRecord(userId, sourceType, sourceName, summary, g
   data.reviewReports.push(record);
   writeLocalData(data);
   return record.id;
+}
+
+async function upsertSijichanAuthorization(userId, body, summary, reportDbId = "") {
+  if (!(await isDbAvailable())) return null;
+  const username = String(body.username || "").trim();
+  const password = String(body.password || "");
+  if (!userId || !username || !password) return null;
+  const requestInfo = summary?.requestInfo || {};
+  const merCode = String(body.merCode || requestInfo.merCode || "").trim();
+  const merName = String(body.merName || requestInfo.merName || "").trim();
+  const result = await queryDb(
+    `insert into sijichan_account_authorizations(user_id, username, password_encrypted, mer_name, mer_code, status, last_report_db_id, last_success_at, last_error)
+     values($1,$2,$3,$4,$5,'active',$6,now(),null)
+     on conflict(user_id, username, mer_code)
+     do update set
+       password_encrypted = excluded.password_encrypted,
+       mer_name = coalesce(nullif(excluded.mer_name, ''), sijichan_account_authorizations.mer_name),
+       status = 'active',
+       last_report_db_id = excluded.last_report_db_id,
+       last_success_at = now(),
+       last_error = null,
+       updated_at = now()
+     returning id`,
+    [userId, username, encryptSecret(password), merName, merCode, reportDbId || null],
+  );
+  return result.rows[0]?.id || null;
+}
+
+function normalizeSijichanAuthorizationRow(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    username: row.username,
+    password: row.password_encrypted ? decryptSecret(row.password_encrypted) : "",
+    merName: row.mer_name || "",
+    merCode: row.mer_code || "",
+    status: row.status || "active",
+    lastReportDbId: row.last_report_db_id || "",
+    lastSuccessAt: row.last_success_at || null,
+    lastError: row.last_error || "",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function listSijichanAuthorizations(scopeUser = null) {
+  if (!(await isDbAvailable())) return [];
+  const params = [];
+  let where = "where status = 'active'";
+  if (scopeUser?.role !== "admin") {
+    params.push(scopeUser?.id || "");
+    where += ` and user_id = $${params.length}`;
+  }
+  const result = await queryDb(
+    `select * from sijichan_account_authorizations ${where} order by coalesce(last_success_at, updated_at) desc limit 200`,
+    params,
+  );
+  return result.rows.map(normalizeSijichanAuthorizationRow);
+}
+
+function monthKeyFromDate(date = new Date()) {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}`;
+}
+
+function monthWindowFromKey(monthKey = "") {
+  const match = String(monthKey || "").match(/^(\d{4})-(\d{2})$/);
+  const now = new Date();
+  const year = match ? Number(match[1]) : now.getFullYear();
+  const monthIndex = match ? Number(match[2]) - 1 : now.getMonth();
+  return { key: `${year}-${pad2(monthIndex + 1)}`, ...monthWindow(new Date(year, monthIndex, 1)) };
+}
+
+function genericTopRows(rows, metrics, labelFields, limit = 8, desc = true) {
+  return topGenericRows(rows, metrics, labelFields, limit, desc);
+}
+
+function marketingValue(row, fields) {
+  return fields.reduce((total, field) => total + toNumber(row[field]), 0);
+}
+
+function buildMarketingRecommendationSummary(raw) {
+  const activityRows = withDataMeta(rowsFromPaged(raw.activitySummary.rows), "activity_summary.json", "currentMonth.rows");
+  const activityCatalogRows = withDataMeta(rowsFromPaged(raw.activityCatalog.joined), "activity_catalog.json", "joined");
+  const labelFields = [
+    { name: "活动名称", candidates: ["activityName", "marketActivityName", "name", "活动名称"] },
+    { name: "商品名称", candidates: ["commodityName", "productName", "goodsName", "skuName", "商品名称"] },
+    { name: "商品编码", candidates: ["commodityCode", "wareIspCode", "productCode", "goodsCode", "商品编码"] },
+  ];
+  const saleFields = ["rewardSaleAmount", "saleCommodityAmount", "activitySaleAmount", "saleAmount", "salesAmount", "销售额"];
+  const rewardFields = ["rewardCommodityAmount", "singleRewardMoney", "rewardAmount", "奖励金额"];
+  const zeroOrWeakRows = activityRows
+    .filter((row) => marketingValue(row, [...saleFields, ...rewardFields]) <= 0)
+    .slice(0, 12);
+  const uniqueProductCount = new Set(activityRows.map((row) => pickField(row, ["commodityCode", "wareIspCode", "productCode", "goodsCode", "商品编码"])).filter(hasValue)).size;
+  return {
+    source: "月初登录获取",
+    monthKey: raw.meta.monthKey,
+    monthRange: raw.meta.monthRange,
+    customerName: raw.meta.merName || raw.meta.username || "",
+    customerCode: raw.meta.merCode || "",
+    generatedAt: raw.meta.generatedAt,
+    rowCounts: {
+      activityCatalog: activityCatalogRows.length,
+      activityProducts: activityRows.length,
+    },
+    activityCatalog: {
+      totalCount: activityCatalogRows.length,
+      onlineCount: activityCatalogRows.filter((row) => [1, 3, 62, "1", "3", "62"].includes(row.status)).length,
+      topActivities: genericTopRows(activityCatalogRows, saleFields, labelFields, 8, true),
+    },
+    activityProducts: {
+      skuCount: uniqueProductCount || activityRows.length,
+      topSales: genericTopRows(activityRows, saleFields, labelFields, 10, true),
+      topRewards: genericTopRows(activityRows, rewardFields, labelFields, 10, true),
+      weakItems: zeroOrWeakRows.map((row) => ({
+        活动名称: pickField(row, ["activityName", "marketActivityName", "活动名称"]),
+        商品名称: pickField(row, ["commodityName", "productName", "goodsName", "skuName", "商品名称"]),
+        商品编码: pickField(row, ["commodityCode", "wareIspCode", "productCode", "goodsCode", "商品编码"]),
+      })),
+    },
+    diagnostics: raw.diagnostics || [],
+  };
+}
+
+function buildDeterministicMarketingRecommendation(summary) {
+  const monthLabel = summary.monthKey ? `${Number(summary.monthKey.slice(5, 7))}月` : "当月";
+  const topSales = summary.activityProducts?.topSales || [];
+  const topRewards = summary.activityProducts?.topRewards || [];
+  const weakItems = summary.activityProducts?.weakItems || [];
+  const focusProducts = [...topSales, ...topRewards]
+    .map((row) => row["商品名称"] || row["活动名称"] || "")
+    .filter(Boolean)
+    .filter((value, index, arr) => arr.indexOf(value) === index)
+    .slice(0, 12);
+  const actions = [
+    focusProducts.length ? `围绕 ${focusProducts.slice(0, 6).join("、")} 做${monthLabel}重点品任务池，优先配置单品突破和排行榜。` : "先补齐当月活动商品明细，确认可激励、可陈列、可复盘的重点品。",
+    topRewards.length ? "把奖励金额靠前的商品沉淀为店员重点讲解清单，配套卖点培训和考试奖励。" : "补充奖励政策，让店员能清楚看到卖什么、怎么卖、卖了赚多少。",
+    weakItems.length ? `对 ${weakItems.slice(0, 5).map((row) => row["商品名称"] || row["活动名称"]).filter(Boolean).join("、")} 等弱动销品做下架、换品或重新包装。` : "保持活动商品复盘节奏，每周看销量、奖励、提现闭环。",
+  ];
+  return {
+    title: `${summary.customerName || "客户"}${monthLabel}营销推荐`,
+    executiveSummary: `本次月初自动读取活动列表 ${summary.rowCounts.activityCatalog} 条、活动商品明细 ${summary.rowCounts.activityProducts} 条，形成${monthLabel}重点品动销建议。`,
+    focusProducts,
+    sections: [
+      { heading: "重点活动商品", bullets: topSales.slice(0, 8).map((row) => `${row["商品名称"] || row["活动名称"] || "重点商品"}：优先查看销售和奖励闭环。`) },
+      { heading: "激励优先级", bullets: topRewards.slice(0, 8).map((row) => `${row["商品名称"] || row["活动名称"] || "激励商品"}：适合做店员任务和排行榜。`) },
+      { heading: "需要复盘的弱项", bullets: weakItems.slice(0, 8).map((row) => `${row["商品名称"] || row["活动名称"] || "未命名商品"}：当前动销/奖励信号弱，建议复核活动政策。`) },
+    ],
+    nextActions: actions,
+  };
+}
+
+function marketingRecommendationMarkdown(recommendation) {
+  const lines = [`# ${recommendation.title}`, "", recommendation.executiveSummary || ""];
+  for (const section of recommendation.sections || []) {
+    lines.push("", `## ${section.heading}`, ...(section.bullets || []).map((item) => `- ${item}`));
+  }
+  if (recommendation.nextActions?.length) lines.push("", "## 下一步动作", ...recommendation.nextActions.map((item) => `- ${item}`));
+  return lines.join("\n");
+}
+
+async function collectMonthlyMarketingData(auth, monthKey = monthKeyFromDate()) {
+  const login = await sijichanLogin({ username: auth.username, password: auth.password });
+  const token = login.token;
+  const merCode = String(auth.merCode || "").trim();
+  const diagnostics = [];
+  const client = createSijichanClient(token, merCode, diagnostics);
+  const window = monthWindowFromKey(monthKey);
+  const activityCatalogBody = {
+    status: null,
+    activityName: "",
+    commodityName: "",
+    commodityCode: "",
+    ispName: "",
+    storeCodeList: [],
+    areaIds: [],
+    fromType: null,
+  };
+  const activityBody = { timeType: 1, startTime: window.start, endTime: window.end, summaryType: 1 };
+  return {
+    meta: {
+      source: "当月营销推荐",
+      monthKey: window.key,
+      monthRange: { start: window.start, end: window.end },
+      username: auth.username,
+      merCode,
+      merName: auth.merName || login.merName || "",
+      generatedAt: new Date().toISOString(),
+    },
+    activityCatalog: {
+      joined: await client.paged("我的活动列表-当月推荐", "industryMarket/queryAlreadyActivity", activityCatalogBody),
+    },
+    activitySummary: {
+      rows: await client.paged("活动商品明细-当月推荐", "imActivityReward/summary/page", activityBody),
+      sum: await client.post("活动商品合计-当月推荐", "imActivityReward/summary/sum", activityBody),
+    },
+    diagnostics,
+  };
+}
+
+async function saveMonthlyMarketingRecommendation(auth, summary, recommendation, status = "completed", errorMessage = "") {
+  if (!(await isDbAvailable())) return null;
+  const markdown = marketingRecommendationMarkdown(recommendation);
+  const result = await queryDb(
+    `insert into monthly_marketing_recommendations(
+       month_key, auth_id, user_id, customer_name, customer_code, status, activity_count, product_count,
+       summary_json, recommendation_json, markdown, error_message, generated_at
+     )
+     values($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12,now())
+     on conflict(month_key, auth_id)
+     do update set
+       customer_name=excluded.customer_name,
+       customer_code=excluded.customer_code,
+       status=excluded.status,
+       activity_count=excluded.activity_count,
+       product_count=excluded.product_count,
+       summary_json=excluded.summary_json,
+       recommendation_json=excluded.recommendation_json,
+       markdown=excluded.markdown,
+       error_message=excluded.error_message,
+       generated_at=now(),
+       updated_at=now()
+     returning *`,
+    [
+      summary.monthKey,
+      auth.id,
+      auth.userId || null,
+      summary.customerName || auth.merName || auth.username,
+      summary.customerCode || auth.merCode || "",
+      status,
+      summary.rowCounts?.activityCatalog || 0,
+      summary.rowCounts?.activityProducts || 0,
+      jsonParam(summary, {}),
+      jsonParam(recommendation, {}),
+      markdown,
+      errorMessage || "",
+    ],
+  );
+  return result.rows[0];
+}
+
+function normalizeMonthlyMarketingRow(row) {
+  return {
+    id: row.id,
+    monthKey: row.month_key,
+    customerName: row.customer_name || "",
+    customerCode: row.customer_code || "",
+    status: row.status,
+    activityCount: Number(row.activity_count || 0),
+    productCount: Number(row.product_count || 0),
+    summary: row.summary_json || {},
+    recommendation: row.recommendation_json || {},
+    markdown: row.markdown || "",
+    errorMessage: row.error_message || "",
+    generatedAt: row.generated_at || row.created_at,
+  };
+}
+
+async function listMonthlyMarketingRecommendations(user, monthKey = monthKeyFromDate()) {
+  if (!(await isDbAvailable())) return [];
+  const params = [monthKey];
+  let where = "where m.month_key = $1";
+  if (user.role !== "admin") {
+    params.push(user.id);
+    where += ` and m.user_id = $${params.length}`;
+  }
+  const result = await queryDb(
+    `select m.* from monthly_marketing_recommendations m ${where} order by m.generated_at desc limit 100`,
+    params,
+  );
+  return result.rows.map(normalizeMonthlyMarketingRow);
+}
+
+async function generateMonthlyMarketingBatch(user, monthKey = monthKeyFromDate()) {
+  const auths = await listSijichanAuthorizations(user);
+  const results = [];
+  for (const auth of auths) {
+    try {
+      const raw = await collectMonthlyMarketingData(auth, monthKey);
+      const summary = buildMarketingRecommendationSummary(raw);
+      const recommendation = buildDeterministicMarketingRecommendation(summary);
+      const row = await saveMonthlyMarketingRecommendation(auth, summary, recommendation, "completed", "");
+      await queryDb("update sijichan_account_authorizations set last_success_at=now(), last_error=null, updated_at=now() where id=$1", [auth.id]).catch(() => null);
+      results.push({ ok: true, authorizationId: auth.id, recommendation: normalizeMonthlyMarketingRow(row) });
+    } catch (error) {
+      await queryDb("update sijichan_account_authorizations set last_error=$2, updated_at=now() where id=$1", [auth.id, error.message]).catch(() => null);
+      const summary = {
+        monthKey,
+        customerName: auth.merName || auth.username,
+        customerCode: auth.merCode || "",
+        rowCounts: { activityCatalog: 0, activityProducts: 0 },
+      };
+      const recommendation = { title: `${summary.customerName}当月营销推荐`, executiveSummary: "取数失败，暂未生成推荐。", sections: [], nextActions: [] };
+      const row = await saveMonthlyMarketingRecommendation(auth, summary, recommendation, "failed", error.message).catch(() => null);
+      results.push({ ok: false, authorizationId: auth.id, error: error.message, recommendation: row ? normalizeMonthlyMarketingRow(row) : null });
+    }
+  }
+  return results;
 }
 
 function normalizeCapabilityAnswer(item, index) {
@@ -3626,6 +3972,9 @@ async function handleSijichanReviewReport(req, res) {
     datasetId = await saveDatasetRecord(user.id, "login", summary, summary.source || "登录获取");
     const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary);
     const dbReportId = await saveReviewReportRecord(user.id, "login", "登录获取", summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
+    await upsertSijichanAuthorization(user.id, body, summary, dbReportId).catch((error) => {
+      console.warn(`Sijichan authorization save skipped: ${error.message}`);
+    });
     await linkDatasetToReviewReport(datasetId, dbReportId, "completed");
     finishReviewJob(jobKey, startedAt, reportId);
     sendJson(res, 200, { ok: true, id: dbReportId, summary: summaryForResponse(summary), report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
@@ -3635,6 +3984,31 @@ async function handleSijichanReviewReport(req, res) {
     console.error(`[review] failed ${jobKey}:`, error);
     throw error;
   }
+}
+
+async function handleListMonthlyMarketing(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const url = new URL(req.url, "http://localhost");
+  const monthKey = url.searchParams.get("month") || monthKeyFromDate();
+  const recommendations = await listMonthlyMarketingRecommendations(user, monthKey);
+  sendJson(res, 200, { ok: true, monthKey, recommendations });
+}
+
+async function handleGenerateMonthlyMarketing(req, res) {
+  const user = await requireAdmin(req, res);
+  if (!user) return;
+  const body = await readJsonBody(req, 1024 * 1024).catch(() => ({}));
+  const monthKey = String(body.monthKey || monthKeyFromDate()).trim();
+  const results = await generateMonthlyMarketingBatch(user, monthKey);
+  sendJson(res, 200, {
+    ok: true,
+    monthKey,
+    total: results.length,
+    success: results.filter((item) => item.ok).length,
+    failed: results.filter((item) => !item.ok).length,
+    results,
+  });
 }
 
 async function handleRegister(req, res) {
@@ -3807,6 +4181,8 @@ function createServer() {
       if (url.pathname === "/api/ai-config/test" && req.method === "POST") return await handleTestConfig(req, res);
       if (url.pathname === "/api/review-report" && req.method === "POST") return await handleReviewReport(req, res);
       if (url.pathname === "/api/sijichan-review-report" && req.method === "POST") return await handleSijichanReviewReport(req, res);
+      if (url.pathname === "/api/monthly-marketing-recommendations" && req.method === "GET") return await handleListMonthlyMarketing(req, res);
+      if (url.pathname === "/api/monthly-marketing-recommendations/generate" && req.method === "POST") return await handleGenerateMonthlyMarketing(req, res);
       if (url.pathname === "/api/review-reports" && req.method === "GET") return await handleListReports(req, res);
       if (url.pathname === "/api/capability-test-submissions" && req.method === "POST") return await handleSubmitCapabilityTest(req, res);
       if (url.pathname === "/api/capability-test-submissions" && req.method === "GET") return await handleListCapabilityTests(req, res);
@@ -3845,6 +4221,16 @@ if (process.env.REFRESH_ONLY === "true") {
     .then(() => process.exit(0))
     .catch((error) => {
       console.error(`Refresh existing reports failed: ${error.message}`);
+      process.exit(1);
+    });
+} else if (process.env.MONTHLY_MARKETING_ONLY === "true") {
+  generateMonthlyMarketingBatch({ id: "system", role: "admin" }, process.env.MONTHLY_MARKETING_MONTH || monthKeyFromDate())
+    .then((results) => {
+      console.log(JSON.stringify({ ok: true, total: results.length, success: results.filter((item) => item.ok).length, failed: results.filter((item) => !item.ok).length }, null, 2));
+      process.exit(0);
+    })
+    .catch((error) => {
+      console.error(`Monthly marketing generation failed: ${error.message}`);
       process.exit(1);
     });
 } else {
