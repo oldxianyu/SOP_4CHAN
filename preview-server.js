@@ -3972,6 +3972,13 @@ function playwrightLaunchOptions() {
   };
 }
 
+function weComBrowserProfileDir(userId = "") {
+  const safeUser = String(userId || "default").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80) || "default";
+  const dir = path.join(serverDir, "wecom-browser-profile", safeUser);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 async function markSijichanHandoffCapturedById(handoffId, userId, token, details = {}) {
   const normalizedToken = assertSijichanTokenFormat(token);
   if (!(await isDbAvailable())) throw new Error("数据库未连接，无法保存企微授权token。");
@@ -4062,10 +4069,12 @@ async function closeWeComBrowserSession(session, status = "") {
   if (status && session.status !== "captured") session.status = status;
   session.updatedAt = new Date().toISOString();
   try {
+    if (session.context) await session.context.close();
     if (session.browser) await session.browser.close();
   } catch (error) {
     console.warn(`WeCom browser close skipped: ${error.message}`);
   }
+  session.context = null;
   session.browser = null;
 }
 
@@ -4120,6 +4129,7 @@ async function createWeComBrowserSession(user, body = {}) {
     scanHint: "",
     lastError: "",
     browser: null,
+    context: null,
     page: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -4133,12 +4143,14 @@ async function createWeComBrowserSession(user, body = {}) {
     const items = [];
     for (const pageItem of pages) {
       if (!pageItem || pageItem.isClosed()) continue;
+      if (pageItem.url() === "about:blank" && pageItem !== session.page) continue;
       items.push({
         url: pageItem.url(),
         title: await pageItem.title().catch(() => ""),
+        current: pageItem === session.page,
       });
     }
-    session.openPages = items.slice(-10);
+    session.openPages = items.sort((a, b) => Number(Boolean(b.current)) - Number(Boolean(a.current))).slice(0, 10);
     session.updatedAt = new Date().toISOString();
   };
   const refreshScanStage = async () => {
@@ -4353,16 +4365,20 @@ async function createWeComBrowserSession(user, body = {}) {
     }
   };
   try {
-    const browser = await chromium.launch(playwrightLaunchOptions());
+    const context = await chromium.launchPersistentContext(weComBrowserProfileDir(user.id), {
+      ...playwrightLaunchOptions(),
+      viewport: { width: 1280, height: 900 },
+    });
+    session.context = context;
+    const browser = context.browser();
     session.browser = browser;
-    browser.on("disconnected", () => {
+    browser?.on("disconnected", () => {
       if (session.status !== "captured" && session.status !== "expired" && session.status !== "error") {
         session.status = "error";
         session.lastError = "服务器浏览器进程已退出，请重新创建扫码会话。";
         session.updatedAt = new Date().toISOString();
       }
     });
-    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const attachMerchantPage = (nextPage) => {
       if (!nextPage || nextPage === session.page || nextPage.isClosed()) return;
       session.page = nextPage;
