@@ -1621,6 +1621,42 @@ async function captureSijichanTokenHandoff(handoffToken, token, details = {}) {
   return normalizeSijichanTokenHandoff(result.rows[0]);
 }
 
+async function markSijichanHandoffError(handoffToken, message) {
+  const payload = verifyHandoffToken(handoffToken);
+  if (!payload?.id || !(await isDbAvailable())) return;
+  await queryDb(
+    "update sijichan_token_handoffs set last_error=$2, updated_at=now() where id=$1",
+    [payload.id, String(message || "").slice(0, 1000)],
+  ).catch(() => null);
+}
+
+async function exchangeWeComCodeForSijichanToken({ code, handoffId = "", state = "" } = {}) {
+  if (!code) return { token: "", diagnostics: ["missing_code"] };
+  const jumpUrl = `${sijichanApiOrigin}/app-jump/super-admin-login?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state || "WWLogin")}${handoffId ? `&handoffId=${encodeURIComponent(handoffId)}` : ""}`;
+  const diagnostics = [`GET ${jumpUrl.replace(code, "[code]")}`];
+  let response;
+  try {
+    response = await fetch(jumpUrl, {
+      method: "GET",
+      redirect: "manual",
+      headers: {
+        "user-agent": "Mozilla/5.0 SOP_4CHAN token handoff",
+        accept: "text/html,application/json,*/*",
+      },
+    });
+  } catch (error) {
+    return { token: "", diagnostics: [...diagnostics, `request_failed:${networkErrorMessage(error)}`] };
+  }
+  const location = response.headers.get("location") || "";
+  const setCookie = response.headers.get("set-cookie") || "";
+  const text = await response.text().catch(() => "");
+  const token = extractSijichanTokenFromText([location, setCookie, text].join("\n"));
+  diagnostics.push(`status:${response.status}`);
+  if (location) diagnostics.push(`location:${location.slice(0, 300)}`);
+  diagnostics.push(token ? "token_extracted" : "token_not_found");
+  return { token, diagnostics };
+}
+
 function monthKeyFromDate(date = new Date()) {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}`;
 }
@@ -3729,6 +3765,20 @@ function assertSijichanTokenFormat(token) {
   return text;
 }
 
+function extractSijichanTokenFromText(text) {
+  const source = String(text || "");
+  const patterns = [
+    /(?:Authorization|authorization)\s*[:=]\s*["']?(Bearer\s+)?([A-Za-z0-9._\-]{20,})/i,
+    /(?:token|access_token|merchant_token)\s*[:=]\s*["']([A-Za-z0-9._\-]{20,})["']/i,
+    /(?:token|access_token|merchant_token)=([A-Za-z0-9._\-]{20,})/i,
+  ];
+  for (const pattern of patterns) {
+    const match = source.match(pattern);
+    if (match) return normalizeSijichanToken(match[2] || match[1]);
+  }
+  return "";
+}
+
 function networkErrorMessage(error) {
   const parts = [error?.message].filter(Boolean);
   const cause = error?.cause;
@@ -4905,6 +4955,7 @@ async function handleCaptureWeComToken(req, res) {
 async function handleWeComSsoCallback(req, res) {
   const url = new URL(req.url, "http://localhost");
   const state = url.searchParams.get("state") || "";
+  const handoffId = url.searchParams.get("handoffId") || "";
   const token = url.searchParams.get("token") || url.searchParams.get("authorization") || url.searchParams.get("access_token") || "";
   const code = url.searchParams.get("code") || "";
   let message = "企微扫码已返回本站。";
@@ -4918,8 +4969,20 @@ async function handleWeComSsoCallback(req, res) {
       message = error.message || "自动捕获授权token失败。";
     }
   } else if (code) {
-    ok = false;
-    message = "企微已返回授权code，但当前缺少新零售平台token交换接口，暂不能自动换取业务token。请在新零售页面使用授权助手交接token。";
+    const exchanged = await exchangeWeComCodeForSijichanToken({ code, handoffId, state });
+    if (exchanged.token) {
+      try {
+        await captureSijichanTokenHandoff(state, exchanged.token, {});
+        message = "企微授权code已换取业务token，可以回到四季蝉门户生成报告。";
+      } catch (error) {
+        ok = false;
+        message = error.message || "企微授权code换取token后保存失败。";
+      }
+    } else {
+      ok = false;
+      message = "企微已返回授权code，但新零售跳转未直接返回业务token。请在新零售页面运行授权助手交接token。";
+      await markSijichanHandoffError(state, exchanged.diagnostics.join("；"));
+    }
   } else {
     ok = false;
     message = "企微回调没有携带业务token。请在新零售页面使用授权助手交接token。";

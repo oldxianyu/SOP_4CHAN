@@ -2882,7 +2882,9 @@
                                 message: weComHandoff.captured ? "已捕获授权token" : "等待授权token回传",
                                 description: weComHandoff.captured
                                   ? "服务器已收到新零售管理平台token，可直接生成复盘报告。"
-                                  : "请在扫码打开的新零售页面地址栏粘贴运行授权助手；如果浏览器阻止 javascript: 前缀，请在控制台运行复制内容。",
+                                  : weComHandoff.lastError
+                                    ? `自动交换未拿到业务token：${weComHandoff.lastError}。请在扫码打开的新零售页面运行授权助手。`
+                                    : "请在扫码打开的新零售页面地址栏粘贴运行授权助手；如果浏览器阻止 javascript: 前缀，请在控制台运行复制内容。",
                               },
                             )
                           : null,
