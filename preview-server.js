@@ -2757,7 +2757,7 @@ function renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUr
 
   const sourceName = summary?.source || summary?.filename || "四季蝉复盘数据";
   const generatedAt = new Date().toLocaleString("zh-CN", { hour12: false });
-  const excelUrl = `${shareUrl}review.xlsx`;
+  const excelUrl = reportArtifactEncodedUrl(shareUrl, reviewWorkbookFileName(summary));
   const diagnosticsUrl = `${shareUrl}${encodeURIComponent("四季蝉接口诊断.json")}`;
   const normalizedDataUrl = `${shareUrl}${encodeURIComponent("四季蝉登录获取标准化数据.json")}`;
 
@@ -2949,6 +2949,124 @@ function sanitizeSheetName(name, fallback) {
   return String(name || fallback).replace(/[\\/?*\[\]:]/g, "").slice(0, 31) || fallback;
 }
 
+const workbookHeaderNameMap = {
+  id: "记录ID",
+  type: "类型",
+  source: "数据来源",
+  status: "状态",
+  statusText: "状态说明",
+  statusCode: "状态码",
+  code: "业务码",
+  msg: "业务消息",
+  message: "业务消息",
+  path: "数据路径",
+  dataPath: "数据路径",
+  file: "数据文件",
+  name: "名称",
+  label: "标签",
+  value: "数值",
+  key: "指标键",
+  level: "等级",
+  role: "角色",
+  actions: "行动建议",
+  bullets: "要点",
+  headquarters: "总部",
+  stores: "门店",
+  factories: "厂家",
+  merCode: "客户编码",
+  merName: "客户名称",
+  username: "账号",
+  province: "省份",
+  city: "城市",
+  createdAt: "创建时间",
+  updatedAt: "更新时间",
+  generatedAt: "生成时间",
+  startTime: "开始时间",
+  endTime: "结束时间",
+  beginTime: "开始时间",
+  closeTime: "结束时间",
+  activityName: "活动名称",
+  marketActivityName: "活动名称",
+  activityCode: "活动编码",
+  activityId: "活动ID",
+  commodityName: "商品名称",
+  productName: "商品名称",
+  goodsName: "商品名称",
+  skuName: "商品名称",
+  commodityCode: "商品编码",
+  productCode: "商品编码",
+  goodsCode: "商品编码",
+  wareIspCode: "商品编码",
+  erpCode: "ERP编码",
+  specSku: "规格",
+  spec: "规格",
+  origin: "产地",
+  manufacturer: "厂家",
+  factoryName: "厂家名称",
+  storeCode: "门店编码",
+  storeName: "门店名称",
+  storeCodeList: "门店编码列表",
+  areaIds: "区域ID列表",
+  empCode: "员工编码",
+  empName: "员工姓名",
+  employeeCode: "员工编码",
+  employeeName: "员工姓名",
+  courseName: "课程名称",
+  saleMerNum: "动销客户数",
+  saleStoreNum: "动销门店数",
+  joinStoreNum: "参与门店数",
+  stockStoreNum: "有库存门店数",
+  saleCommodityNum: "销售数量",
+  saleCommodityLastNum: "上期销售数量",
+  saleCommodityLastRate: "销售数量环比",
+  saleCommodityAmount: "销售金额",
+  saleAmount: "销售金额",
+  salesAmount: "销售金额",
+  rewardSaleAmount: "活动销售金额",
+  activitySaleAmount: "活动销售金额",
+  saleCommodityAmountRate: "销售金额环比",
+  customersNum: "购买顾客数",
+  averageCustomersNum: "客流均值",
+  orderNum: "订单数",
+  toSaleCommodityNum: "正向销售数量",
+  returnSaleCommodityNum: "退货数量",
+  commodityRefundNumber: "商品退款数量",
+  returnRate: "退货率",
+  rewardAmount: "奖励金额",
+  rewardCommodityAmount: "奖励商品金额",
+  singleRewardMoney: "单品奖励金额",
+  withdrawAmount: "提现金额",
+  balance: "余额",
+  pageNo: "页码",
+  pageSize: "每页数量",
+  total: "总数",
+  totalCount: "总数",
+  rowCount: "明细行数",
+  metricCount: "指标数量",
+};
+
+function workbookHeaderLabel(header) {
+  const key = String(header || "").trim();
+  if (!key) return "字段";
+  if (/[\u4e00-\u9fa5]/.test(key)) return key;
+  if (workbookHeaderNameMap[key]) return workbookHeaderNameMap[key];
+  const lowerKey = key.toLowerCase();
+  for (const [candidate, label] of Object.entries(workbookHeaderNameMap)) {
+    if (candidate.toLowerCase() === lowerKey) return label;
+  }
+  return `字段：${key}`;
+}
+
+function uniqueWorkbookHeaders(headers) {
+  const counts = new Map();
+  return headers.map((header) => {
+    const label = workbookHeaderLabel(header);
+    const count = (counts.get(label) || 0) + 1;
+    counts.set(label, count);
+    return count === 1 ? label : `${label}${count}`;
+  });
+}
+
 function sheetRowsFromObjects(rows) {
   const list = Array.isArray(rows) ? rows : [];
   const headers = [];
@@ -2962,7 +3080,7 @@ function sheetRowsFromObjects(rows) {
     }
   }
   if (!headers.length) return [["说明"], ["暂无数据"]];
-  return [headers, ...list.map((row) => headers.map((header) => row?.[header] ?? ""))];
+  return [uniqueWorkbookHeaders(headers), ...list.map((row) => headers.map((header) => row?.[header] ?? ""))];
 }
 
 function capWorkbookRows(rows, label, limit = workbookDetailRowLimit) {
@@ -2978,19 +3096,86 @@ function capWorkbookRows(rows, label, limit = workbookDetailRowLimit) {
   ];
 }
 
-function worksheetXml(matrix) {
+function workbookColumnWidth(header, index) {
+  const text = String(header || "");
+  if (index === 0) return 18;
+  if (/内容|说明|建议|动作|结论|请求参数|业务消息|风险|证据/.test(text)) return 46;
+  if (/时间|日期/.test(text)) return 22;
+  if (/名称|商品|活动|客户|门店|厂家|课程/.test(text)) return 26;
+  if (/金额|数量|数值|行数|比例|评分|编码|状态/.test(text)) return 16;
+  return Math.min(Math.max(Math.ceil(text.length * 2.1), 14), 28);
+}
+
+function workbookRowStyleId(row, sheetName) {
+  const text = (Array.isArray(row) ? row.join(" ") : String(row || "")).toLowerCase();
+  if (/流失风险|续用风险|风险问题|需要关注|当前数据不足|无明细|失败|异常|停用|risk|warning/.test(text)) return 3;
+  if (/重点|关键发现|价值证明|客户继续使用证据|总览结论|健康度评分|下一步动作|总部|门店|厂家/.test(text)) return 2;
+  if (/续用风险|复盘结论/.test(sheetName)) return 4;
+  return 4;
+}
+
+function worksheetXml(matrix, options = {}) {
+  const rowCount = Math.max(matrix.length, 1);
+  const columnCount = Math.max(...matrix.map((row) => row.length), 1);
+  const lastCell = `${excelColumnName(columnCount - 1)}${rowCount}`;
+  const headers = matrix[0] || [];
+  const cols = Array.from({ length: columnCount }, (_, index) => {
+    const width = workbookColumnWidth(headers[index], index);
+    return `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`;
+  }).join("");
   const rows = matrix.map((row, rIndex) => {
     const cells = row.map((value, cIndex) => {
       const ref = `${excelColumnName(cIndex)}${rIndex + 1}`;
       const text = escapeXml(value === null || value === undefined ? "" : String(value));
-      return `<c r="${ref}" t="inlineStr"><is><t>${text}</t></is></c>`;
+      const styleId = rIndex === 0 ? 1 : workbookRowStyleId(row, options.name || "");
+      return `<c r="${ref}" t="inlineStr" s="${styleId}"><is><t>${text}</t></is></c>`;
     }).join("");
-    return `<row r="${rIndex + 1}">${cells}</row>`;
+    const height = rIndex === 0 ? 24 : 30;
+    return `<row r="${rIndex + 1}" ht="${height}" customHeight="1">${cells}</row>`;
   }).join("");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <dimension ref="A1:${lastCell}"/>
+  <sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
+  <cols>${cols}</cols>
   <sheetData>${rows}</sheetData>
+  <autoFilter ref="A1:${lastCell}"/>
 </worksheet>`;
+}
+
+function workbookStylesXml() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="4">
+    <font><sz val="11"/><name val="Microsoft YaHei"/></font>
+    <font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Microsoft YaHei"/></font>
+    <font><b/><sz val="11"/><color rgb="FF17327A"/><name val="Microsoft YaHei"/></font>
+    <font><b/><sz val="11"/><color rgb="FF9A3412"/><name val="Microsoft YaHei"/></font>
+  </fonts>
+  <fills count="6">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FF1F3F95"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFFFF1D6"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFFFE8E0"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFF8FAFF"/><bgColor indexed="64"/></patternFill></fill>
+  </fills>
+  <borders count="2">
+    <border><left/><right/><top/><bottom/><diagonal/></border>
+    <border><left style="thin"><color rgb="FFD7E0FF"/></left><right style="thin"><color rgb="FFD7E0FF"/></right><top style="thin"><color rgb="FFD7E0FF"/></top><bottom style="thin"><color rgb="FFD7E0FF"/></bottom><diagonal/></border>
+  </borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs count="5">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="3" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="5" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>
+  </cellXfs>
+  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+  <dxfs count="0"/>
+  <tableStyles count="0" defaultTableStyle="TableStyleMedium2" defaultPivotStyle="PivotStyleLight16"/>
+</styleSheet>`;
 }
 
 function workbookSheets(summary, report) {
@@ -3000,18 +3185,19 @@ function workbookSheets(summary, report) {
   const metrics = summary.metricRows || {};
   const insights = summary.operationInsights || {};
   const insightRows = [
-    { 模块: "客户续用健康度", 指标: "健康度评分", 数值: insights.healthScore ?? "", 结论: insights.retentionRisk ? `续用风险：${insights.retentionRisk}` : "", 建议动作: "用于判断客户是否已经把四季蝉用成持续运营工具，而不是一次性红包活动。" },
+    { 重点标注: "重点：续用判断", 模块: "客户续用健康度", 指标: "健康度评分", 数值: insights.healthScore ?? "", 结论: insights.retentionRisk ? `续用风险：${insights.retentionRisk}` : "", 建议动作: "用于判断客户是否已经把四季蝉用成持续运营工具，而不是一次性红包活动。" },
     ...((insights.scoreItems || []).map((item) => ({
+      重点标注: item.level === "risk" ? "重点风险" : item.level === "watch" ? "重点关注" : "持续保持",
       模块: "健康度拆解",
       指标: item.label || item.key || "",
       数值: item.value ?? "",
       结论: item.level === "healthy" ? "表现较好" : item.level === "watch" ? "需要关注" : "流失风险",
       建议动作: item.explanation || "",
     }))),
-    ...((insights.valueProofPoints || []).map((item) => ({ 模块: "价值证明点", 指标: "客户继续使用证据", 数值: "", 结论: item, 建议动作: "复盘会上优先展示，用数据证明四季蝉带来的动销、激励和协同价值。" }))),
-    ...((insights.riskItems || []).map((item) => ({ 模块: "流失风险信号", 指标: item.label || "", 数值: item.value ?? "", 结论: item.explanation || "", 建议动作: "形成下月跟进清单，避免客户只看到成本，看不到持续运营收益。" }))),
-    ...((insights.recommendedActions || []).map((item, index) => ({ 模块: "下月推动动作", 指标: `动作${index + 1}`, 数值: "", 结论: item, 建议动作: item }))),
-    ...((insights.weakActivityItems || []).map((item) => ({ 模块: "弱活动品种", 指标: item.商品名称 || item.商品编码 || "", 数值: item.指标值 ?? "", 结论: item.数据路径 || "", 建议动作: "检查是否存在有奖励但无销售的品种，必要时调整选品、门店覆盖或店员培训。" }))),
+    ...((insights.valueProofPoints || []).map((item) => ({ 重点标注: "重点价值证据", 模块: "价值证明点", 指标: "客户继续使用证据", 数值: "", 结论: item, 建议动作: "复盘会上优先展示，用数据证明四季蝉带来的动销、激励和协同价值。" }))),
+    ...((insights.riskItems || []).map((item) => ({ 重点标注: "重点风险", 模块: "流失风险信号", 指标: item.label || "", 数值: item.value ?? "", 结论: item.explanation || "", 建议动作: "形成下月跟进清单，避免客户只看到成本，看不到持续运营收益。" }))),
+    ...((insights.recommendedActions || []).map((item, index) => ({ 重点标注: "重点动作", 模块: "下月推动动作", 指标: `动作${index + 1}`, 数值: "", 结论: item, 建议动作: item }))),
+    ...((insights.weakActivityItems || []).map((item) => ({ 重点标注: "重点跟进品种", 模块: "弱活动品种", 指标: item.商品名称 || item.商品编码 || "", 数值: item.指标值 ?? "", 结论: item.数据路径 || "", 建议动作: "检查是否存在有奖励但无销售的品种，必要时调整选品、门店覆盖或店员培训。" }))),
   ].filter((row) => Object.values(row).some((value) => value !== "" && value !== undefined && value !== null));
   const statusRows = (summary.datasetFiles || []).map((file) => ({
     数据源: file.label || file.name,
@@ -3053,7 +3239,15 @@ function workbookSheets(summary, report) {
     ...((raw.employeeAccount?.writeOffRows || []).map((row) => ({ 类型: "延时豆核销明细", ...row }))),
     ...((raw.employeeAccount?.settleRows || []).map((row) => ({ 类型: "结算明细", ...row }))),
   ];
+  const conclusionRows = [
+    { 重点标注: "重点摘要", 类型: "总览结论", 内容: report?.executiveSummary || "" },
+    ...((report?.highlights || []).map((item) => ({ 重点标注: "重点亮点", 类型: "关键发现", 内容: item }))),
+    ...((report?.risks || []).map((item) => ({ 重点标注: "重点风险", 类型: "风险问题", 内容: item }))),
+    ...((report?.nextActions || []).map((item) => ({ 重点标注: "重点动作", 类型: "下一步动作", 内容: item }))),
+  ];
   return [
+    { name: "续用风险", rows: insightRows.length ? insightRows : [{ 重点标注: "重点关注", 模块: "运营洞察", 指标: "暂无可计算洞察", 数值: "", 结论: "当前数据不足", 建议动作: "补齐销售、活动、奖励、培训、提现或厂家协同数据后再复盘。" }] },
+    { name: "复盘结论", rows: conclusionRows },
     { name: "数据口径说明", rows: [
       { 项目: "数据来源", 内容: summary.source || "登录获取" },
       { 项目: "客户名称", 内容: summary.requestInfo?.merName || raw.meta?.merName || "" },
@@ -3089,13 +3283,6 @@ function workbookSheets(summary, report) {
     { name: "活动汇总-5月_vs_4月", rows: capWorkbookRows([...(raw.activitySummary?.lastMonth?.rows || []), ...(raw.activitySummary?.previousMonth?.rows || [])], "活动汇总-5月_vs_4月") },
     { name: "培训情况", rows: capWorkbookRows(trainingRows, "培训情况") },
     { name: "厂家打赏", rows: manufacturerTipRows.length ? capWorkbookRows(manufacturerTipRows, "厂家打赏") : [{ 类型: "厂家打赏汇总", 指标: "当前口径厂家打赏", 指标值: 0, 说明: "接口成功返回，但无打赏金额和明细记录" }] },
-    { name: "续用风险与运营提升", rows: insightRows.length ? insightRows : [{ 模块: "运营洞察", 指标: "暂无可计算洞察", 数值: "", 结论: "当前数据不足", 建议动作: "补齐销售、活动、奖励、培训、提现或厂家协同数据后再复盘。" }] },
-    { name: "经营复盘结论", rows: [
-      { 类型: "Executive Summary", 内容: report?.executiveSummary || "" },
-      ...((report?.highlights || []).map((item) => ({ 类型: "关键发现", 内容: item }))),
-      ...((report?.risks || []).map((item) => ({ 类型: "风险问题", 内容: item }))),
-      ...((report?.nextActions || []).map((item) => ({ 类型: "下一步动作", 内容: item }))),
-    ] },
   ];
 }
 
@@ -3111,6 +3298,7 @@ async function writeReviewWorkbook(filePath, summary, report) {
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
   <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
   ${sheets.map((sheet) => `<Override PartName="/xl/worksheets/sheet${sheet.id}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("\n  ")}
 </Types>`);
   zip.folder("_rels").file(".rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -3126,13 +3314,52 @@ async function writeReviewWorkbook(filePath, summary, report) {
   zip.folder("xl").folder("_rels").file("workbook.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   ${sheets.map((sheet) => `<Relationship Id="rId${sheet.id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${sheet.id}.xml"/>`).join("\n  ")}
+  <Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
 </Relationships>`);
+  zip.folder("xl").file("styles.xml", workbookStylesXml());
   const worksheets = zip.folder("xl").folder("worksheets");
   for (const sheet of sheets) {
-    worksheets.file(`sheet${sheet.id}.xml`, worksheetXml(sheet.matrix));
+    worksheets.file(`sheet${sheet.id}.xml`, worksheetXml(sheet.matrix, { name: sheet.name }));
   }
   const buffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
   fs.writeFileSync(filePath, buffer);
+}
+
+function workbookDateStamp(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}${month}${day}`;
+}
+
+function safeWorkbookFileSegment(value, fallback) {
+  const text = String(value || fallback || "")
+    .replace(/\.xlsx$/i, "")
+    .replace(/[\\/:*?"<>|\r\n\t]/g, "")
+    .replace(/\s+/g, "")
+    .trim();
+  return (text || fallback || "四季蝉客户").slice(0, 48);
+}
+
+function workbookCustomerName(summary) {
+  const raw = summary?.rawData || {};
+  return (
+    summary?.requestInfo?.merName ||
+    raw.meta?.merName ||
+    summary?.customerName ||
+    summary?.customer_name ||
+    summary?.filename ||
+    "四季蝉客户"
+  );
+}
+
+function reviewWorkbookFileName(summary, date = new Date()) {
+  const customerName = safeWorkbookFileSegment(workbookCustomerName(summary), "四季蝉客户");
+  return `${customerName}_${workbookDateStamp(date)}_四季蝉复盘报告.xlsx`;
+}
+
+function reportArtifactEncodedUrl(shareUrl, filename) {
+  return `${String(shareUrl || "").replace(/\/?$/, "/")}${encodeURIComponent(filename)}`;
 }
 
 async function persistReportArtifact({ report, markdown, summary }) {
@@ -3145,7 +3372,8 @@ async function persistReportArtifact({ report, markdown, summary }) {
   const shareUrl = `${publicReportBaseUrl}/reports/${reportId}/`;
   const svgUrl = `${shareUrl}report.svg`;
   const qrSvgUrl = `${shareUrl}qr.svg`;
-  const excelUrl = `${shareUrl}review.xlsx`;
+  const excelFileName = reviewWorkbookFileName(summary);
+  const excelUrl = reportArtifactEncodedUrl(shareUrl, excelFileName);
   const normalizedDataUrl = `${shareUrl}${encodeURIComponent("四季蝉登录获取标准化数据.json")}`;
   const diagnosticsUrl = `${shareUrl}${encodeURIComponent("四季蝉接口诊断.json")}`;
   const qrSvg = await QRCode.toString(shareUrl, {
@@ -3163,7 +3391,10 @@ async function persistReportArtifact({ report, markdown, summary }) {
   fs.writeFileSync(path.join(reportDir, "index.html"), html, "utf8");
   fs.writeFileSync(path.join(reportDir, "report.svg"), reportSvg, "utf8");
   fs.writeFileSync(path.join(reportDir, "qr.svg"), qrSvg, "utf8");
-  await writeReviewWorkbook(path.join(reportDir, "review.xlsx"), summary, report);
+  await writeReviewWorkbook(path.join(reportDir, excelFileName), summary, report);
+  if (excelFileName !== "review.xlsx") {
+    fs.copyFileSync(path.join(reportDir, excelFileName), path.join(reportDir, "review.xlsx"));
+  }
 
   return { reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl };
 }
@@ -3190,6 +3421,8 @@ async function refreshExistingReportArtifacts(targetReportId = "") {
       });
       const svgUrl = saved.svgUrl || `${saved.shareUrl.replace(/\/+$/, "")}/report.svg`;
       const qrSvgUrl = saved.qrSvgUrl || `${saved.shareUrl.replace(/\/+$/, "")}/qr.svg`;
+      const excelFileName = reviewWorkbookFileName(saved.summary || {});
+      const excelUrl = reportArtifactEncodedUrl(saved.shareUrl, excelFileName);
       const reportSvg = renderReportSvg({ report, summary: saved.summary, shareUrl: saved.shareUrl, qrSvg });
       const html = renderReportHtml({
         report,
@@ -3199,13 +3432,16 @@ async function refreshExistingReportArtifacts(targetReportId = "") {
         svgUrl,
         qrSvgUrl,
       });
-      fs.writeFileSync(path.join(reportDir, "report.json"), JSON.stringify({ ...saved, report, markdown, svgUrl, qrSvgUrl }, null, 2), "utf8");
+      fs.writeFileSync(path.join(reportDir, "report.json"), JSON.stringify({ ...saved, report, markdown, svgUrl, qrSvgUrl, excelUrl }, null, 2), "utf8");
       fs.writeFileSync(path.join(reportDir, "index.html"), html, "utf8");
       fs.writeFileSync(path.join(reportDir, "report.svg"), reportSvg, "utf8");
       fs.writeFileSync(path.join(reportDir, "qr.svg"), qrSvg, "utf8");
       fs.writeFileSync(path.join(reportDir, "四季蝉登录获取标准化数据.json"), JSON.stringify(saved.summary?.rawData || {}, null, 2), "utf8");
       fs.writeFileSync(path.join(reportDir, "四季蝉接口诊断.json"), JSON.stringify(saved.summary?.interfaceDiagnostics || [], null, 2), "utf8");
-      await writeReviewWorkbook(path.join(reportDir, "review.xlsx"), saved.summary || {}, report);
+      await writeReviewWorkbook(path.join(reportDir, excelFileName), saved.summary || {}, report);
+      if (excelFileName !== "review.xlsx") {
+        fs.copyFileSync(path.join(reportDir, excelFileName), path.join(reportDir, "review.xlsx"));
+      }
     } catch (error) {
       console.warn(`Refresh report artifact failed for ${entry.name}: ${error.message}`);
     }

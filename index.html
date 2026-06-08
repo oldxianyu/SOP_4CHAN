@@ -1734,7 +1734,7 @@
 
         .ai-card .ant-radio-group {
           display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
+          grid-template-columns: repeat(3, minmax(0, 1fr));
           width: 100%;
         }
 
@@ -2393,6 +2393,7 @@
         const [artifact, setArtifact] = React.useState(null);
         const [reviewProgress, setReviewProgress] = React.useState(null);
         const progressTimersRef = React.useRef([]);
+        const weComSsoUrl = "https://login.work.weixin.qq.com/wwlogin/sso/login/?login_type=CorpApp&appid=ww408c023179829552&agentid=1000157&redirect_uri=https%3A%2F%2Fmerchants.hydee.cn%2Fapp-jump%2Fsuper-admin-login&state=WWLogin";
 
         const loadStatus = React.useCallback(async () => {
           const response = await fetch("/api/ai-config/status");
@@ -2521,6 +2522,15 @@
           });
         };
 
+        const openWeComSso = () => {
+          const values = sourceForm.getFieldsValue();
+          const merCode = String(values.merCode || "").trim();
+          if (merCode) {
+            copyText(merCode).then(() => message.success("客户编码已复制，扫码后可直接粘贴"));
+          }
+          window.open(weComSsoUrl, "_blank", "noopener,noreferrer");
+        };
+
         const generateReport = async () => {
           if (!file) {
             message.warning("请先上传xlsx文件");
@@ -2626,6 +2636,7 @@
                 },
                 h(Radio.Button, { value: "excel" }, "Excel模板上传"),
                 h(Radio.Button, { value: "sijichan" }, "登录获取"),
+                h(Radio.Button, { value: "wecom" }, "企微扫码"),
               ),
               sourceType === "excel"
                 ? h(
@@ -2670,6 +2681,49 @@
                 h(Button, { type: "primary", loading, onClick: generateReport }, "生成AI复盘报告"),
                 h(Button, { onClick: () => loadStatus().then(() => message.success("配置状态已刷新")) }, "刷新配置状态"),
               ),
+                    )
+                : sourceType === "wecom"
+                  ? h(
+                      React.Fragment,
+                      null,
+                      h(Alert, {
+                        type: "info",
+                        showIcon: true,
+                        message: "数据来源：企微扫码登录",
+                        description: "打开企业微信扫码页后，扫码进入四季蝉后台；如需按客户切换，请粘贴客户编码完成登录。该方式用于快速进入后台核验客户数据，自动复盘取数仍需使用“登录获取”。",
+                      }),
+                      h(
+                        Form,
+                        { form: sourceForm, layout: "vertical", style: { marginTop: 16 } },
+                        h(
+                          Row,
+                          { gutter: [12, 0] },
+                          h(Col, { xs: 24, md: 12 }, h(Form.Item, { label: "客户编码（选填）", name: "merCode" }, h(Input, { placeholder: "扫码后可粘贴到四季蝉后台" }))),
+                          h(Col, { xs: 24, md: 12 }, h(Form.Item, { label: "客户名称（选填）", name: "merName" }, h(Input, { placeholder: "用于人工标记或核验" }))),
+                        ),
+                      ),
+                      h(
+                        Space,
+                        { style: { marginTop: 4 }, wrap: true },
+                        h(Button, { type: "primary", onClick: openWeComSso }, "打开企微扫码登录"),
+                        h(Button, {
+                          onClick: () => {
+                            const merCode = String(sourceForm.getFieldValue("merCode") || "").trim();
+                            if (!merCode) {
+                              message.warning("请先填写客户编码");
+                              return;
+                            }
+                            copyText(merCode).then(() => message.success("客户编码已复制"));
+                          },
+                        }, "复制客户编码"),
+                      ),
+                      h(Alert, {
+                        style: { marginTop: 16 },
+                        type: "warning",
+                        showIcon: true,
+                        message: "当前集成说明",
+                        description: "企微扫码登录后的授权会落在 merchants.hydee.cn 浏览器会话中，本站后端无法直接读取第三方域名登录态。后续如海典后台提供可回调到本站的授权码或可交换 token，再升级为扫码后自动取数。",
+                      }),
                     )
                 : h(
                     React.Fragment,
