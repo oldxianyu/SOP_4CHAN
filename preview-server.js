@@ -3998,6 +3998,9 @@ function getWeComBrowserSessionPublic(session) {
     status: session.status,
     captured: session.status === "captured",
     merchantReady,
+    exportReady: Boolean(session.exportReady),
+    exportProbeAt: session.exportProbeAt || "",
+    exportProbeError: session.exportProbeError || "",
     qrImage: session.qrImage || "",
     currentUrl: session.currentUrl || "",
     lastError: session.lastError || "",
@@ -4172,6 +4175,42 @@ async function createWeComBrowserSession(user, body = {}) {
     }
     session.updatedAt = new Date().toISOString();
   };
+  const probeExportReady = async () => {
+    if (!session.page || session.page.isClosed() || !isMerchantRuntimeUrl(session.page.url()) || session.exportReady) return;
+    const now = Date.now();
+    if (session.lastExportProbeAt && now - session.lastExportProbeAt < 10000) return;
+    session.lastExportProbeAt = now;
+    try {
+      const result = await session.page.evaluate(async ({ url }) => {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({}),
+          credentials: "include",
+        });
+        const text = await response.text();
+        let json;
+        try {
+          json = JSON.parse(text);
+        } catch {
+          json = { raw: text };
+        }
+        return { status: response.status, code: json?.code || "", msg: json?.msg || "", hasData: Boolean(json?.data) };
+      }, { url: `${sijichanManagerBase}report/activityReward/queryTopStatisticData` });
+      if (result.status >= 200 && result.status < 500 && (!result.code || String(result.code) === "10000")) {
+        session.exportReady = true;
+        session.exportProbeError = "";
+      } else {
+        session.exportProbeError = result.msg || result.code || `HTTP ${result.status}`;
+      }
+      session.exportProbeAt = new Date().toISOString();
+      session.updatedAt = session.exportProbeAt;
+    } catch (error) {
+      session.exportProbeError = error.message || "服务器浏览器导出探测失败。";
+      session.exportProbeAt = new Date().toISOString();
+      session.updatedAt = session.exportProbeAt;
+    }
+  };
   try {
     const browser = await chromium.launch(playwrightLaunchOptions());
     session.browser = browser;
@@ -4288,6 +4327,7 @@ async function createWeComBrowserSession(user, body = {}) {
         scanMerchantCookies().catch(() => null);
         tryFillMerchantCode().catch(() => null);
         triggerMerchantProbe().catch(() => null);
+        probeExportReady().catch(() => null);
       }
     });
     await page.goto(merchantWecomSsoUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
@@ -4324,6 +4364,7 @@ async function createWeComBrowserSession(user, body = {}) {
           await scanMerchantCookies();
           await tryFillMerchantCode();
           await triggerMerchantProbe();
+          await probeExportReady();
         }
       } catch {
         // keep session alive until expiry

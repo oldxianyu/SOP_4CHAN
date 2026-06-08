@@ -2652,8 +2652,8 @@
             message.warning("请先创建服务器扫码会话");
             return;
           }
-          if (!weComHandoff?.captured && !weComBrowserSession?.merchantReady) {
-            message.warning("尚未进入新零售管理平台，请先扫码确认登录");
+          if (!weComHandoff?.captured && !weComBrowserSession?.exportReady) {
+            message.warning("服务器尚未确认新零售导出能力，请扫码登录后稍等片刻");
             return;
           }
           const values = sourceForm.getFieldsValue();
@@ -2907,7 +2907,7 @@
                           Space,
                           { wrap: true },
                           h(Button, { type: "primary", loading, onClick: createWeComBrowserSession }, "生成企微扫码二维码"),
-                          h(Button, { type: "primary", loading, disabled: !weComBrowserSession?.merchantReady && !weComHandoff?.captured, onClick: generateFromWeComHandoff }, weComHandoff?.captured ? "用已捕获授权生成报告" : "用服务器登录态生成报告"),
+                          h(Button, { type: "primary", loading, disabled: !weComBrowserSession?.exportReady && !weComHandoff?.captured, onClick: generateFromWeComHandoff }, weComHandoff?.captured ? "用已捕获授权生成报告" : "用服务器登录态生成报告"),
                           h(Button, {
                             onClick: () => {
                               const merCode = String(sourceForm.getFieldValue("merCode") || "").trim();
@@ -2930,13 +2930,15 @@
                                 Alert,
                                 {
                                   style: { marginTop: 12 },
-                                  type: weComBrowserSession.status === "error" || weComBrowserSession.status === "expired" ? "error" : weComBrowserSession.captured || weComBrowserSession.merchantReady ? "success" : "info",
+                                  type: weComBrowserSession.status === "error" || weComBrowserSession.status === "expired" ? "error" : weComBrowserSession.captured || weComBrowserSession.exportReady || weComBrowserSession.merchantReady ? "success" : "info",
                                   showIcon: true,
-                                  message: weComBrowserSession.captured ? "已登录并捕获新零售授权" : weComBrowserSession.merchantReady ? "已进入新零售管理平台" : weComBrowserSession.status === "expired" ? "扫码会话已过期" : weComBrowserSession.status === "error" ? "扫码会话异常" : "等待企业微信扫码",
+                                  message: weComBrowserSession.captured ? "已登录并捕获新零售授权" : weComBrowserSession.exportReady ? "服务器已具备导出能力" : weComBrowserSession.merchantReady ? "已进入新零售管理平台" : weComBrowserSession.status === "expired" ? "扫码会话已过期" : weComBrowserSession.status === "error" ? "扫码会话异常" : "等待企业微信扫码",
                                   description: weComBrowserSession.captured
                                     ? "服务器已经拿到新零售管理平台授权，可以点击生成复盘报告。"
+                                    : weComBrowserSession.exportReady
+                                      ? "服务器浏览器已通过业务接口探测，可以使用当前登录态直接导出数据并生成复盘报告。"
                                     : weComBrowserSession.merchantReady
-                                      ? "服务器浏览器已经进入新零售管理平台，可以使用当前登录态直接导出数据并生成复盘报告。"
+                                      ? (weComBrowserSession.exportProbeError ? `已进入新零售，正在等待接口可用：${weComBrowserSession.exportProbeError}` : "服务器浏览器已经进入新零售管理平台，正在验证导出接口。")
                                     : weComBrowserSession.lastError || "请使用企业微信扫描上方二维码；扫码确认后如果进入新零售管理平台，服务器会自动尝试获取授权并填入客户编码。",
                                 },
                               ),
