@@ -4109,6 +4109,17 @@ async function createWeComBrowserSession(user, body = {}) {
       await maybeCapture(item.value, `server-browser-${item.storeName}:${item.key}`, session.page.url());
     }
   };
+  const scanMerchantCookies = async () => {
+    if (!session.page || session.page.isClosed() || !isMerchantRuntimeUrl(session.page.url())) return;
+    const cookies = await session.page.context().cookies(sijichanApiOrigin).catch(() => []);
+    for (const cookie of cookies) {
+      const key = cookie?.name || "";
+      const value = cookie?.value || "";
+      if (/token|authorization|access|session|sso|jwt/i.test(key) || /Bearer\s+|^[A-Za-z0-9._\-]{20,}$/i.test(value)) {
+        await maybeCapture(value, `server-browser-cookie:${key}`, session.page.url());
+      }
+    }
+  };
   const tryFillMerchantCode = async () => {
     if (!handoff.merCode || !session.page || session.page.isClosed() || !isMerchantRuntimeUrl(session.page.url()) || session.merCodeFilled) return;
     const filled = await session.page.evaluate((merCode) => {
@@ -4137,8 +4148,10 @@ async function createWeComBrowserSession(user, body = {}) {
     }
   };
   const triggerMerchantProbe = async () => {
-    if (!session.page || session.page.isClosed() || !isMerchantRuntimeUrl(session.page.url()) || session.probeTriggered) return;
-    session.probeTriggered = true;
+    if (!session.page || session.page.isClosed() || !isMerchantRuntimeUrl(session.page.url())) return;
+    const now = Date.now();
+    if (session.lastProbeAt && now - session.lastProbeAt < 8000) return;
+    session.lastProbeAt = now;
     const probeUrls = [
       `${sijichanMerchantBase}report/activityReward/queryTopStatisticData`,
       `${sijichanMerchantBase}report/account/emp/overview/queryRewardStat`,
@@ -4269,6 +4282,7 @@ async function createWeComBrowserSession(user, body = {}) {
         session.currentUrl = frame.url();
         session.updatedAt = new Date().toISOString();
         scanMerchantPageStorage().catch(() => null);
+        scanMerchantCookies().catch(() => null);
         tryFillMerchantCode().catch(() => null);
         triggerMerchantProbe().catch(() => null);
       }
@@ -4304,6 +4318,7 @@ async function createWeComBrowserSession(user, body = {}) {
           session.currentUrl = session.page.url();
           session.updatedAt = new Date().toISOString();
           await scanMerchantPageStorage();
+          await scanMerchantCookies();
           await tryFillMerchantCode();
           await triggerMerchantProbe();
         }
