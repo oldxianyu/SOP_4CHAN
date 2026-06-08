@@ -45,6 +45,7 @@ let pool = null;
 let dbReady = false;
 let dbChecked = false;
 const activeReviewJobs = new Set();
+const activeWeComBrowserSessions = new Map();
 const workbookDetailRowLimit = Number(process.env.WORKBOOK_DETAIL_ROW_LIMIT || 5000);
 const disableLocalDataFallback = process.env.DISABLE_LOCAL_DATA_FALLBACK === "true";
 
@@ -3937,6 +3938,242 @@ function renderWeComHandoffHelperScript({ endpoint, handoffToken, merCode }) {
     .trim();
 }
 
+function findChromiumExecutable() {
+  const configured = String(process.env.CHROMIUM_EXECUTABLE_PATH || process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || "").trim();
+  const candidates = [
+    configured,
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable",
+    "/snap/bin/chromium",
+    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+  ].filter(Boolean);
+  return candidates.find((candidate) => fs.existsSync(candidate)) || "";
+}
+
+function playwrightLaunchOptions() {
+  const executablePath = findChromiumExecutable();
+  const homeDir = process.env.HOME || os.homedir() || "/home/hydee";
+  const uid = typeof process.getuid === "function" ? process.getuid() : 1000;
+  return {
+    ...(executablePath ? { executablePath } : {}),
+    headless: true,
+    env: {
+      ...process.env,
+      HOME: homeDir,
+      XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR || `/run/user/${uid}`,
+      PATH: `${process.env.PATH || "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"}:/snap/bin`,
+    },
+    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+  };
+}
+
+async function markSijichanHandoffCapturedById(handoffId, userId, token, details = {}) {
+  const normalizedToken = assertSijichanTokenFormat(token);
+  if (!(await isDbAvailable())) throw new Error("数据库未连接，无法保存企微授权token。");
+  const tokenExpiresAt = details.expiresAt ? new Date(details.expiresAt) : null;
+  const result = await queryDb(
+    `update sijichan_token_handoffs
+     set status='captured',
+         token_encrypted=$3,
+         token_expires_at=$4,
+         captured_at=now(),
+         last_error=null,
+         updated_at=now()
+     where id=$1 and user_id=$2 and expires_at > now()
+     returning *`,
+    [handoffId, userId, encryptSecret(normalizedToken), tokenExpiresAt && !Number.isNaN(tokenExpiresAt.getTime()) ? tokenExpiresAt.toISOString() : null],
+  );
+  if (!result.rows[0]) throw new Error("企微授权交接会话不存在或已过期。");
+  return normalizeSijichanTokenHandoff(result.rows[0]);
+}
+
+function getWeComBrowserSessionPublic(session) {
+  return {
+    id: session.id,
+    handoffId: session.handoff?.id || "",
+    status: session.status,
+    captured: session.status === "captured",
+    qrImage: session.qrImage || "",
+    currentUrl: session.currentUrl || "",
+    lastError: session.lastError || "",
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    expiresAt: session.handoff?.expiresAt || session.expiresAt || "",
+  };
+}
+
+async function closeWeComBrowserSession(session, status = "") {
+  if (!session) return;
+  if (session.pollTimer) clearInterval(session.pollTimer);
+  if (session.expireTimer) clearTimeout(session.expireTimer);
+  session.pollTimer = null;
+  session.expireTimer = null;
+  if (status && session.status !== "captured") session.status = status;
+  session.updatedAt = new Date().toISOString();
+  try {
+    if (session.browser) await session.browser.close();
+  } catch (error) {
+    console.warn(`WeCom browser close skipped: ${error.message}`);
+  }
+  session.browser = null;
+}
+
+async function dataUrlFromRemoteImage(url) {
+  if (!url) return "";
+  const response = await fetch(url, {
+    headers: {
+      "user-agent": "Mozilla/5.0 SOP_4CHAN QR fetch",
+      accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+    },
+  });
+  if (!response.ok) throw new Error(`二维码图片获取失败：${response.status}`);
+  const contentType = response.headers.get("content-type") || "image/png";
+  const bytes = Buffer.from(await response.arrayBuffer());
+  return `data:${contentType.split(";")[0]};base64,${bytes.toString("base64")}`;
+}
+
+async function createWeComBrowserSession(user, body = {}) {
+  let chromium;
+  try {
+    ({ chromium } = require("playwright-core"));
+  } catch (error) {
+    throw new Error("服务器未安装 playwright-core，暂不能使用服务器扫码模式。");
+  }
+  const handoff = await createSijichanTokenHandoff(user, body);
+  const baseUrl = publicReportBaseUrl.replace(/\/+$/, "");
+  const merchantRedirect = `${sijichanApiOrigin}/app-jump/super-admin-login`;
+  const merchantWecomSsoUrl = `https://login.work.weixin.qq.com/wwlogin/sso/login/?login_type=CorpApp&appid=ww408c023179829552&agentid=1000157&redirect_uri=${encodeURIComponent(merchantRedirect)}&state=${encodeURIComponent(handoff.handoffToken)}`;
+  const session = {
+    id: createId("wbs"),
+    userId: user.id,
+    handoff,
+    status: "opening",
+    qrImage: "",
+    currentUrl: "",
+    lastError: "",
+    browser: null,
+    page: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    expiresAt: handoff.expiresAt,
+  };
+  activeWeComBrowserSessions.set(session.id, session);
+  const tokenPattern = /(?:Authorization|authorization)\s*[:=]\s*["']?(?:Bearer\s+)?([A-Za-z0-9._\-]{20,})|(?:token|access_token|merchant_token|accessToken)\s*["']?\s*[:=]\s*["']([A-Za-z0-9._\-]{20,})["']/i;
+  const maybeCapture = async (raw, from) => {
+    if (session.status === "captured") return;
+    const token = normalizeSijichanToken((String(raw || "").match(tokenPattern) || [])[1] || (String(raw || "").match(tokenPattern) || [])[2] || raw);
+    if (!token || token.length < 20 || !/^[A-Za-z0-9._\-]+$/.test(token)) return;
+    try {
+      await markSijichanHandoffCapturedById(handoff.id, user.id, token, { from, href: session.currentUrl });
+      session.status = "captured";
+      session.lastError = "";
+      session.updatedAt = new Date().toISOString();
+      await closeWeComBrowserSession(session);
+    } catch (error) {
+      session.lastError = error.message || "服务器扫码 token 保存失败。";
+      session.updatedAt = new Date().toISOString();
+    }
+  };
+  try {
+    const browser = await chromium.launch(playwrightLaunchOptions());
+    session.browser = browser;
+    browser.on("disconnected", () => {
+      if (session.status !== "captured" && session.status !== "expired" && session.status !== "error") {
+        session.status = "error";
+        session.lastError = "服务器浏览器进程已退出，请重新创建扫码会话。";
+        session.updatedAt = new Date().toISOString();
+      }
+    });
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const page = await context.newPage();
+    session.page = page;
+    page.on("close", () => {
+      if (session.status !== "captured" && session.status !== "expired" && session.status !== "error") {
+        session.status = "error";
+        session.lastError = "服务器浏览器页面已关闭，请重新创建扫码会话。";
+        session.updatedAt = new Date().toISOString();
+      }
+    });
+    page.on("request", (request) => {
+      session.currentUrl = request.url();
+      const headers = request.headers();
+      maybeCapture(headers.authorization || headers.Authorization, "server-browser-request-header");
+      maybeCapture(request.url(), "server-browser-request-url");
+      const postData = request.postData();
+      if (postData) maybeCapture(postData, "server-browser-request-body");
+    });
+    page.on("response", async (response) => {
+      session.currentUrl = response.url();
+      const headers = response.headers();
+      maybeCapture(headers.authorization || headers.Authorization, "server-browser-response-header");
+      const contentType = headers["content-type"] || "";
+      if (/json|text|javascript/i.test(contentType)) {
+        response.text().then((text) => maybeCapture(text, "server-browser-response-body")).catch(() => null);
+      }
+    });
+    page.on("framenavigated", (frame) => {
+      if (frame === page.mainFrame()) {
+        session.currentUrl = frame.url();
+        session.updatedAt = new Date().toISOString();
+      }
+    });
+    await page.goto(merchantWecomSsoUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+    session.currentUrl = page.url();
+    if (page.isClosed()) throw new Error("服务器浏览器页面已关闭，无法生成企微二维码。");
+    const qrImageUrl = await page.evaluate(() => {
+      const image = document.querySelector(".wwLogin_qrcode_img") || [...document.images].find((img) => /qrcode/i.test(img.src || ""));
+      return image ? image.src : "";
+    }).catch(() => "");
+    session.qrImage = qrImageUrl
+      ? await dataUrlFromRemoteImage(qrImageUrl)
+      : `data:image/png;base64,${(await page.screenshot({ fullPage: false })).toString("base64")}`;
+    page.waitForTimeout(1000)
+      .then(async () => {
+        if (!page.isClosed() && session.status === "waiting_scan") {
+          const nextQrImageUrl = await page.evaluate(() => {
+            const image = document.querySelector(".wwLogin_qrcode_img") || [...document.images].find((img) => /qrcode/i.test(img.src || ""));
+            return image ? image.src : "";
+          }).catch(() => "");
+          if (nextQrImageUrl) session.qrImage = await dataUrlFromRemoteImage(nextQrImageUrl);
+          session.currentUrl = page.url();
+          session.updatedAt = new Date().toISOString();
+        }
+      })
+      .catch(() => null);
+    session.status = "waiting_scan";
+    session.updatedAt = new Date().toISOString();
+    session.pollTimer = setInterval(async () => {
+      try {
+        if (session.page && session.status !== "captured") {
+          session.currentUrl = session.page.url();
+          session.updatedAt = new Date().toISOString();
+        }
+      } catch {
+        // keep session alive until expiry
+      }
+    }, 3000);
+    session.expireTimer = setTimeout(async () => {
+      if (session.status !== "captured") {
+        session.status = "expired";
+        session.lastError = "服务器扫码会话已过期，请重新创建。";
+        session.updatedAt = new Date().toISOString();
+        await closeWeComBrowserSession(session, "expired");
+      }
+    }, 10 * 60 * 1000);
+    return getWeComBrowserSessionPublic(session);
+  } catch (error) {
+    session.status = "error";
+    session.lastError = error.message || "服务器扫码会话创建失败。";
+    session.updatedAt = new Date().toISOString();
+    console.error(`[wecom-browser] session ${session.id} failed:`, error);
+    await closeWeComBrowserSession(session, "error");
+    throw new Error(session.lastError);
+  }
+}
+
 function networkErrorMessage(error) {
   const parts = [error?.message].filter(Boolean);
   const cause = error?.cause;
@@ -5091,6 +5328,35 @@ async function handleCreateWeComHandoff(req, res) {
   sendJson(res, 200, { ok: true, ...handoff, wecomSsoUrl, merchantWecomSsoUrl, helperScript });
 }
 
+async function handleCreateWeComBrowserSession(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const body = await readJsonBody(req, 1024 * 64).catch(() => ({}));
+  try {
+    const session = await createWeComBrowserSession(user, body);
+    sendJson(res, 200, { ok: true, session });
+  } catch (error) {
+    sendJson(res, 500, { error: error.message || "服务器扫码会话创建失败。" });
+  }
+}
+
+async function handleGetWeComBrowserSession(req, res, id) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const session = activeWeComBrowserSessions.get(id);
+  if (!session || (user.role !== "admin" && session.userId !== user.id)) {
+    sendJson(res, 404, { error: "服务器扫码会话不存在或已过期。" });
+    return;
+  }
+  const handoff = await getSijichanTokenHandoffForUser(user, session.handoff.id, false);
+  if (handoff?.captured && session.status !== "captured") {
+    session.status = "captured";
+    session.updatedAt = new Date().toISOString();
+    await closeWeComBrowserSession(session);
+  }
+  sendJson(res, 200, { ok: true, session: getWeComBrowserSessionPublic(session), handoff });
+}
+
 async function handleGetWeComHandoff(req, res, id) {
   const user = await requireUser(req, res);
   if (!user) return;
@@ -5383,6 +5649,7 @@ function createServer() {
       if (url.pathname === "/api/sijichan-review-report" && req.method === "POST") return await handleSijichanReviewReport(req, res);
       if (url.pathname === "/api/wecom-token-review-report" && req.method === "POST") return await handleWeComTokenReviewReport(req, res);
       if (url.pathname === "/api/wecom-handoff" && req.method === "POST") return await handleCreateWeComHandoff(req, res);
+      if (url.pathname === "/api/wecom-browser-session" && req.method === "POST") return await handleCreateWeComBrowserSession(req, res);
       if (url.pathname === "/api/wecom-token-capture" && req.method === "OPTIONS") return sendNoContent(res, weComCaptureCorsHeaders(req));
       if (url.pathname === "/api/wecom-token-capture" && req.method === "POST") return await handleCaptureWeComToken(req, res);
       if (url.pathname === "/api/wecom-handoff-review-report" && req.method === "POST") return await handleWeComHandoffReviewReport(req, res);
@@ -5397,6 +5664,8 @@ function createServer() {
       if (adminUserMatch && req.method === "PATCH") return await handleAdminUpdateUser(req, res, decodeURIComponent(adminUserMatch[1]));
       const handoffMatch = url.pathname.match(/^\/api\/wecom-handoff\/([^/]+)$/);
       if (handoffMatch && req.method === "GET") return await handleGetWeComHandoff(req, res, decodeURIComponent(handoffMatch[1]));
+      const browserSessionMatch = url.pathname.match(/^\/api\/wecom-browser-session\/([^/]+)$/);
+      if (browserSessionMatch && req.method === "GET") return await handleGetWeComBrowserSession(req, res, decodeURIComponent(browserSessionMatch[1]));
       const reportMatch = url.pathname.match(/^\/api\/review-reports\/([^/]+)$/);
       if (reportMatch && req.method === "GET") return await handleGetReport(req, res, decodeURIComponent(reportMatch[1]));
       return serveStatic(req, res);

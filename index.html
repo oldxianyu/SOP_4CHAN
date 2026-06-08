@@ -2393,8 +2393,10 @@
         const [artifact, setArtifact] = React.useState(null);
         const [reviewProgress, setReviewProgress] = React.useState(null);
         const [weComHandoff, setWeComHandoff] = React.useState(null);
+        const [weComBrowserSession, setWeComBrowserSession] = React.useState(null);
         const progressTimersRef = React.useRef([]);
         const handoffPollRef = React.useRef(null);
+        const browserSessionPollRef = React.useRef(null);
         const weComSsoUrl = "https://login.work.weixin.qq.com/wwlogin/sso/login/?login_type=CorpApp&appid=ww408c023179829552&agentid=1000157&redirect_uri=https%3A%2F%2Fmerchants.hydee.cn%2Fapp-jump%2Fsuper-admin-login&state=WWLogin";
 
         const loadStatus = React.useCallback(async () => {
@@ -2410,6 +2412,7 @@
           progressTimersRef.current.forEach((timer) => clearTimeout(timer));
           progressTimersRef.current = [];
           if (handoffPollRef.current) clearInterval(handoffPollRef.current);
+          if (browserSessionPollRef.current) clearInterval(browserSessionPollRef.current);
         }, []);
 
         const resetReport = (options = {}) => {
@@ -2420,11 +2423,16 @@
           setArtifact(null);
           setReviewProgress(null);
           if (!options.keepWeComHandoff) setWeComHandoff(null);
+          if (!options.keepWeComHandoff) setWeComBrowserSession(null);
           progressTimersRef.current.forEach((timer) => clearTimeout(timer));
           progressTimersRef.current = [];
           if (!options.keepWeComHandoff && handoffPollRef.current) {
             clearInterval(handoffPollRef.current);
             handoffPollRef.current = null;
+          }
+          if (!options.keepWeComHandoff && browserSessionPollRef.current) {
+            clearInterval(browserSessionPollRef.current);
+            browserSessionPollRef.current = null;
           }
         };
 
@@ -2562,6 +2570,30 @@
           handoffPollRef.current = setInterval(check, 5000);
         }, []);
 
+        const pollWeComBrowserSession = React.useCallback((sessionId) => {
+          if (!sessionId) return;
+          if (browserSessionPollRef.current) clearInterval(browserSessionPollRef.current);
+          const check = async () => {
+            try {
+              const response = await fetch(`/api/wecom-browser-session/${encodeURIComponent(sessionId)}`);
+              const data = await response.json().catch(() => ({}));
+              if (response.ok && data.session) {
+                setWeComBrowserSession(data.session);
+                if (data.handoff) setWeComHandoff((prev) => ({ ...(prev || {}), ...data.handoff }));
+                if ((data.session.captured || data.handoff?.captured) && browserSessionPollRef.current) {
+                  clearInterval(browserSessionPollRef.current);
+                  browserSessionPollRef.current = null;
+                  message.success("服务器已捕获新零售授权token，可以生成报告");
+                }
+              }
+            } catch {
+              // keep polling while the page is open
+            }
+          };
+          check();
+          browserSessionPollRef.current = setInterval(check, 4000);
+        }, []);
+
         const createWeComHandoff = async () => {
           const values = sourceForm.getFieldsValue();
           try {
@@ -2578,6 +2610,25 @@
             message.success("已打开企微扫码页，扫码进入新零售后运行授权助手");
           } catch (err) {
             message.error(err.message || "企微授权交接会话创建失败");
+          }
+        };
+
+        const createWeComBrowserSession = async () => {
+          const values = sourceForm.getFieldsValue();
+          try {
+            const response = await fetch("/api/wecom-browser-session", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(values),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error || "服务器扫码会话创建失败");
+            setWeComBrowserSession(data.session);
+            setWeComHandoff({ id: data.session.handoffId, captured: data.session.captured });
+            pollWeComBrowserSession(data.session.id);
+            message.success("服务器扫码会话已创建，请扫描页面中的企微二维码");
+          } catch (err) {
+            message.error(err.message || "服务器扫码会话创建失败");
           }
         };
 
@@ -2868,10 +2919,27 @@
                         h(
                           Space,
                           { wrap: true },
+                          h(Button, { onClick: createWeComBrowserSession }, "服务器扫码获取"),
                           h(Button, { type: "primary", onClick: createWeComHandoff }, "创建交接并打开扫码"),
                           h(Button, { disabled: !weComHandoff?.helperScript, onClick: copyWeComHelperScript }, "复制授权助手"),
                           h(Button, { type: "primary", loading, disabled: !weComHandoff?.captured, onClick: generateFromWeComHandoff }, "用已捕获授权生成报告"),
                         ),
+                        weComBrowserSession
+                          ? h(
+                              "div",
+                              { style: { marginTop: 14 } },
+                              weComBrowserSession.qrImage
+                                ? h("img", { src: weComBrowserSession.qrImage, alt: "企微扫码登录", style: { width: "100%", maxWidth: 360, borderRadius: 8, border: "1px solid #d8e1f2" } })
+                                : null,
+                              h(
+                                Text,
+                                { type: weComBrowserSession.status === "error" || weComBrowserSession.status === "expired" ? "danger" : "secondary" },
+                                weComBrowserSession.captured
+                                  ? "服务器已捕获新零售授权，可直接生成报告。"
+                                  : weComBrowserSession.lastError || "请用企业微信扫描上方二维码；扫码进入新零售后，系统会在服务器浏览器中监听接口授权。",
+                              ),
+                            )
+                          : null,
                         weComHandoff
                           ? h(
                               Alert,
