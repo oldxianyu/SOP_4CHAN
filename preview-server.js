@@ -5791,6 +5791,10 @@ async function handleWeComBrowserSessionReviewReport(req, res) {
     sendJson(res, 409, { error: session.lastError || "服务器扫码会话不可用，请重新生成二维码并扫码。" });
     return;
   }
+  if (!isMerchantRuntimeUrl(session.page.url())) {
+    sendJson(res, 409, { error: "服务器浏览器尚未进入新零售管理平台，请扫码确认登录后再生成报告。" });
+    return;
+  }
   await generateWeComBrowserSessionReportForUser(user, res, session, body);
 }
 
