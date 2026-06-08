@@ -4095,7 +4095,6 @@ async function createWeComBrowserSession(user, body = {}) {
       session.status = "captured";
       session.lastError = "";
       session.updatedAt = new Date().toISOString();
-      await closeWeComBrowserSession(session);
     } catch (error) {
       session.lastError = error.message || "服务器扫码 token 保存失败。";
       session.updatedAt = new Date().toISOString();
@@ -4385,7 +4384,7 @@ async function createWeComBrowserSession(user, body = {}) {
       }
     }, 3000);
     session.expireTimer = setTimeout(async () => {
-      if (session.status !== "captured") {
+      if (session.status !== "expired") {
         session.status = "expired";
         session.lastError = "服务器扫码会话已过期，请重新创建。";
         session.updatedAt = new Date().toISOString();
@@ -5707,7 +5706,6 @@ async function handleGetWeComBrowserSession(req, res, id) {
   if (handoff?.captured && session.status !== "captured") {
     session.status = "captured";
     session.updatedAt = new Date().toISOString();
-    await closeWeComBrowserSession(session);
   }
   sendJson(res, 200, { ok: true, session: getWeComBrowserSessionPublic(session), handoff });
 }
@@ -5862,6 +5860,10 @@ async function handleWeComBrowserSessionReviewReport(req, res) {
     return;
   }
   const handoff = await getSijichanTokenHandoffForUser(user, session.handoff.id, true).catch(() => null);
+  if (session.exportReady && session.page && !session.page.isClosed()) {
+    await generateWeComBrowserSessionReportForUser(user, res, session, body);
+    return;
+  }
   if (handoff?.token) {
     await queryDb("update sijichan_token_handoffs set used_at=now(), status='used', updated_at=now() where id=$1", [handoff.id]).catch(() => null);
     await generateWeComTokenReportForUser(user, res, { token: handoff.token, merCode: body.merCode || handoff.merCode, merName: body.merName || handoff.merName });
