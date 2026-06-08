@@ -344,6 +344,7 @@ async function ensureDatabase() {
     );
     create table if not exists ai_configs (
       id text primary key default gen_random_uuid()::text,
+      owner_user_id text references users(id) on delete cascade,
       base_url text not null,
       model text not null,
       protocol text not null,
@@ -601,6 +602,7 @@ async function ensureDatabase() {
       alter table review_reports add column if not exists excel_url text;
       alter table review_reports add column if not exists normalized_data_url text;
       alter table review_reports add column if not exists diagnostics_url text;
+      alter table ai_configs add column if not exists owner_user_id text references users(id) on delete cascade;
       alter table ai_review_uploads add column if not exists report_db_id text references review_reports(id) on delete set null;
       alter table ai_review_uploads add column if not exists error_message text;
       alter table auth_operation_logs add column if not exists metadata_json jsonb not null default '{}'::jsonb;
@@ -611,6 +613,8 @@ async function ensureDatabase() {
       create index if not exists idx_review_reports_user_created on review_reports(user_id, created_at desc);
       create index if not exists idx_review_reports_created on review_reports(created_at desc);
       create index if not exists idx_review_reports_status_created on review_reports(status, created_at desc);
+      update ai_configs set owner_user_id = updated_by where owner_user_id is null and updated_by is not null;
+      create index if not exists idx_ai_configs_owner_updated on ai_configs(owner_user_id, updated_at desc);
       create index if not exists idx_ai_review_uploads_user_created on ai_review_uploads(user_id, created_at desc);
       create unique index if not exists idx_ai_review_uploads_dataset_unique on ai_review_uploads(dataset_id) where dataset_id is not null;
       create index if not exists idx_ai_review_uploads_report on ai_review_uploads(report_db_id);
@@ -877,41 +881,116 @@ function decryptSecret(value) {
   return Buffer.concat([decipher.update(Buffer.from(encryptedText, "base64url")), decipher.final()]).toString("utf8");
 }
 
-async function loadAiConfig() {
+function aiConfigFromRow(row, source = "self", owner = null) {
+  if (!row) return null;
+  return {
+    apiKey: decryptSecret(row.api_key_encrypted),
+    baseUrl: row.base_url,
+    model: row.model,
+    protocol: row.protocol,
+    updatedAt: row.updated_at,
+    source,
+    ownerUserId: row.owner_user_id || row.updated_by || owner?.id || "",
+    ownerName: owner?.name || "",
+  };
+}
+
+async function findHydeeAdminUser() {
   if (await isDbAvailable()) {
-    const result = await queryDb("select * from ai_configs order by updated_at desc limit 1");
-    const row = result.rows[0];
-    if (row) {
-      return {
-        apiKey: decryptSecret(row.api_key_encrypted),
-        baseUrl: row.base_url,
-        model: row.model,
-        protocol: row.protocol,
-        updatedAt: row.updated_at,
-      };
-    }
+    const result = await queryDb(
+      "select * from users where lower(name) = 'hydee' and role = 'admin' and status = 'active' order by created_at asc limit 1",
+    );
+    return normalizeUserRow(result.rows[0]);
   }
-  return loadConfig();
+  return normalizeUserRow(readLocalData().users.find((user) => String(user.name || "").toLowerCase() === "hydee" && user.role === "admin" && user.status !== "disabled"));
+}
+
+async function loadAiConfigByOwner(userId, source = "self", owner = null) {
+  if (!userId) return null;
+  if (await isDbAvailable()) {
+    const result = await queryDb(
+      `select * from ai_configs
+       where owner_user_id = $1 or (owner_user_id is null and updated_by = $1)
+       order by updated_at desc
+       limit 1`,
+      [userId],
+    );
+    return aiConfigFromRow(result.rows[0], source, owner);
+  }
+  const row = readLocalData().aiConfigs
+    .filter((item) => item.ownerUserId === userId || item.updatedBy === userId)
+    .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")))[0];
+  if (!row) return null;
+  return { ...row, source, ownerUserId: userId, ownerName: owner?.name || "" };
+}
+
+async function loadOwnAiConfig(user) {
+  return loadAiConfigByOwner(user?.id, "self", user);
+}
+
+async function loadHydeeFallbackConfig(skipUserId = "") {
+  const hydee = await findHydeeAdminUser();
+  if (!hydee?.id || hydee.id === skipUserId) return null;
+  const config = await loadAiConfigByOwner(hydee.id, "hydee", hydee);
+  return config ? { ...config, fallbackUserId: hydee.id, fallbackUserName: hydee.name || "hydee" } : null;
+}
+
+async function loadAiConfigForUser(user = null) {
+  const own = await loadOwnAiConfig(user);
+  if (own?.apiKey && own?.model) return { ...own, source: "self" };
+
+  const fallback = await loadHydeeFallbackConfig(user?.id || "");
+  if (fallback?.apiKey && fallback?.model) return fallback;
+
+  const legacy = loadConfig();
+  return legacy?.apiKey ? { ...legacy, source: "legacy", ownerName: "hydee" } : legacy;
+}
+
+async function loadAiConfig() {
+  return loadAiConfigForUser(null);
 }
 
 async function saveAiConfig(next, userId) {
   if (await isDbAvailable()) {
     await queryDb(
-      "insert into ai_configs(base_url, model, protocol, api_key_encrypted, updated_by) values($1,$2,$3,$4,$5)",
-      [next.baseUrl, next.model, next.protocol, encryptSecret(next.apiKey), userId || null],
+      "insert into ai_configs(owner_user_id, base_url, model, protocol, api_key_encrypted, updated_by) values($1,$2,$3,$4,$5,$6)",
+      [userId || null, next.baseUrl, next.model, next.protocol, encryptSecret(next.apiKey), userId || null],
     );
-    return next;
+    return { ...next, source: "self", ownerUserId: userId || "" };
   }
-  saveConfig(next);
-  return next;
+  const data = readLocalData();
+  data.aiConfigs.push({
+    id: createId("aic"),
+    ownerUserId: userId || "",
+    updatedBy: userId || "",
+    ...next,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+  writeLocalData(data);
+  return { ...next, source: "self", ownerUserId: userId || "" };
 }
 
-async function publicConfigStatus(config = null) {
-  const activeConfig = config || (await loadAiConfig());
+function aiConfigSourceLabel(source) {
+  if (source === "self") return "当前账号";
+  if (source === "hydee") return "hydee管理员兜底";
+  if (source === "legacy") return "hydee兜底";
+  return "未配置";
+}
+
+async function publicConfigStatus(user = null, config = null) {
+  const own = await loadOwnAiConfig(user);
+  const fallback = await loadHydeeFallbackConfig(user?.id || "");
+  const activeConfig = config || (own?.apiKey && own?.model ? own : fallback) || loadConfig();
+  const source = config?.source || (own?.apiKey && own?.model ? "self" : fallback?.apiKey && fallback?.model ? "hydee" : activeConfig?.apiKey ? "legacy" : "none");
   return {
     configured: Boolean(activeConfig.apiKey && activeConfig.model),
     adminReady: true,
     hasApiKey: Boolean(activeConfig.apiKey),
+    hasOwnConfig: Boolean(own?.apiKey && own?.model),
+    fallbackConfigured: Boolean(fallback?.apiKey && fallback?.model),
+    source,
+    sourceLabel: aiConfigSourceLabel(source),
     baseUrl: activeConfig.baseUrl || "https://api.openai.com/v1",
     model: activeConfig.model || "gpt-5.2",
     protocol: activeConfig.protocol || (String(activeConfig.baseUrl || "").includes("deepseek") ? "chat_completions" : "responses"),
@@ -2969,10 +3048,10 @@ async function refreshExistingReportArtifacts(targetReportId = "") {
 }
 
 
-async function generateReportFromSummary(summary) {
-  const config = await loadAiConfig();
+async function generateReportFromSummary(summary, user = null) {
+  const config = await loadAiConfigForUser(user);
   if (!config.apiKey || !config.model) {
-    const error = new Error("AI服务未配置，请先进入AI配置页面。");
+    const error = new Error("AI服务未配置，请在AI配置页面保存自己的API Key，或联系管理员hydee配置兜底API。");
     error.statusCode = 400;
     throw error;
   }
@@ -3973,21 +4052,22 @@ async function runSijichanExport(body) {
   return summarizeSijichanRaw(raw);
 }
 
-async function handleConfigStatus(_req, res) {
-  sendJson(res, 200, await publicConfigStatus());
+async function handleConfigStatus(req, res) {
+  const user = await getCurrentUser(req);
+  sendJson(res, 200, await publicConfigStatus(user));
 }
 
 async function handleSaveConfig(req, res) {
-  const user = await requireAdmin(req, res);
+  const user = await requireUser(req, res);
   if (!user) return;
   const body = await readJsonBody(req);
-  const current = await loadAiConfig();
+  const current = (await loadOwnAiConfig(user)) || {};
 
   const next = {
     apiKey: body.apiKey ? String(body.apiKey).trim() : current.apiKey,
-    baseUrl: normalizeBaseUrl(body.baseUrl || current.baseUrl),
-    model: String(body.model || current.model || "gpt-5.2").trim(),
-    protocol: String(body.protocol || current.protocol || "responses").trim(),
+    baseUrl: normalizeBaseUrl(body.baseUrl || current.baseUrl || "https://api.deepseek.com"),
+    model: String(body.model || current.model || "deepseek-v4-flash").trim(),
+    protocol: String(body.protocol || current.protocol || "chat_completions").trim(),
     updatedAt: new Date().toISOString(),
   };
 
@@ -3997,14 +4077,14 @@ async function handleSaveConfig(req, res) {
   }
 
   await saveAiConfig(next, user.id);
-  sendJson(res, 200, { ok: true, status: await publicConfigStatus(next) });
+  sendJson(res, 200, { ok: true, status: await publicConfigStatus(user) });
 }
 
 async function handleTestConfig(req, res) {
-  const user = await requireAdmin(req, res);
+  const user = await requireUser(req, res);
   if (!user) return;
   const body = await readJsonBody(req);
-  const saved = await loadAiConfig();
+  const saved = await loadAiConfigForUser(user);
 
   const config = {
     apiKey: body.apiKey ? String(body.apiKey).trim() : saved.apiKey,
@@ -4061,7 +4141,7 @@ async function handleReviewReport(req, res) {
   console.log(`[review] start ${jobKey} ${filename}`);
   try {
     datasetId = await saveDatasetRecord(user.id, "excel", summary, filename);
-    const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary);
+    const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary, user);
     const dbReportId = await saveReviewReportRecord(user.id, "excel", filename, summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
     await linkDatasetToReviewReport(datasetId, dbReportId, "completed");
     finishReviewJob(jobKey, startedAt, reportId);
@@ -4091,9 +4171,9 @@ async function handleSijichanReviewReport(req, res) {
   const user = await requireUser(req, res);
   if (!user) return;
   const body = await readJsonBody(req, 1024 * 1024);
-  const config = await loadAiConfig();
+  const config = await loadAiConfigForUser(user);
   if (!config.apiKey || !config.model) {
-    sendJson(res, 400, { error: "AI服务未配置，请先进入AI配置页面。" });
+    sendJson(res, 400, { error: "AI服务未配置，请在AI配置页面保存自己的API Key，或联系管理员hydee配置兜底API。" });
     return;
   }
 
@@ -4110,7 +4190,7 @@ async function handleSijichanReviewReport(req, res) {
       return;
     }
     datasetId = await saveDatasetRecord(user.id, "login", summary, summary.source || "登录获取");
-    const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary);
+    const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary, user);
     const dbReportId = await saveReviewReportRecord(user.id, "login", "登录获取", summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
     await upsertSijichanAuthorization(user.id, body, summary, dbReportId).catch((error) => {
       console.warn(`Sijichan authorization save skipped: ${error.message}`);

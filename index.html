@@ -2588,7 +2588,7 @@
                 type: status?.configured ? "success" : "warning",
                 showIcon: true,
                 message: status?.configured ? "AI服务已配置" : "AI服务未配置",
-                description: status?.configured ? `当前模型：${status.model}` : "请先到“AI配置”页签保存API Key和模型。",
+                description: status?.configured ? `当前模型：${status.model}；来源：${status.sourceLabel || "当前账号"}` : "可在“AI配置”页签保存自己的API Key；未配置时将尝试使用hydee管理员兜底API。",
               }),
               h(Divider, null),
               h(
@@ -2783,16 +2783,7 @@
 
       function AIConfigPage({ auth, onLogin, onRegister }) {
         if (!auth?.user) {
-          return h(GateCard, { title: "登录后管理AI配置", text: "AI配置仅管理员可维护，请先登录管理员账号。", onLogin, onRegister });
-        }
-        if (auth.user.role !== "admin") {
-          return h(
-            Card,
-            { bordered: false, className: "gate-card" },
-            h(Tag, { color: "gold", className: "hero-platform-tag" }, "权限不足"),
-            h(Title, { level: 3 }, "AI配置仅管理员可见"),
-            h(Paragraph, null, "普通客户账号可以生成和查看复盘报告，但不能维护平台AI接口配置。"),
-          );
+          return h(GateCard, { title: "登录后管理AI配置", text: "每个账号都可以维护自己的AI API；未配置时将使用hydee管理员兜底API。", onLogin, onRegister });
         }
         return h(AIConfigWorkspace, { auth });
       }
@@ -2829,7 +2820,7 @@
             });
             const data = await readApiJson(response);
             setStatus(data.status);
-            form.setFieldsValue({ apiKey: "", newAdminPassword: "" });
+            form.setFieldsValue({ apiKey: "" });
             message.success("AI配置已保存");
           } catch (err) {
             message.error(err.message || "保存失败");
@@ -2856,6 +2847,15 @@
           }
         };
 
+        const apiKeyPlaceholder = status?.hasOwnConfig
+          ? "当前账号已保存，留空则继续沿用自己的API Key"
+          : status?.fallbackConfigured
+            ? "当前账号未保存；填写后将优先使用自己的API Key"
+            : "请输入 DeepSeek 或 OpenAI-compatible API Key";
+        const configDescription = status?.configured
+          ? `当前模型：${status.model}；接口：${status.baseUrl}；协议：${status.protocol}；来源：${status.sourceLabel || "当前账号"}`
+          : "当前账号和hydee管理员兜底API都未配置，请先保存API Key。";
+
         return h(
           "div",
           { className: "ai-shell" },
@@ -2866,13 +2866,13 @@
               Card,
               { bordered: false, className: "ai-card" },
               h(Tag, { color: "blue", className: "hero-platform-tag" }, "AI配置"),
-              h(Title, { level: 2, className: "june-title" }, "配置AI接口和模型"),
-              h(Paragraph, null, "管理员可在这里配置AI API Key、接口地址、模型名称和调用协议。保存后，AI复盘报告页面会自动使用该配置。"),
+              h(Title, { level: 2, className: "june-title" }, "配置我的AI接口和模型"),
+              h(Paragraph, null, "每个登录账号都可以保存自己的AI API Key。生成复盘报告时优先使用当前账号配置；当前账号未配置时，使用hydee管理员配置作为兜底。"),
               h(Alert, {
                 type: status?.configured ? "success" : "warning",
                 showIcon: true,
                 message: status?.configured ? "AI接口已配置" : "尚未完成AI接口配置",
-                description: status?.configured ? `当前模型：${status.model}；接口：${status.baseUrl}；协议：${status.protocol}` : "首次保存时，输入的管理密码会成为后续管理密码。",
+                description: configDescription,
               }),
               h(Divider, null),
               h(
@@ -2881,7 +2881,7 @@
                 h(
                   Form.Item,
                   { label: "AI API Key", name: "apiKey" },
-                  h(Input.Password, { placeholder: status?.hasApiKey ? "已保存，留空则继续沿用" : "请输入 DeepSeek 或 OpenAI-compatible API Key" }),
+                  h(Input.Password, { placeholder: apiKeyPlaceholder }),
                 ),
                 h(
                   Form.Item,
@@ -2916,14 +2916,14 @@
               Card,
               { bordered: false, className: "ai-card" },
               h(Title, { level: 4 }, "配置说明"),
-              h(Paragraph, null, "API Key不会显示在页面上，也不会提交到GitHub。服务器只返回“是否已配置”的状态。"),
+              h(Paragraph, null, "API Key不会显示在页面上，也不会提交到GitHub。服务器只返回“是否已配置”和“使用来源”的状态。"),
               h(Paragraph, { className: "config-mask" }, "DeepSeek推荐接口：https://api.deepseek.com"),
               h(Paragraph, { className: "config-mask" }, "DeepSeek推荐模型：deepseek-v4-flash，调用协议选择 Chat Completions。"),
               h(Alert, {
                 type: "info",
                 showIcon: true,
-                message: "权限策略",
-                description: `当前登录账号：${auth.user.name}。AI配置仅管理员可保存和测试，API Key不会回显。`,
+                message: "使用策略",
+                description: `当前登录账号：${auth.user.name}。当前账号自己的API优先；没有自己的API时，使用hydee管理员API兜底；API Key不会回显。`,
               }),
             ),
           ),
@@ -4045,10 +4045,10 @@
           { key: "june", label: "当月营销推荐", children: h(JuneMarketingPage, authProps) },
           { key: "aiReview", label: "AI复盘报告", children: h(AIReviewPage, authProps) },
           { key: "history", label: "历史报告", children: h(HistoryPage, authProps) },
+          ...(auth.user ? [{ key: "aiConfig", label: "AI配置", children: h(AIConfigPage, authProps) }] : []),
           ...(auth.user?.role === "admin"
             ? [
                 { key: "capabilityData", label: "测评数据", children: h(CapabilitySubmissionsPage, authProps) },
-                { key: "aiConfig", label: "AI配置", children: h(AIConfigPage, authProps) },
               ]
             : []),
         ];
