@@ -76,14 +76,26 @@ function ensureServerDir() {
   fs.mkdirSync(serverDir, { recursive: true });
 }
 
-function sendJson(res, status, payload) {
-  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
+function sendJson(res, status, payload, headers = {}) {
+  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", ...headers });
   res.end(JSON.stringify(payload));
 }
 
 function sendNoContent(res, headers = {}) {
   res.writeHead(204, headers);
   res.end();
+}
+
+function weComCaptureCorsHeaders(req) {
+  const origin = String(req.headers.origin || "").replace(/\/+$/, "");
+  const allowed = new Set(["https://merchants.hydee.cn", "https://sijichan.top", "http://192.168.1.200:8765"]);
+  return {
+    "Access-Control-Allow-Origin": allowed.has(origin) ? origin : "https://merchants.hydee.cn",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "content-type",
+    "Access-Control-Max-Age": "600",
+    Vary: "Origin",
+  };
 }
 
 function parseCookies(req) {
@@ -119,6 +131,22 @@ function verifySessionToken(token) {
   if (!token || !token.includes(".")) return null;
   const [body, signature] = token.split(".");
   const expected = crypto.createHmac("sha256", getSessionSecret()).update(body).digest("base64url");
+  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+  const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+  if (!payload.exp || payload.exp < Date.now()) return null;
+  return payload;
+}
+
+function signHandoff(payload) {
+  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const signature = crypto.createHmac("sha256", getSessionSecret()).update(`handoff:${body}`).digest("base64url");
+  return `${body}.${signature}`;
+}
+
+function verifyHandoffToken(token) {
+  if (!token || !token.includes(".")) return null;
+  const [body, signature] = token.split(".");
+  const expected = crypto.createHmac("sha256", getSessionSecret()).update(`handoff:${body}`).digest("base64url");
   if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
   const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
   if (!payload.exp || payload.exp < Date.now()) return null;
@@ -471,6 +499,21 @@ async function ensureDatabase() {
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     );
+    create table if not exists sijichan_token_handoffs (
+      id text primary key,
+      user_id text references users(id) on delete cascade,
+      mer_name text,
+      mer_code text not null default '',
+      status text not null default 'pending',
+      token_encrypted text,
+      token_expires_at timestamptz,
+      captured_at timestamptz,
+      used_at timestamptz,
+      last_error text,
+      expires_at timestamptz not null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
     create index if not exists idx_customer_datasets_user_created on customer_datasets(user_id, created_at desc);
     create index if not exists idx_ai_review_uploads_user_created on ai_review_uploads(user_id, created_at desc);
     create unique index if not exists idx_ai_review_uploads_dataset_unique on ai_review_uploads(dataset_id) where dataset_id is not null;
@@ -482,6 +525,8 @@ async function ensureDatabase() {
     create index if not exists idx_auth_logs_success_created on auth_operation_logs(success, created_at desc);
     create unique index if not exists idx_sijichan_auth_unique on sijichan_account_authorizations(user_id, username, mer_code);
     create index if not exists idx_sijichan_auth_status_updated on sijichan_account_authorizations(status, updated_at desc);
+    create index if not exists idx_sijichan_handoff_user_created on sijichan_token_handoffs(user_id, created_at desc);
+    create index if not exists idx_sijichan_handoff_status_expires on sijichan_token_handoffs(status, expires_at);
     create unique index if not exists idx_monthly_marketing_unique_all on monthly_marketing_recommendations(month_key, auth_id);
     create index if not exists idx_monthly_marketing_month_created on monthly_marketing_recommendations(month_key, created_at desc);
     create index if not exists idx_monthly_marketing_user_created on monthly_marketing_recommendations(user_id, created_at desc);
@@ -587,6 +632,7 @@ async function ensureDatabase() {
           'capability_test_submissions',
           'auth_operation_logs',
           'sijichan_account_authorizations',
+          'sijichan_token_handoffs',
           'monthly_marketing_recommendations'
         ]
         loop
@@ -615,6 +661,21 @@ async function ensureDatabase() {
       alter table sijichan_account_authorizations add column if not exists auth_type text not null default 'password';
       alter table sijichan_account_authorizations add column if not exists token_encrypted text;
       alter table sijichan_account_authorizations add column if not exists token_expires_at timestamptz;
+      create table if not exists sijichan_token_handoffs (
+        id text primary key,
+        user_id text references users(id) on delete cascade,
+        mer_name text,
+        mer_code text not null default '',
+        status text not null default 'pending',
+        token_encrypted text,
+        token_expires_at timestamptz,
+        captured_at timestamptz,
+        used_at timestamptz,
+        last_error text,
+        expires_at timestamptz not null,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      );
       alter table monthly_marketing_recommendations add column if not exists error_message text;
       create index if not exists idx_review_reports_user_created on review_reports(user_id, created_at desc);
       create index if not exists idx_review_reports_created on review_reports(created_at desc);
@@ -630,6 +691,8 @@ async function ensureDatabase() {
       create index if not exists idx_auth_logs_success_created on auth_operation_logs(success, created_at desc);
       create unique index if not exists idx_sijichan_auth_unique on sijichan_account_authorizations(user_id, username, mer_code);
       create index if not exists idx_sijichan_auth_status_updated on sijichan_account_authorizations(status, updated_at desc);
+      create index if not exists idx_sijichan_handoff_user_created on sijichan_token_handoffs(user_id, created_at desc);
+      create index if not exists idx_sijichan_handoff_status_expires on sijichan_token_handoffs(status, expires_at);
       create unique index if not exists idx_monthly_marketing_unique_all on monthly_marketing_recommendations(month_key, auth_id);
       create index if not exists idx_monthly_marketing_month_created on monthly_marketing_recommendations(month_key, created_at desc);
       create index if not exists idx_monthly_marketing_user_created on monthly_marketing_recommendations(user_id, created_at desc);
@@ -1488,6 +1551,74 @@ async function listSijichanAuthorizations(scopeUser = null) {
     params,
   );
   return result.rows.map(normalizeSijichanAuthorizationRow);
+}
+
+async function createSijichanTokenHandoff(user, body = {}) {
+  if (!(await isDbAvailable())) throw new Error("数据库未连接，暂不能创建企微授权交接会话。");
+  const id = createId("whf");
+  const merCode = String(body.merCode || "").trim();
+  const merName = String(body.merName || "").trim();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+  await queryDb(
+    `insert into sijichan_token_handoffs(id, user_id, mer_name, mer_code, status, expires_at)
+     values($1,$2,$3,$4,'pending',$5)`,
+    [id, user.id, merName, merCode, expiresAt.toISOString()],
+  );
+  const handoffToken = signHandoff({ id, userId: user.id, exp: expiresAt.getTime() });
+  return { id, handoffToken, merCode, merName, expiresAt: expiresAt.toISOString() };
+}
+
+function normalizeSijichanTokenHandoff(row, includeToken = false) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    merName: row.mer_name || "",
+    merCode: row.mer_code || "",
+    status: row.status || "pending",
+    captured: Boolean(row.token_encrypted),
+    token: includeToken && row.token_encrypted ? decryptSecret(row.token_encrypted) : "",
+    tokenExpiresAt: row.token_expires_at || null,
+    capturedAt: row.captured_at || null,
+    usedAt: row.used_at || null,
+    lastError: row.last_error || "",
+    expiresAt: row.expires_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function getSijichanTokenHandoffForUser(user, id, includeToken = false) {
+  if (!(await isDbAvailable())) return null;
+  const params = [id];
+  let where = "where id = $1";
+  if (user.role !== "admin") {
+    params.push(user.id);
+    where += ` and user_id = $${params.length}`;
+  }
+  const result = await queryDb(`select * from sijichan_token_handoffs ${where} limit 1`, params);
+  return result.rows[0] ? normalizeSijichanTokenHandoff(result.rows[0], includeToken) : null;
+}
+
+async function captureSijichanTokenHandoff(handoffToken, token, details = {}) {
+  const payload = verifyHandoffToken(handoffToken);
+  if (!payload?.id || !payload?.userId) throw new Error("企微授权交接码无效或已过期。");
+  const normalizedToken = assertSijichanTokenFormat(token);
+  if (!(await isDbAvailable())) throw new Error("数据库未连接，无法保存企微授权token。");
+  const tokenExpiresAt = details.expiresAt ? new Date(details.expiresAt) : null;
+  const result = await queryDb(
+    `update sijichan_token_handoffs
+     set status='captured',
+         token_encrypted=$3,
+         token_expires_at=$4,
+         captured_at=now(),
+         last_error=null,
+         updated_at=now()
+     where id=$1 and user_id=$2 and expires_at > now()
+     returning *`,
+    [payload.id, payload.userId, encryptSecret(normalizedToken), tokenExpiresAt && !Number.isNaN(tokenExpiresAt.getTime()) ? tokenExpiresAt.toISOString() : null],
+  );
+  if (!result.rows[0]) throw new Error("企微授权交接会话不存在或已过期。");
+  return normalizeSijichanTokenHandoff(result.rows[0]);
 }
 
 function monthKeyFromDate(date = new Date()) {
@@ -4699,12 +4830,16 @@ async function handleWeComTokenReviewReport(req, res) {
     sendJson(res, 400, { error: error.message || "请填写企微扫码登录后获得的新零售管理平台授权token。" });
     return;
   }
+  return await generateWeComTokenReportForUser(user, res, { ...body, token });
+}
+
+async function generateWeComTokenReportForUser(user, res, body) {
+  const token = assertSijichanTokenFormat(body.token || body.authorization || "");
   const config = await loadAiConfigForUser(user);
   if (!config.apiKey || !config.model) {
     sendJson(res, 400, { error: "AI服务未配置，请在AI配置页面保存自己的API Key，或联系管理员hydee配置兜底API。" });
     return;
   }
-
   const jobKey = `wecom:${user.id}`;
   const startedAt = beginReviewJob(jobKey);
   let datasetId = "";
@@ -4732,6 +4867,82 @@ async function handleWeComTokenReviewReport(req, res) {
     console.error(`[review] failed ${jobKey}:`, error);
     throw error;
   }
+}
+
+async function handleCreateWeComHandoff(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const body = await readJsonBody(req, 1024 * 64).catch(() => ({}));
+  const handoff = await createSijichanTokenHandoff(user, body);
+  const baseUrl = publicReportBaseUrl.replace(/\/+$/, "");
+  const ssoRedirect = `${baseUrl}/api/wecom-sso/callback?handoffId=${encodeURIComponent(handoff.id)}`;
+  const wecomSsoUrl = `https://login.work.weixin.qq.com/wwlogin/sso/login/?login_type=CorpApp&appid=ww408c023179829552&agentid=1000157&redirect_uri=${encodeURIComponent(ssoRedirect)}&state=${encodeURIComponent(handoff.handoffToken)}`;
+  const helperScript = `(async()=>{const endpoint=${JSON.stringify(`${baseUrl}/api/wecom-token-capture`)};const handoffToken=${JSON.stringify(handoff.handoffToken)};const merCode=${JSON.stringify(handoff.merCode)};const keys=['token','access_token','Authorization','authorization','sijichan_token','merchant_token'];let token='';for(const store of [localStorage,sessionStorage]){for(const key of keys){token=store.getItem(key)||token;}for(let i=0;i<store.length;i++){const key=store.key(i);const val=store.getItem(key)||'';if(!token&&/token|authorization/i.test(key)&&val.length>20)token=val;}}if(!token){token=prompt('没有自动找到token，请粘贴新零售接口请求里的Authorization token');}if(!token)return alert('未获取到token');const r=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({handoffToken,token,merCode})});const data=await r.json().catch(()=>({}));alert(r.ok?'授权token已交给四季蝉服务器，可以回到门户生成报告。':(data.error||'交接失败'));})();`;
+  sendJson(res, 200, { ok: true, ...handoff, wecomSsoUrl, helperScript });
+}
+
+async function handleGetWeComHandoff(req, res, id) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const handoff = await getSijichanTokenHandoffForUser(user, id, false);
+  if (!handoff) {
+    sendJson(res, 404, { error: "企微授权交接会话不存在。" });
+    return;
+  }
+  sendJson(res, 200, { ok: true, handoff });
+}
+
+async function handleCaptureWeComToken(req, res) {
+  const body = await readJsonBody(req, 1024 * 256);
+  try {
+    const handoff = await captureSijichanTokenHandoff(body.handoffToken || body.state || "", body.token || body.authorization || "", body);
+    sendJson(res, 200, { ok: true, handoff }, weComCaptureCorsHeaders(req));
+  } catch (error) {
+    sendJson(res, 400, { error: error.message || "企微授权token交接失败。" }, weComCaptureCorsHeaders(req));
+  }
+}
+
+async function handleWeComSsoCallback(req, res) {
+  const url = new URL(req.url, "http://localhost");
+  const state = url.searchParams.get("state") || "";
+  const token = url.searchParams.get("token") || url.searchParams.get("authorization") || url.searchParams.get("access_token") || "";
+  const code = url.searchParams.get("code") || "";
+  let message = "企微扫码已返回本站。";
+  let ok = true;
+  if (token) {
+    try {
+      await captureSijichanTokenHandoff(state, token, {});
+      message = "已自动捕获授权token，可以回到四季蝉门户生成报告。";
+    } catch (error) {
+      ok = false;
+      message = error.message || "自动捕获授权token失败。";
+    }
+  } else if (code) {
+    ok = false;
+    message = "企微已返回授权code，但当前缺少新零售平台token交换接口，暂不能自动换取业务token。请在新零售页面使用授权助手交接token。";
+  } else {
+    ok = false;
+    message = "企微回调没有携带业务token。请在新零售页面使用授权助手交接token。";
+  }
+  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+  res.end(`<!doctype html><meta charset="utf-8"><title>企微授权交接</title><body style="font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:32px;background:#f5f7ff;color:#14213d"><main style="max-width:720px;margin:auto;background:white;border:1px solid #d7e2ff;border-radius:12px;padding:28px;box-shadow:0 18px 60px rgba(36,76,160,.12)"><h1>${ok ? "授权交接处理中" : "需要手动交接token"}</h1><p>${escapeHtml(message)}</p><p>可以关闭本页，回到四季蝉门户的 AI复盘报告 页面继续。</p></main></body>`);
+}
+
+async function handleWeComHandoffReviewReport(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const body = await readJsonBody(req, 1024 * 128);
+  const handoff = await getSijichanTokenHandoffForUser(user, String(body.handoffId || ""), true);
+  if (!handoff) {
+    sendJson(res, 404, { error: "企微授权交接会话不存在。" });
+    return;
+  }
+  if (!handoff.token) {
+    sendJson(res, 409, { error: "企微授权token尚未捕获，请先完成扫码并运行授权助手。" });
+    return;
+  }
+  await queryDb("update sijichan_token_handoffs set used_at=now(), status='used', updated_at=now() where id=$1", [handoff.id]).catch(() => null);
+  await generateWeComTokenReportForUser(user, res, { token: handoff.token, merCode: body.merCode || handoff.merCode, merName: body.merName || handoff.merName });
 }
 
 async function handleListMonthlyMarketing(req, res) {
@@ -4948,6 +5159,11 @@ function createServer() {
       if (url.pathname === "/api/review-report" && req.method === "POST") return await handleReviewReport(req, res);
       if (url.pathname === "/api/sijichan-review-report" && req.method === "POST") return await handleSijichanReviewReport(req, res);
       if (url.pathname === "/api/wecom-token-review-report" && req.method === "POST") return await handleWeComTokenReviewReport(req, res);
+      if (url.pathname === "/api/wecom-handoff" && req.method === "POST") return await handleCreateWeComHandoff(req, res);
+      if (url.pathname === "/api/wecom-token-capture" && req.method === "OPTIONS") return sendNoContent(res, weComCaptureCorsHeaders(req));
+      if (url.pathname === "/api/wecom-token-capture" && req.method === "POST") return await handleCaptureWeComToken(req, res);
+      if (url.pathname === "/api/wecom-handoff-review-report" && req.method === "POST") return await handleWeComHandoffReviewReport(req, res);
+      if (url.pathname === "/api/wecom-sso/callback" && req.method === "GET") return await handleWeComSsoCallback(req, res);
       if (url.pathname === "/api/monthly-marketing-recommendations" && req.method === "GET") return await handleListMonthlyMarketing(req, res);
       if (url.pathname === "/api/monthly-marketing-recommendations/generate" && req.method === "POST") return await handleGenerateMonthlyMarketing(req, res);
       if (url.pathname === "/api/review-reports" && req.method === "GET") return await handleListReports(req, res);
@@ -4956,6 +5172,8 @@ function createServer() {
       if (url.pathname === "/api/capability-test-submissions" && req.method === "GET") return await handleListCapabilityTests(req, res);
       const adminUserMatch = url.pathname.match(/^\/api\/admin\/users\/([^/]+)$/);
       if (adminUserMatch && req.method === "PATCH") return await handleAdminUpdateUser(req, res, decodeURIComponent(adminUserMatch[1]));
+      const handoffMatch = url.pathname.match(/^\/api\/wecom-handoff\/([^/]+)$/);
+      if (handoffMatch && req.method === "GET") return await handleGetWeComHandoff(req, res, decodeURIComponent(handoffMatch[1]));
       const reportMatch = url.pathname.match(/^\/api\/review-reports\/([^/]+)$/);
       if (reportMatch && req.method === "GET") return await handleGetReport(req, res, decodeURIComponent(reportMatch[1]));
       return serveStatic(req, res);
