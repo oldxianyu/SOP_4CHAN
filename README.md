@@ -133,7 +133,18 @@ AI 复盘报告支持两种来源。
 - `ai_configs`：管理员维护的 AI 配置。
 - `customer_datasets`：客户数据来源记录。
 - `review_reports`：AI 复盘历史报告。
+- `review_report_payloads`：AI 复盘完整载荷，保存完整 `summary_json`、`report_json` 和 `markdown`。
 - `capability_test_submissions`：五大金刚测评提交记录。
+
+生产环境采用“轻量主表 + 大对象载荷表”的设计：
+
+- `review_reports` 只保存列表和检索需要的轻字段：用户、来源、状态、报告标题、行数摘要、健康评分、风险等级、分享链接、SVG、二维码、Excel、诊断和标准化数据链接。
+- `review_report_payloads` 保存完整历史分析数据，只在查看报告详情或后续深度复盘时读取。
+- 历史报告列表接口不读取完整 `summary_json/report_json`，避免大 JSON 占用 Node 内存。
+- `.server/reports/{reportId}/` 继续保存可直接分享和下载的静态产物；数据库保存结构化内容和产物索引。
+- 生产环境设置 `DISABLE_LOCAL_DATA_FALLBACK=true`，数据库启用后不再回退读取 `.server/portal-data.json`。
+
+当前 `192.168.1.200` 使用本地 PostgreSQL 作为生产库，历史报告主表已压缩为轻量元数据表；完整分析载荷存放在 `review_report_payloads`。
 
 用户能力：
 
@@ -249,6 +260,22 @@ npm run migrate:local-data
 - `capability_test_submissions`
 
 迁移完成后，历史分析数据保存在数据库中；分享网页、SVG、二维码、Excel、接口诊断和标准化数据仍保存在 `.server/reports/{reportId}/`，数据库保存可访问链接和结构化报告内容。
+
+## 数据库备份
+
+仓库提供生产备份脚本：
+
+```bash
+npm run backup:db
+```
+
+线上服务器已安装 `sop-4chan-db-backup.timer`，每天 `03:30` 自动执行 `pg_dump`，备份文件保存到：
+
+```text
+.server/backups/sop_4chan_YYYYMMDD-HHMMSS.dump
+```
+
+默认保留最近 14 天备份。`.server/backups/` 不提交 GitHub。
 
 ## 部署
 

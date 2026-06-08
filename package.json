@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node preview-server.js",
     "dev": "node preview-server.js",
-    "migrate:local-data": "node scripts/migrate-local-data-to-postgres.js"
+    "migrate:local-data": "node scripts/migrate-local-data-to-postgres.js",
+    "backup:db": "bash scripts/backup-postgres.sh"
   },
   "dependencies": {
     "busboy": "^1.6.0",

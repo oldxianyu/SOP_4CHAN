@@ -28,6 +28,33 @@ function json(value, fallback) {
   return JSON.stringify(value ?? fallback);
 }
 
+function reviewReportDigest(summary, report) {
+  return {
+    source: summary?.source || "",
+    generatedAt: summary?.generatedAt || new Date().toISOString(),
+    rowCounts: summary?.rowCounts || {},
+    requestInfo: summary?.requestInfo || {},
+    windows: summary?.windows || {},
+    datasetFiles: (summary?.datasetFiles || []).map((file) => ({
+      name: file.name,
+      label: file.label,
+      rowCount: file.rowCount || 0,
+      metricCount: file.metricCount || 0,
+      statusText: file.statusText || "",
+      note: file.note || "",
+    })),
+    reportTitle: report?.title || "四季蝉AI复盘报告",
+    executiveSummary: report?.executiveSummary || "",
+    healthScore: summary?.operationInsights?.healthScore ?? null,
+    riskLevel: summary?.operationInsights?.retentionRisk || "",
+  };
+}
+
+function numericOrNull(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 function requireDatabaseConfig() {
   if (!dbConfig.connectionString && !dbConfig.password) {
     throw new Error("数据库未配置。请先在 .server/.env 设置 DATABASE_URL，或 DB_HOST/DB_NAME/DB_USER/DB_PASSWORD。");
@@ -86,8 +113,13 @@ async function ensureSchema(pool) {
       customer_profile_id text references customer_profiles(id),
       source_type text not null,
       source_name text,
-      summary_json jsonb not null,
-      report_json jsonb not null,
+      status text not null default 'completed',
+      report_title text,
+      row_counts_json jsonb not null default '{}'::jsonb,
+      health_score numeric,
+      risk_level text,
+      summary_json jsonb not null default '{}'::jsonb,
+      report_json jsonb not null default '{}'::jsonb,
       markdown text,
       report_id text unique not null,
       share_url text,
@@ -96,6 +128,14 @@ async function ensureSchema(pool) {
       excel_url text,
       normalized_data_url text,
       diagnostics_url text,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists review_report_payloads (
+      report_db_id text primary key references review_reports(id) on delete cascade,
+      summary_json jsonb not null,
+      report_json jsonb not null,
+      markdown text,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     );
@@ -112,13 +152,19 @@ async function ensureSchema(pool) {
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     );
+    alter table review_reports add column if not exists status text not null default 'completed';
+    alter table review_reports add column if not exists report_title text;
+    alter table review_reports add column if not exists row_counts_json jsonb not null default '{}'::jsonb;
+    alter table review_reports add column if not exists health_score numeric;
+    alter table review_reports add column if not exists risk_level text;
     alter table review_reports add column if not exists excel_url text;
     alter table review_reports add column if not exists normalized_data_url text;
     alter table review_reports add column if not exists diagnostics_url text;
-    create index if not exists idx_review_reports_user_created on review_reports(user_id, created_at desc);
-    create index if not exists idx_review_reports_created on review_reports(created_at desc);
     create index if not exists idx_customer_datasets_user_created on customer_datasets(user_id, created_at desc);
     create index if not exists idx_capability_test_submissions_created on capability_test_submissions(created_at desc);
+    create index if not exists idx_review_reports_user_created on review_reports(user_id, created_at desc);
+    create index if not exists idx_review_reports_created on review_reports(created_at desc);
+    create index if not exists idx_review_reports_status_created on review_reports(status, created_at desc);
   `);
 }
 
@@ -220,19 +266,26 @@ async function migrate() {
     const shareUrl = row.share_url || row.shareUrl || "";
     const reportId = row.report_id || row.reportId || row.id;
     const baseUrl = shareUrl ? shareUrl.replace(/\/?$/, "/") : "";
+    const summary = row.summary_json || row.summaryJson || {};
+    const report = row.report_json || row.reportJson || {};
+    const digest = reviewReportDigest(summary, report);
+    const reportTitle = row.report_title || row.reportTitle || report.title || digest.reportTitle || "四季蝉AI复盘报告";
     await pool.query(
-      `insert into review_reports(id, user_id, customer_profile_id, source_type, source_name, summary_json, report_json, markdown, report_id, share_url, svg_url, qr_svg_url, excel_url, normalized_data_url, diagnostics_url, created_at, updated_at)
-       values($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
-       on conflict(id) do update set source_type=excluded.source_type, source_name=excluded.source_name, summary_json=excluded.summary_json, report_json=excluded.report_json, markdown=excluded.markdown, report_id=excluded.report_id, share_url=excluded.share_url, svg_url=excluded.svg_url, qr_svg_url=excluded.qr_svg_url, excel_url=excluded.excel_url, normalized_data_url=excluded.normalized_data_url, diagnostics_url=excluded.diagnostics_url, updated_at=excluded.updated_at`,
+      `insert into review_reports(id, user_id, customer_profile_id, source_type, source_name, status, report_title, row_counts_json, health_score, risk_level, summary_json, report_json, markdown, report_id, share_url, svg_url, qr_svg_url, excel_url, normalized_data_url, diagnostics_url, created_at, updated_at)
+       values($1,$2,$3,$4,$5,'completed',$6,$7::jsonb,$8,$9,$10::jsonb,$11::jsonb,'',$12,$13,$14,$15,$16,$17,$18,$19,$20)
+       on conflict(id) do update set source_type=excluded.source_type, source_name=excluded.source_name, status=excluded.status, report_title=excluded.report_title, row_counts_json=excluded.row_counts_json, health_score=excluded.health_score, risk_level=excluded.risk_level, summary_json=excluded.summary_json, report_json=excluded.report_json, markdown='', report_id=excluded.report_id, share_url=excluded.share_url, svg_url=excluded.svg_url, qr_svg_url=excluded.qr_svg_url, excel_url=excluded.excel_url, normalized_data_url=excluded.normalized_data_url, diagnostics_url=excluded.diagnostics_url, updated_at=excluded.updated_at`,
       [
         row.id,
         nullIfBlank(row.user_id || row.userId),
         nullIfBlank(row.customer_profile_id || row.customerProfileId),
         row.source_type || row.sourceType || "login",
         row.source_name || row.sourceName || "",
-        json(row.summary_json || row.summaryJson, {}),
-        json(row.report_json || row.reportJson, {}),
-        row.markdown || "",
+        reportTitle,
+        json(summary.rowCounts || {}, {}),
+        numericOrNull(summary.operationInsights?.healthScore),
+        summary.operationInsights?.retentionRisk || "",
+        json(digest, {}),
+        json({ title: reportTitle, executiveSummary: report.executiveSummary || "" }, {}),
         reportId,
         shareUrl,
         row.svg_url || row.svgUrl || (baseUrl ? `${baseUrl}report.svg` : ""),
@@ -240,6 +293,19 @@ async function migrate() {
         row.excel_url || row.excelUrl || (baseUrl ? `${baseUrl}review.xlsx` : ""),
         row.normalized_data_url || row.normalizedDataUrl || (baseUrl ? `${baseUrl}${encodeURIComponent("四季蝉登录获取标准化数据.json")}` : ""),
         row.diagnostics_url || row.diagnosticsUrl || (baseUrl ? `${baseUrl}${encodeURIComponent("四季蝉接口诊断.json")}` : ""),
+        row.created_at || row.createdAt || new Date().toISOString(),
+        row.updated_at || row.updatedAt || new Date().toISOString(),
+      ],
+    );
+    await pool.query(
+      `insert into review_report_payloads(report_db_id, summary_json, report_json, markdown, created_at, updated_at)
+       values($1,$2::jsonb,$3::jsonb,$4,$5,$6)
+       on conflict(report_db_id) do update set summary_json=excluded.summary_json, report_json=excluded.report_json, markdown=excluded.markdown, updated_at=excluded.updated_at`,
+      [
+        row.id,
+        json(summary, {}),
+        json(report, {}),
+        row.markdown || "",
         row.created_at || row.createdAt || new Date().toISOString(),
         row.updated_at || row.updatedAt || new Date().toISOString(),
       ],
