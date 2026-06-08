@@ -43,6 +43,8 @@ const sessionMaxAgeMs = Number(process.env.SESSION_MAX_AGE_MS || 1000 * 60 * 60 
 let pool = null;
 let dbReady = false;
 let dbChecked = false;
+const activeReviewJobs = new Set();
+const workbookDetailRowLimit = Number(process.env.WORKBOOK_DETAIL_ROW_LIMIT || 5000);
 
 const mime = {
   ".html": "text/html; charset=utf-8",
@@ -1797,6 +1799,19 @@ function sheetRowsFromObjects(rows) {
   return [headers, ...list.map((row) => headers.map((header) => row?.[header] ?? ""))];
 }
 
+function capWorkbookRows(rows, label, limit = workbookDetailRowLimit) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (!limit || list.length <= limit) return list;
+  return [
+    {
+      说明: `${label}共 ${list.length} 行，Excel汇总仅保留前 ${limit} 行用于打开和分享；完整明细总量请查看接口诊断和标准化数据。`,
+      原始明细行数: list.length,
+      Excel保留行数: limit,
+    },
+    ...list.slice(0, limit),
+  ];
+}
+
 function worksheetXml(matrix) {
   const rows = matrix.map((row, rIndex) => {
     const cells = row.map((value, cIndex) => {
@@ -1899,15 +1914,15 @@ function workbookSheets(summary, report) {
     })) },
     { name: "数据源状态", rows: statusRows },
     { name: "概览校验", rows: overviewRows },
-    { name: "我的活动列表", rows: raw.activityCatalog?.joined || [] },
-    { name: "奖励统计-半年", rows: raw.rewardStatistics?.nearHalf?.rows || [] },
-    { name: "奖励发放明细", rows: rewardDistributionRows.length ? rewardDistributionRows : [{ 类型: "奖励发放", 说明: "当前口径未识别到奖励发放明细或指标，请查看接口诊断。" }] },
-    { name: "员工豆豆账户与提现", rows: employeeAccountRows.length ? employeeAccountRows : [{ 类型: "员工收益闭环", 说明: "当前口径未识别到员工账户、提现、核销或结算数据，请查看接口诊断。" }] },
-    { name: "销售汇总-上月_vs_前两月", rows: raw.sales?.lastMonth_vs_priorTwoMonths?.rows || [] },
-    { name: "销售汇总-近半年_vs_上期", rows: raw.sales?.nearHalf_vs_previousHalf?.rows || [] },
-    { name: "活动汇总-5月_vs_4月", rows: [...(raw.activitySummary?.lastMonth?.rows || []), ...(raw.activitySummary?.previousMonth?.rows || [])] },
-    { name: "培训情况", rows: trainingRows },
-    { name: "厂家打赏", rows: manufacturerTipRows.length ? manufacturerTipRows : [{ 类型: "厂家打赏汇总", 指标: "当前口径厂家打赏", 指标值: 0, 说明: "接口成功返回，但无打赏金额和明细记录" }] },
+    { name: "我的活动列表", rows: capWorkbookRows(raw.activityCatalog?.joined || [], "我的活动列表") },
+    { name: "奖励统计-半年", rows: capWorkbookRows(raw.rewardStatistics?.nearHalf?.rows || [], "奖励统计-半年") },
+    { name: "奖励发放明细", rows: rewardDistributionRows.length ? capWorkbookRows(rewardDistributionRows, "奖励发放明细") : [{ 类型: "奖励发放", 说明: "当前口径未识别到奖励发放明细或指标，请查看接口诊断。" }] },
+    { name: "员工豆豆账户与提现", rows: employeeAccountRows.length ? capWorkbookRows(employeeAccountRows, "员工豆豆账户与提现") : [{ 类型: "员工收益闭环", 说明: "当前口径未识别到员工账户、提现、核销或结算数据，请查看接口诊断。" }] },
+    { name: "销售汇总-上月_vs_前两月", rows: capWorkbookRows(raw.sales?.lastMonth_vs_priorTwoMonths?.rows || [], "销售汇总-上月_vs_前两月") },
+    { name: "销售汇总-近半年_vs_上期", rows: capWorkbookRows(raw.sales?.nearHalf_vs_previousHalf?.rows || [], "销售汇总-近半年_vs_上期") },
+    { name: "活动汇总-5月_vs_4月", rows: capWorkbookRows([...(raw.activitySummary?.lastMonth?.rows || []), ...(raw.activitySummary?.previousMonth?.rows || [])], "活动汇总-5月_vs_4月") },
+    { name: "培训情况", rows: capWorkbookRows(trainingRows, "培训情况") },
+    { name: "厂家打赏", rows: manufacturerTipRows.length ? capWorkbookRows(manufacturerTipRows, "厂家打赏") : [{ 类型: "厂家打赏汇总", 指标: "当前口径厂家打赏", 指标值: 0, 说明: "接口成功返回，但无打赏金额和明细记录" }] },
     { name: "续用风险与运营提升", rows: insightRows.length ? insightRows : [{ 模块: "运营洞察", 指标: "暂无可计算洞察", 数值: "", 结论: "当前数据不足", 建议动作: "补齐销售、活动、奖励、培训、提现或厂家协同数据后再复盘。" }] },
     { name: "经营复盘结论", rows: [
       { 类型: "Executive Summary", 内容: report?.executiveSummary || "" },
@@ -3082,6 +3097,22 @@ async function handleTestConfig(req, res) {
   sendJson(res, 200, { ok: true, message: output || "连接成功" });
 }
 
+function beginReviewJob(key) {
+  if (activeReviewJobs.has(key)) {
+    const error = new Error("已有复盘报告正在生成，请稍后刷新历史报告，或等待当前任务完成后再试。");
+    error.statusCode = 429;
+    throw error;
+  }
+  activeReviewJobs.add(key);
+  return Date.now();
+}
+
+function finishReviewJob(key, startedAt, detail = "") {
+  activeReviewJobs.delete(key);
+  const elapsed = startedAt ? `${Math.round((Date.now() - startedAt) / 1000)}s` : "";
+  console.log(`[review] finish ${key} ${elapsed} ${detail}`.trim());
+}
+
 async function handleReviewReport(req, res) {
   const user = await requireUser(req, res);
   if (!user) return;
@@ -3097,23 +3128,33 @@ async function handleReviewReport(req, res) {
     return;
   }
 
-  await saveDatasetRecord(user.id, "excel", summary, filename);
-  const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary);
-  const dbReportId = await saveReviewReportRecord(user.id, "excel", filename, summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
-  sendJson(res, 200, {
-    ok: true,
-    id: dbReportId,
-    summary,
-    report,
-    markdown,
-    reportId,
-    shareUrl,
-    svgUrl,
-    qrSvgUrl,
-    excelUrl,
-    normalizedDataUrl,
-    diagnosticsUrl,
-  });
+  const jobKey = `excel:${user.id}`;
+  const startedAt = beginReviewJob(jobKey);
+  console.log(`[review] start ${jobKey} ${filename}`);
+  try {
+    await saveDatasetRecord(user.id, "excel", summary, filename);
+    const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary);
+    const dbReportId = await saveReviewReportRecord(user.id, "excel", filename, summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
+    finishReviewJob(jobKey, startedAt, reportId);
+    sendJson(res, 200, {
+      ok: true,
+      id: dbReportId,
+      summary,
+      report,
+      markdown,
+      reportId,
+      shareUrl,
+      svgUrl,
+      qrSvgUrl,
+      excelUrl,
+      normalizedDataUrl,
+      diagnosticsUrl,
+    });
+  } catch (error) {
+    activeReviewJobs.delete(jobKey);
+    console.error(`[review] failed ${jobKey}:`, error);
+    throw error;
+  }
 }
 
 async function handleSijichanReviewReport(req, res) {
@@ -3126,16 +3167,27 @@ async function handleSijichanReviewReport(req, res) {
     return;
   }
 
-  const summary = await runSijichanExport(body);
-  const files = summary.datasetFiles || [];
-  if (!files.some((file) => file.rowCount > 0)) {
-    sendJson(res, 422, { error: "接口成功返回，但该账号/客户在当前口径无可复盘明细数据。", summary });
-    return;
+  const jobKey = `login:${user.id}`;
+  const startedAt = beginReviewJob(jobKey);
+  console.log(`[review] start ${jobKey} ${body.username || ""}`);
+  try {
+    const summary = await runSijichanExport(body);
+    const files = summary.datasetFiles || [];
+    if (!files.some((file) => file.rowCount > 0)) {
+      sendJson(res, 422, { error: "接口成功返回，但该账号/客户在当前口径无可复盘明细数据。", summary });
+      finishReviewJob(jobKey, startedAt, "empty");
+      return;
+    }
+    await saveDatasetRecord(user.id, "login", summary, summary.source || "登录获取");
+    const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary);
+    const dbReportId = await saveReviewReportRecord(user.id, "login", "登录获取", summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
+    finishReviewJob(jobKey, startedAt, reportId);
+    sendJson(res, 200, { ok: true, id: dbReportId, summary, report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
+  } catch (error) {
+    activeReviewJobs.delete(jobKey);
+    console.error(`[review] failed ${jobKey}:`, error);
+    throw error;
   }
-  await saveDatasetRecord(user.id, "login", summary, summary.source || "登录获取");
-  const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary);
-  const dbReportId = await saveReviewReportRecord(user.id, "login", "登录获取", summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
-  sendJson(res, 200, { ok: true, id: dbReportId, summary, report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
 }
 
 async function handleRegister(req, res) {
@@ -3306,6 +3358,7 @@ function createServer() {
       return serveStatic(req, res);
     } catch (error) {
       const status = error.statusCode || (error.message && error.message.includes("超过10MB") ? 413 : 500);
+      console.error(`[request] ${req.method} ${req.url} failed ${status}:`, error);
       sendJson(res, status, { error: error.message || "服务器处理失败。" });
     }
   });
@@ -3330,8 +3383,10 @@ function listenOn(portIndex = 0) {
   });
 }
 
-refreshExistingReportArtifacts().catch((error) => {
-  console.warn(`Refresh existing reports failed: ${error.message}`);
-});
+if (process.env.REFRESH_EXISTING_REPORTS === "true") {
+  refreshExistingReportArtifacts().catch((error) => {
+    console.warn(`Refresh existing reports failed: ${error.message}`);
+  });
+}
 listenOn();
 
