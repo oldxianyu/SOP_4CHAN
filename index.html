@@ -924,6 +924,27 @@
         overflow-wrap: anywhere;
       }
 
+      .maintenance-shell {
+        display: grid;
+        gap: 16px;
+      }
+
+      .maintenance-tabs.ant-tabs > .ant-tabs-nav {
+        margin: 0 0 16px;
+        padding: 6px;
+        border: 1px solid rgba(42, 75, 255, 0.12);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.82);
+        box-shadow: 0 14px 36px rgba(42, 75, 255, 0.08);
+      }
+
+      .maintenance-tabs.ant-tabs .ant-tabs-tab {
+        min-height: 38px;
+        padding: 8px 16px;
+        border-radius: 8px !important;
+        font-weight: 800;
+      }
+
       .calendar-shell .ant-alert,
       .summary-row {
         margin-bottom: 16px;
@@ -2588,7 +2609,7 @@
                 type: status?.configured ? "success" : "warning",
                 showIcon: true,
                 message: status?.configured ? "AI服务已配置" : "AI服务未配置",
-                description: status?.configured ? `当前模型：${status.model}；来源：${status.sourceLabel || "当前账号"}` : "可在“AI配置”页签保存自己的API Key；未配置时将尝试使用hydee管理员兜底API。",
+                description: status?.configured ? `当前模型：${status.model}；来源：${status.sourceLabel || "当前账号"}` : "可在“系统维护 / AI配置”保存自己的API Key；未配置时将尝试使用hydee管理员兜底API。",
               }),
               h(Divider, null),
               h(
@@ -3285,6 +3306,32 @@
             h("div", { className: "desktop-only" }, h(Table, { rowKey: "id", loading, columns, dataSource: submissions, pagination: { pageSize: 10 }, scroll: { x: 900 } })),
             loading ? h(Alert, { className: "mobile-only", type: "info", showIcon: true, message: "测评数据加载中" }) : mobileSubmissions,
           ),
+        );
+      }
+
+      function SystemMaintenancePage({ auth, onLogin, onRegister }) {
+        if (!auth?.user) {
+          return h(GateCard, { title: "登录后进入系统维护", text: "系统维护包含AI配置、用户管理和测评数据等后台工具。", onLogin, onRegister });
+        }
+
+        const items = [
+          { key: "aiConfig", label: "AI配置", children: h(AIConfigPage, { auth, onLogin, onRegister }) },
+          ...(auth.user.role === "admin"
+            ? [
+                { key: "userManagement", label: "用户管理", children: h(UserManagementPage, { auth, onLogin, onRegister }) },
+                { key: "capabilityData", label: "测评数据", children: h(CapabilitySubmissionsPage, { auth, onLogin, onRegister }) },
+              ]
+            : []),
+        ];
+
+        return h(
+          "div",
+          { className: "maintenance-shell" },
+          h(Tabs, {
+            className: "maintenance-tabs",
+            defaultActiveKey: "aiConfig",
+            items,
+          }),
         );
       }
 
@@ -4221,13 +4268,7 @@
           { key: "june", label: "当月营销推荐", children: h(JuneMarketingPage, authProps) },
           { key: "aiReview", label: "AI复盘报告", children: h(AIReviewPage, authProps) },
           { key: "history", label: "历史报告", children: h(HistoryPage, authProps) },
-          ...(auth.user ? [{ key: "aiConfig", label: "AI配置", children: h(AIConfigPage, authProps) }] : []),
-          ...(auth.user?.role === "admin"
-            ? [
-                { key: "userManagement", label: "用户管理", children: h(UserManagementPage, authProps) },
-                { key: "capabilityData", label: "测评数据", children: h(CapabilitySubmissionsPage, authProps) },
-              ]
-            : []),
+          ...(auth.user ? [{ key: "maintenance", label: "系统维护", children: h(SystemMaintenancePage, authProps) }] : []),
         ];
 
         if (authPage && !auth.user) {
