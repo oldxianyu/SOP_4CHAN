@@ -1405,6 +1405,84 @@ function normalizeMonthlyMarketingRow(row) {
   };
 }
 
+function uniqText(values, limit = 12) {
+  return (values || [])
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .filter((value, index, arr) => arr.indexOf(value) === index)
+    .slice(0, limit);
+}
+
+function anonymizedMarketingCard(index, sourceItems, monthKey) {
+  const monthLabel = monthKey ? `${Number(monthKey.slice(5, 7))}月` : "当月";
+  const allFocus = uniqText(sourceItems.flatMap((item) => item.recommendation?.focusProducts || []), 14);
+  const allActions = uniqText(sourceItems.flatMap((item) => item.recommendation?.nextActions || []), 8);
+  const totalActivity = sourceItems.reduce((sum, item) => sum + Number(item.activityCount || 0), 0);
+  const totalProduct = sourceItems.reduce((sum, item) => sum + Number(item.productCount || 0), 0);
+  const title = index === 0 ? `${monthLabel}重点品动销组合` : `${monthLabel}激励玩法建议`;
+  const fallbackAction = index === 0
+    ? "优先选择活动数据里同时具备销售、奖励和门店覆盖信号的品种，做单品突破与排行榜。"
+    : "把奖励靠前的商品沉淀为店员卖点清单，配套培训考试、陈列晒单和周复盘。";
+  return {
+    id: `anonymized-${monthKey || "current"}-${index + 1}`,
+    title,
+    summary: `基于 ${sourceItems.length} 组已授权客户数据合并分析，覆盖活动 ${totalActivity} 条、活动商品 ${totalProduct} 条。`,
+    products: index === 0 ? allFocus.slice(0, 10) : allFocus.slice(4, 14),
+    actions: allActions.slice(index * 3, index * 3 + 3).length ? allActions.slice(index * 3, index * 3 + 3) : [fallbackAction],
+    tags: index === 0 ? ["合并分析", "重点品", "动销任务"] : ["激励策略", "培训承接", "周复盘"],
+  };
+}
+
+function redactMarketingText(value, rows = []) {
+  let text = String(value || "");
+  const sensitive = uniqText(
+    rows.flatMap((item) => [
+      item.customerName,
+      item.customerCode,
+      item.summary?.customerName,
+      item.summary?.customerCode,
+    ]),
+    100,
+  ).filter((item) => item.length >= 2);
+  for (const word of sensitive) {
+    text = text.split(word).join("客户数据");
+  }
+  return text;
+}
+
+function redactMarketingCard(card, rows) {
+  return {
+    ...card,
+    title: redactMarketingText(card.title, rows),
+    summary: redactMarketingText(card.summary, rows),
+    products: (card.products || []).map((item) => redactMarketingText(item, rows)),
+    actions: (card.actions || []).map((item) => redactMarketingText(item, rows)),
+    tags: (card.tags || []).map((item) => redactMarketingText(item, rows)),
+  };
+}
+
+function aggregateMonthlyMarketingRecommendations(rows, monthKey) {
+  const completed = rows.filter((item) => item.status === "completed");
+  const totalActivity = completed.reduce((sum, item) => sum + Number(item.activityCount || 0), 0);
+  const totalProduct = completed.reduce((sum, item) => sum + Number(item.productCount || 0), 0);
+  const cards = [];
+  if (completed.length) {
+    cards.push(anonymizedMarketingCard(0, completed, monthKey));
+    if (uniqText(completed.flatMap((item) => item.recommendation?.nextActions || []), 6).length > 1) {
+      cards.push(anonymizedMarketingCard(1, completed, monthKey));
+    }
+  }
+  return {
+    monthKey,
+    sourceCount: completed.length,
+    failedCount: rows.filter((item) => item.status !== "completed").length,
+    activityCount: totalActivity,
+    productCount: totalProduct,
+    cards: cards.map((card) => redactMarketingCard(card, completed)),
+    updatedAt: completed[0]?.generatedAt || rows[0]?.generatedAt || null,
+  };
+}
+
 async function listMonthlyMarketingRecommendations(user, monthKey = monthKeyFromDate()) {
   if (!(await isDbAvailable())) return [];
   const params = [monthKey];
@@ -3992,7 +4070,7 @@ async function handleListMonthlyMarketing(req, res) {
   const url = new URL(req.url, "http://localhost");
   const monthKey = url.searchParams.get("month") || monthKeyFromDate();
   const recommendations = await listMonthlyMarketingRecommendations(user, monthKey);
-  sendJson(res, 200, { ok: true, monthKey, recommendations });
+  sendJson(res, 200, { ok: true, monthKey, aggregate: aggregateMonthlyMarketingRecommendations(recommendations, monthKey) });
 }
 
 async function handleGenerateMonthlyMarketing(req, res) {

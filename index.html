@@ -1350,6 +1350,49 @@
         line-height: 1.6;
       }
 
+      .marketing-rotator {
+        position: relative;
+        overflow: hidden;
+        min-height: 230px;
+        padding: 18px;
+        border: 1px solid rgba(42, 75, 255, 0.16);
+        border-radius: 16px;
+        background:
+          linear-gradient(135deg, rgba(255,255,255,.96), rgba(244,247,255,.9)),
+          radial-gradient(circle at 86% 10%, rgba(255,138,61,.14), transparent 30%);
+      }
+
+      .marketing-slide {
+        animation: pageIn 280ms ease both;
+      }
+
+      .marketing-kpi-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 10px 0 14px;
+      }
+
+      .marketing-rotator-dots {
+        display: flex;
+        gap: 6px;
+        margin-top: 14px;
+      }
+
+      .marketing-rotator-dot {
+        width: 22px;
+        height: 5px;
+        border: 0;
+        border-radius: 999px;
+        background: rgba(42, 75, 255, 0.22);
+        cursor: pointer;
+      }
+
+      .marketing-rotator-dot.active {
+        width: 34px;
+        background: #2a4bff;
+      }
+
       .sheet-status {
         margin-top: 14px;
       }
@@ -3457,13 +3500,15 @@
         const now = new Date();
         const monthLabel = `${now.getMonth() + 1}月`;
         const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-        const [monthly, setMonthly] = React.useState({ recommendations: [], loading: false, generating: false, loaded: false });
+        const [monthly, setMonthly] = React.useState({ aggregate: null, loading: false, generating: false, loaded: false });
+        const [slideIndex, setSlideIndex] = React.useState(0);
         const loadMonthly = React.useCallback(async () => {
           if (!auth?.user) return;
           setMonthly((prev) => ({ ...prev, loading: true }));
           try {
             const data = await apiJson(`/api/monthly-marketing-recommendations?month=${monthKey}`);
-            setMonthly((prev) => ({ ...prev, recommendations: data.recommendations || [], loading: false, loaded: true }));
+            setMonthly((prev) => ({ ...prev, aggregate: data.aggregate || null, loading: false, loaded: true }));
+            setSlideIndex(0);
           } catch (error) {
             setMonthly((prev) => ({ ...prev, loading: false, loaded: true, error: error.message }));
           }
@@ -3471,6 +3516,14 @@
         React.useEffect(() => {
           loadMonthly();
         }, [loadMonthly]);
+        React.useEffect(() => {
+          const cards = monthly.aggregate?.cards || [];
+          if (cards.length <= 1) return undefined;
+          const timer = window.setInterval(() => {
+            setSlideIndex((index) => (index + 1) % cards.length);
+          }, 5200);
+          return () => window.clearInterval(timer);
+        }, [monthly.aggregate?.cards?.length]);
         const generateMonthly = async () => {
           setMonthly((prev) => ({ ...prev, generating: true, error: "" }));
           try {
@@ -3487,7 +3540,9 @@
             setMonthly((prev) => ({ ...prev, generating: false }));
           }
         };
-        const recommendations = monthly.recommendations || [];
+        const aggregate = monthly.aggregate || {};
+        const cards = aggregate.cards || [];
+        const activeCard = cards.length ? cards[slideIndex % cards.length] : null;
         return h(
           "div",
           { className: "june-shell" },
@@ -3536,31 +3591,41 @@
                     h(Text, { type: "secondary" }, `当前月份：${monthKey}`),
                   ),
                   monthly.error ? h(Alert, { showIcon: true, type: "warning", message: monthly.error, style: { marginBottom: 14 } }) : null,
-                  recommendations.length
+                  activeCard
                     ? h(
-                        Row,
-                        { gutter: [12, 12] },
-                        recommendations.map((item) => {
-                          const recommendation = item.recommendation || {};
-                          const focusProducts = recommendation.focusProducts || [];
-                          const nextActions = recommendation.nextActions || [];
-                          return h(
-                            Col,
-                            { xs: 24, lg: 12, key: item.id },
-                            h(
-                              Card,
-                              { bordered: false, className: "category-play-card" },
-                              h(Space, { wrap: true, size: [8, 8] }, h(Tag, { color: item.status === "completed" ? "blue" : "red" }, item.status === "completed" ? "已生成" : "失败"), h(Text, { type: "secondary" }, item.monthKey)),
-                              h(Title, { level: 4 }, recommendation.title || item.customerName || "当月营销推荐"),
-                              h(Paragraph, null, recommendation.executiveSummary || item.errorMessage || "暂无推荐摘要。"),
-                              h(Space, { wrap: true, size: [6, 6] }, h(Tag, { color: "geekblue" }, `活动${item.activityCount || 0}条`), h(Tag, { color: "purple" }, `商品${item.productCount || 0}条`)),
-                              focusProducts.length ? h("div", { className: "category-products" }, focusProducts.slice(0, 10).map((name) => h(Tag, { key: name, color: "blue" }, name))) : null,
-                              nextActions.length ? h("ul", { className: "data-guard-list" }, nextActions.slice(0, 3).map((action) => h("li", { key: action }, action))) : null,
+                        "div",
+                        { className: "marketing-rotator" },
+                        h(
+                          "div",
+                          { className: "marketing-slide", key: activeCard.id },
+                          h(Space, { wrap: true, size: [8, 8] }, h(Tag, { color: "blue" }, "合并分析"), h(Tag, { color: "orange" }, "已脱敏"), h(Text, { type: "secondary" }, aggregate.monthKey || monthKey)),
+                          h(Title, { level: 3 }, activeCard.title),
+                          h(Paragraph, null, activeCard.summary),
+                          h(
+                            "div",
+                            { className: "marketing-kpi-row" },
+                            h(Tag, { color: "geekblue" }, `数据组${aggregate.sourceCount || 0}组`),
+                            h(Tag, { color: "purple" }, `活动${aggregate.activityCount || 0}条`),
+                            h(Tag, { color: "blue" }, `商品${aggregate.productCount || 0}条`),
+                          ),
+                          activeCard.products?.length ? h("div", { className: "category-products" }, activeCard.products.slice(0, 10).map((name) => h(Tag, { key: name, color: "blue" }, name))) : null,
+                          activeCard.actions?.length ? h("ul", { className: "data-guard-list" }, activeCard.actions.slice(0, 3).map((action) => h("li", { key: action }, action))) : null,
+                          h(
+                            "div",
+                            { className: "marketing-rotator-dots" },
+                            cards.map((card, index) =>
+                              h("button", {
+                                key: card.id,
+                                type: "button",
+                                className: `marketing-rotator-dot${index === slideIndex ? " active" : ""}`,
+                                "aria-label": `切换到推荐${index + 1}`,
+                                onClick: () => setSlideIndex(index),
+                              }),
                             ),
-                          );
-                        }),
+                          ),
+                        ),
                       )
-                    : h(Alert, { showIcon: true, type: "info", message: "暂无当月自动推荐", description: auth.user.role === "admin" ? "点击“生成当月推荐”后，系统会读取已授权客户账号的活动数据。" : "当前账号还没有生成过当月营销推荐。" }),
+                    : h(Alert, { showIcon: true, type: "info", message: "暂无当月自动推荐", description: auth.user.role === "admin" ? "点击“生成当月推荐”后，系统会读取已授权客户账号的活动数据，并以脱敏聚合方式展示。" : "当前账号还没有生成过当月营销推荐。" }),
                 ),
           ),
           h(
