@@ -3994,6 +3994,7 @@ async function markSijichanHandoffCapturedById(handoffId, userId, token, details
 
 function getWeComBrowserSessionPublic(session) {
   const merchantReady = Boolean(session.currentUrl && isMerchantRuntimeUrl(session.currentUrl));
+  const openPages = Array.isArray(session.openPages) ? session.openPages.slice(-8) : [];
   return {
     id: session.id,
     handoffId: session.handoff?.id || "",
@@ -4008,6 +4009,7 @@ function getWeComBrowserSessionPublic(session) {
     qrImage: session.qrImage || "",
     currentUrl: session.currentUrl || "",
     lastRequestUrl: session.lastRequestUrl || "",
+    openPages,
     pageTitle: session.pageTitle || "",
     screenshotUrl: session.id ? `/api/wecom-browser-session/${encodeURIComponent(session.id)}/screenshot` : "",
     lastError: session.lastError || "",
@@ -4034,6 +4036,11 @@ function logWeComSessionState(session, reason = "state") {
     exportReady: Boolean(session.exportReady),
     pageTitle: session.pageTitle || "",
     currentUrl: compactUrl(session.currentUrl || ""),
+    openPages: Array.isArray(session.openPages) ? session.openPages.slice(-4).map((page) => ({
+      title: page.title || "",
+      url: compactUrl(page.url || ""),
+      merchantReady: Boolean(page.url && isMerchantRuntimeUrl(page.url)),
+    })) : [],
     exportProbeError: session.exportProbeError || "",
   };
   const nextKey = JSON.stringify(snapshot);
@@ -4103,6 +4110,7 @@ async function createWeComBrowserSession(user, body = {}) {
     qrImage: "",
     currentUrl: "",
     lastRequestUrl: "",
+    openPages: [],
     pageTitle: "",
     lastError: "",
     browser: null,
@@ -4113,6 +4121,20 @@ async function createWeComBrowserSession(user, body = {}) {
   };
   activeWeComBrowserSessions.set(session.id, session);
   const tokenPattern = /(?:Authorization|authorization)\s*[:=]\s*["']?(?:Bearer\s+)?([A-Za-z0-9._\-]{20,})|(?:token|access_token|merchant_token|accessToken)\s*["']?\s*[:=]\s*["']([A-Za-z0-9._\-]{20,})["']/i;
+  const refreshOpenPages = async () => {
+    const context = session.browser?.contexts?.()?.[0];
+    const pages = context?.pages?.() || [];
+    const items = [];
+    for (const pageItem of pages) {
+      if (!pageItem || pageItem.isClosed()) continue;
+      items.push({
+        url: pageItem.url(),
+        title: await pageItem.title().catch(() => ""),
+      });
+    }
+    session.openPages = items.slice(-10);
+    session.updatedAt = new Date().toISOString();
+  };
   const maybeCapture = async (raw, from, sourceUrl = "") => {
     if (session.status === "captured") return;
     const runtimeUrl = sourceUrl || session.currentUrl || "";
@@ -4278,6 +4300,7 @@ async function createWeComBrowserSession(user, body = {}) {
       nextPage.title().then((title) => {
         session.pageTitle = title || session.pageTitle || "";
         session.updatedAt = new Date().toISOString();
+        refreshOpenPages().catch(() => null);
         logWeComSessionState(session, "merchant-popup");
       }).catch(() => null);
       nextPage.on("close", () => {
@@ -4310,6 +4333,7 @@ async function createWeComBrowserSession(user, body = {}) {
           nextPage.title().then((title) => {
             session.pageTitle = title || "";
             session.updatedAt = new Date().toISOString();
+            refreshOpenPages().catch(() => null);
             logWeComSessionState(session, "navigate");
           }).catch(() => null);
           session.updatedAt = new Date().toISOString();
@@ -4433,6 +4457,7 @@ async function createWeComBrowserSession(user, body = {}) {
         page.title().then((title) => {
           session.pageTitle = title || "";
           session.updatedAt = new Date().toISOString();
+          refreshOpenPages().catch(() => null);
           logWeComSessionState(session, "navigate");
         }).catch(() => null);
         session.updatedAt = new Date().toISOString();
@@ -4447,6 +4472,7 @@ async function createWeComBrowserSession(user, body = {}) {
     await page.goto(merchantWecomSsoUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
     session.currentUrl = page.url();
     session.pageTitle = await page.title().catch(() => "");
+    await refreshOpenPages().catch(() => null);
     if (page.isClosed()) throw new Error("服务器浏览器页面已关闭，无法生成企微二维码。");
     const qrImageUrl = await page.evaluate(() => {
       const image = document.querySelector(".wwLogin_qrcode_img") || [...document.images].find((img) => /qrcode/i.test(img.src || ""));
@@ -4465,6 +4491,7 @@ async function createWeComBrowserSession(user, body = {}) {
           if (nextQrImageUrl) session.qrImage = await dataUrlFromRemoteImage(nextQrImageUrl);
           session.currentUrl = page.url();
           session.pageTitle = await page.title().catch(() => session.pageTitle || "");
+          await refreshOpenPages().catch(() => null);
           session.updatedAt = new Date().toISOString();
         }
       })
@@ -4477,6 +4504,7 @@ async function createWeComBrowserSession(user, body = {}) {
         if (session.page && !["expired", "error"].includes(session.status)) {
           session.currentUrl = session.page.url();
           session.pageTitle = await session.page.title().catch(() => session.pageTitle || "");
+          await refreshOpenPages();
           session.updatedAt = new Date().toISOString();
           await scanMerchantPageStorage();
           await scanMerchantCookies();
@@ -4495,7 +4523,7 @@ async function createWeComBrowserSession(user, body = {}) {
         session.updatedAt = new Date().toISOString();
         await closeWeComBrowserSession(session, "expired");
       }
-    }, 10 * 60 * 1000);
+    }, 30 * 60 * 1000);
     return getWeComBrowserSessionPublic(session);
   } catch (error) {
     session.status = "error";

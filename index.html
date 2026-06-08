@@ -2975,6 +2975,18 @@
                                 weComBrowserSession.pageTitle ? h(Text, { type: "secondary" }, `页面标题：${weComBrowserSession.pageTitle}`) : null,
                                 weComBrowserSession.currentUrl ? h(Text, { type: "secondary", style: { display: "block", wordBreak: "break-all" } }, `主页面：${weComBrowserSession.currentUrl}`) : null,
                                 weComBrowserSession.lastRequestUrl ? h(Text, { type: "secondary", style: { display: "block", wordBreak: "break-all" } }, `最近请求：${weComBrowserSession.lastRequestUrl}`) : null,
+                                Array.isArray(weComBrowserSession.openPages) && weComBrowserSession.openPages.length
+                                  ? h(
+                                      "div",
+                                      { style: { marginTop: 8 } },
+                                      h(Text, { type: "secondary", strong: true }, "服务器浏览器页面："),
+                                      ...weComBrowserSession.openPages.map((page, index) => h(
+                                        Text,
+                                        { key: `${page.url || ""}-${index}`, type: page.merchantReady ? "success" : "secondary", style: { display: "block", wordBreak: "break-all" } },
+                                        `${page.merchantReady ? "已进入新零售" : "页面"} ${index + 1}：${page.title || "无标题"} ${page.url || ""}`,
+                                      )),
+                                    )
+                                  : null,
                               ),
                             )
                           : null,
