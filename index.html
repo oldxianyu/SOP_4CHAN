@@ -2574,8 +2574,8 @@
             if (!response.ok) throw new Error(data.error || "企微授权交接会话创建失败");
             setWeComHandoff(data);
             pollWeComHandoff(data.id);
-            window.open(data.wecomSsoUrl || weComSsoUrl, "_blank", "noopener,noreferrer");
-            message.success("已打开企微扫码页，扫码后在新零售页面运行授权助手");
+            window.open(data.merchantWecomSsoUrl || data.wecomSsoUrl || weComSsoUrl, "_blank", "noopener,noreferrer");
+            message.success("已打开企微扫码页，扫码进入新零售后运行授权助手");
           } catch (err) {
             message.error(err.message || "企微授权交接会话创建失败");
           }
@@ -2864,7 +2864,7 @@
                         Card,
                         { size: "small", className: "gate-card", style: { marginTop: 16 } },
                         h(Title, { level: 5, style: { marginBottom: 8 } }, "扫码授权自动交接"),
-                        h(Paragraph, { type: "secondary" }, "创建一次性交接会话后，扫码进入新零售管理平台；在新零售页面运行授权助手，再点击首页、活动或报表页面触发接口请求，系统会自动把token交给服务器。"),
+                        h(Paragraph, { type: "secondary" }, "创建一次性交接会话后，扫码会进入海典新零售管理平台；在新零售页面运行授权助手，再点击首页、活动或报表页面触发接口请求，系统会自动把token交给服务器。"),
                         h(
                           Space,
                           { wrap: true },

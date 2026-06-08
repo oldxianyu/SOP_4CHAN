@@ -5085,8 +5085,10 @@ async function handleCreateWeComHandoff(req, res) {
   const baseUrl = publicReportBaseUrl.replace(/\/+$/, "");
   const ssoRedirect = `${baseUrl}/api/wecom-sso/callback?handoffId=${encodeURIComponent(handoff.id)}`;
   const wecomSsoUrl = `https://login.work.weixin.qq.com/wwlogin/sso/login/?login_type=CorpApp&appid=ww408c023179829552&agentid=1000157&redirect_uri=${encodeURIComponent(ssoRedirect)}&state=${encodeURIComponent(handoff.handoffToken)}`;
+  const merchantRedirect = `${sijichanApiOrigin}/app-jump/super-admin-login`;
+  const merchantWecomSsoUrl = `https://login.work.weixin.qq.com/wwlogin/sso/login/?login_type=CorpApp&appid=ww408c023179829552&agentid=1000157&redirect_uri=${encodeURIComponent(merchantRedirect)}&state=${encodeURIComponent(handoff.handoffToken)}`;
   const helperScript = renderWeComHandoffHelperScript({ endpoint: `${baseUrl}/api/wecom-token-capture`, handoffToken: handoff.handoffToken, merCode: handoff.merCode });
-  sendJson(res, 200, { ok: true, ...handoff, wecomSsoUrl, helperScript });
+  sendJson(res, 200, { ok: true, ...handoff, wecomSsoUrl, merchantWecomSsoUrl, helperScript });
 }
 
 async function handleGetWeComHandoff(req, res, id) {
