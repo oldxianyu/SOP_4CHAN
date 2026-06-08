@@ -2696,6 +2696,28 @@
         };
         createWeComBrowserSessionRef.current = createWeComBrowserSession;
 
+        const createWeComBrowserProfileSession = async () => {
+          const values = sourceForm.getFieldsValue();
+          try {
+            setWeComBrowserSession(null);
+            setWeComHandoff(null);
+            weComAutoReportRef.current = { triggered: false, running: false };
+            const response = await fetch("/api/wecom-browser-profile-session", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(values),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error || "服务器登录态检测失败");
+            setWeComBrowserSession(data.session);
+            setWeComHandoff({ id: data.session.handoffId, captured: data.session.captured });
+            pollWeComBrowserSession(data.session.id);
+            message.success(data.session.exportReady ? "服务器已有登录态，正在准备自动生成报告" : data.session.merchantReady ? "服务器已进入新零售，正在探测接口" : "已打开服务器登录态检测页面");
+          } catch (err) {
+            message.error(err.message || "服务器登录态检测失败");
+          }
+        };
+
         const copyWeComHelperScript = () => {
           if (!weComHandoff?.helperScript) {
             message.warning("请先创建企微授权交接会话");
@@ -2971,6 +2993,7 @@
                           Space,
                           { wrap: true },
                           h(Button, { type: "primary", loading, onClick: createWeComBrowserSession }, "生成企微扫码二维码"),
+                          h(Button, { loading, onClick: createWeComBrowserProfileSession }, "检测服务器已登录态"),
                           h(Button, { disabled: !weComBrowserSession?.id, onClick: refreshWeComBrowserSession }, "刷新扫码状态"),
                           h(Button, { type: "primary", loading, disabled: !weComBrowserSession?.exportReady && !weComHandoff?.captured, onClick: generateFromWeComHandoff }, weComHandoff?.captured ? "用已捕获授权生成报告" : "用服务器登录态生成报告"),
                           h(Button, {
@@ -3010,7 +3033,7 @@
                               h(
                                 Space,
                                 { wrap: true, style: { marginTop: 10 } },
-                                h(Tag, { color: weComBrowserSession.merchantReady ? "green" : "blue", className: "large-tag" }, weComBrowserSession.merchantReady ? "已进入新零售" : "等待扫码登录"),
+                                h(Tag, { color: weComBrowserSession.merchantReady ? "green" : weComBrowserSession.loginPageReady ? "red" : "blue", className: "large-tag" }, weComBrowserSession.merchantReady ? "已进入新零售" : weComBrowserSession.loginPageReady ? "服务器未登录" : "等待扫码登录"),
                                 weComBrowserSession.scanHint
                                   ? h(Tag, {
                                       color: weComBrowserSession.scanStage === "confirming"

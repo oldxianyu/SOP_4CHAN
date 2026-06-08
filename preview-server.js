@@ -4002,12 +4002,15 @@ async function markSijichanHandoffCapturedById(handoffId, userId, token, details
 function getWeComBrowserSessionPublic(session) {
   const merchantReady = Boolean(session.currentUrl && isMerchantRuntimeUrl(session.currentUrl));
   const openPages = Array.isArray(session.openPages) ? session.openPages.slice(-8) : [];
+  const loginPageReady = Boolean(session.currentUrl && /merchants\.hydee\.cn\/app-login/i.test(session.currentUrl));
   return {
     id: session.id,
     handoffId: session.handoff?.id || "",
     status: session.status,
     captured: session.status === "captured",
     merchantReady,
+    loginPageReady,
+    profileReuse: Boolean(session.profileReuse),
     exportReady: Boolean(session.exportReady),
     exportProbeAt: session.exportProbeAt || "",
     exportProbeError: session.exportProbeError || "",
@@ -4621,6 +4624,20 @@ async function createWeComBrowserSession(user, body = {}) {
     await closeWeComBrowserSession(session, "error");
     throw new Error(session.lastError);
   }
+}
+
+async function createWeComBrowserProfileSession(user, body = {}) {
+  const publicSession = await createWeComBrowserSession(user, body);
+  const session = activeWeComBrowserSessions.get(publicSession.id);
+  if (!session) return publicSession;
+  session.profileReuse = true;
+  if (session.page && !session.page.isClosed()) {
+    await session.page.goto(`${sijichanApiOrigin}/`, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => null);
+    session.currentUrl = session.page.url();
+    session.pageTitle = await session.page.title().catch(() => session.pageTitle || "");
+    session.updatedAt = new Date().toISOString();
+  }
+  return getWeComBrowserSessionPublic(session);
 }
 
 function networkErrorMessage(error) {
@@ -5915,6 +5932,18 @@ async function handleCreateWeComBrowserSession(req, res) {
   }
 }
 
+async function handleCreateWeComBrowserProfileSession(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const body = await readJsonBody(req, 1024 * 64).catch(() => ({}));
+  try {
+    const session = await createWeComBrowserProfileSession(user, body);
+    sendJson(res, 200, { ok: true, session });
+  } catch (error) {
+    sendJson(res, 500, { error: error.message || "服务器登录态检测会话创建失败。" });
+  }
+}
+
 async function handleGetWeComBrowserSession(req, res, id) {
   const user = await requireUser(req, res);
   if (!user) return;
@@ -6324,6 +6353,7 @@ function createServer() {
       if (url.pathname === "/api/wecom-token-review-report" && req.method === "POST") return await handleWeComTokenReviewReport(req, res);
       if (url.pathname === "/api/wecom-handoff" && req.method === "POST") return await handleCreateWeComHandoff(req, res);
       if (url.pathname === "/api/wecom-browser-session" && req.method === "POST") return await handleCreateWeComBrowserSession(req, res);
+      if (url.pathname === "/api/wecom-browser-profile-session" && req.method === "POST") return await handleCreateWeComBrowserProfileSession(req, res);
       if (url.pathname === "/api/wecom-token-capture" && req.method === "OPTIONS") return sendNoContent(res, weComCaptureCorsHeaders(req));
       if (url.pathname === "/api/wecom-token-capture" && req.method === "POST") return await handleCaptureWeComToken(req, res);
       if (url.pathname === "/api/wecom-handoff-review-report" && req.method === "POST") return await handleWeComHandoffReviewReport(req, res);
