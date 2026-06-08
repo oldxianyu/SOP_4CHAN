@@ -3,6 +3,7 @@ const dns = require("dns");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const net = require("net");
 const os = require("os");
 const { spawn } = require("child_process");
 const Busboy = require("busboy");
@@ -390,6 +391,20 @@ async function ensureDatabase() {
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     );
+    create table if not exists ai_review_uploads (
+      id text primary key default gen_random_uuid()::text,
+      user_id text references users(id) on delete set null,
+      dataset_id text references customer_datasets(id) on delete set null,
+      report_db_id text references review_reports(id) on delete set null,
+      source_type text not null,
+      source_name text,
+      filename text,
+      row_counts_json jsonb not null default '{}'::jsonb,
+      status text not null default 'parsed',
+      error_message text,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
     create table if not exists capability_test_submissions (
       id text primary key default gen_random_uuid()::text,
       name text not null,
@@ -403,10 +418,138 @@ async function ensureDatabase() {
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     );
+    create table if not exists auth_operation_logs (
+      id text primary key default gen_random_uuid()::text,
+      user_id text references users(id) on delete set null,
+      login_identifier text,
+      operation_type text not null,
+      success boolean not null default false,
+      failure_reason text,
+      ip_address inet,
+      user_agent text,
+      metadata_json jsonb not null default '{}'::jsonb,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
     create index if not exists idx_customer_datasets_user_created on customer_datasets(user_id, created_at desc);
+    create index if not exists idx_ai_review_uploads_user_created on ai_review_uploads(user_id, created_at desc);
+    create unique index if not exists idx_ai_review_uploads_dataset_unique on ai_review_uploads(dataset_id) where dataset_id is not null;
+    create index if not exists idx_ai_review_uploads_report on ai_review_uploads(report_db_id);
+    create index if not exists idx_ai_review_uploads_status_created on ai_review_uploads(status, created_at desc);
     create index if not exists idx_capability_test_submissions_created on capability_test_submissions(created_at desc);
+    create index if not exists idx_auth_logs_user_created on auth_operation_logs(user_id, created_at desc);
+    create index if not exists idx_auth_logs_identifier_created on auth_operation_logs(login_identifier, created_at desc);
+    create index if not exists idx_auth_logs_success_created on auth_operation_logs(success, created_at desc);
   `);
     await activePool.query(`
+      create or replace function set_updated_at()
+      returns trigger
+      language plpgsql
+      as $$
+      begin
+        new.updated_at = now();
+        return new;
+      end;
+      $$;
+      create or replace function record_auth_operation(
+        p_user_id text,
+        p_login_identifier text,
+        p_operation_type text,
+        p_success boolean,
+        p_failure_reason text,
+        p_ip_address inet,
+        p_user_agent text,
+        p_metadata_json jsonb default '{}'::jsonb
+      )
+      returns text
+      language plpgsql
+      as $$
+      declare
+        v_id text;
+      begin
+        insert into auth_operation_logs(user_id, login_identifier, operation_type, success, failure_reason, ip_address, user_agent, metadata_json)
+        values(p_user_id, p_login_identifier, p_operation_type, coalesce(p_success, false), p_failure_reason, p_ip_address, p_user_agent, coalesce(p_metadata_json, '{}'::jsonb))
+        returning id into v_id;
+        return v_id;
+      end;
+      $$;
+      create or replace function get_review_report_list(p_user_id text, p_is_admin boolean, p_limit integer default 100)
+      returns table(
+        id text,
+        user_id text,
+        source_type text,
+        source_name text,
+        status text,
+        report_title text,
+        report_id text,
+        row_counts_json jsonb,
+        health_score numeric,
+        risk_level text,
+        share_url text,
+        svg_url text,
+        qr_svg_url text,
+        excel_url text,
+        normalized_data_url text,
+        diagnostics_url text,
+        created_at timestamptz
+      )
+      language sql
+      stable
+      as $$
+        select
+          r.id,
+          r.user_id,
+          r.source_type,
+          r.source_name,
+          r.status,
+          r.report_title,
+          r.report_id,
+          r.row_counts_json,
+          r.health_score,
+          r.risk_level,
+          r.share_url,
+          r.svg_url,
+          r.qr_svg_url,
+          r.excel_url,
+          r.normalized_data_url,
+          r.diagnostics_url,
+          r.created_at
+        from review_reports r
+        where coalesce(p_is_admin, false) or r.user_id = p_user_id
+        order by r.created_at desc
+        limit greatest(1, least(coalesce(p_limit, 100), 500));
+      $$;
+      create or replace function review_report_payload_count()
+      returns integer
+      language sql
+      stable
+      as $$
+        select count(*)::integer from review_report_payloads;
+      $$;
+      do $$
+      declare
+        t text;
+        trigger_name text;
+      begin
+        foreach t in array array[
+          'users',
+          'customer_profiles',
+          'ai_configs',
+          'customer_datasets',
+          'ai_review_uploads',
+          'review_reports',
+          'review_report_payloads',
+          'capability_test_submissions',
+          'auth_operation_logs'
+        ]
+        loop
+          trigger_name := 'trg_' || t || '_updated_at';
+          if not exists (select 1 from pg_trigger where tgname = trigger_name and not tgisinternal) then
+            execute format('create trigger %I before update on %I for each row execute function set_updated_at()', trigger_name, t);
+          end if;
+        end loop;
+      end;
+      $$;
       alter table review_reports add column if not exists status text not null default 'completed';
       alter table review_reports add column if not exists report_title text;
       alter table review_reports add column if not exists row_counts_json jsonb not null default '{}'::jsonb;
@@ -415,9 +558,34 @@ async function ensureDatabase() {
       alter table review_reports add column if not exists excel_url text;
       alter table review_reports add column if not exists normalized_data_url text;
       alter table review_reports add column if not exists diagnostics_url text;
+      alter table ai_review_uploads add column if not exists report_db_id text references review_reports(id) on delete set null;
+      alter table ai_review_uploads add column if not exists error_message text;
+      alter table auth_operation_logs add column if not exists metadata_json jsonb not null default '{}'::jsonb;
       create index if not exists idx_review_reports_user_created on review_reports(user_id, created_at desc);
       create index if not exists idx_review_reports_created on review_reports(created_at desc);
       create index if not exists idx_review_reports_status_created on review_reports(status, created_at desc);
+      create index if not exists idx_ai_review_uploads_user_created on ai_review_uploads(user_id, created_at desc);
+      create unique index if not exists idx_ai_review_uploads_dataset_unique on ai_review_uploads(dataset_id) where dataset_id is not null;
+      create index if not exists idx_ai_review_uploads_report on ai_review_uploads(report_db_id);
+      create index if not exists idx_ai_review_uploads_status_created on ai_review_uploads(status, created_at desc);
+      create index if not exists idx_auth_logs_user_created on auth_operation_logs(user_id, created_at desc);
+      create index if not exists idx_auth_logs_identifier_created on auth_operation_logs(login_identifier, created_at desc);
+      create index if not exists idx_auth_logs_success_created on auth_operation_logs(success, created_at desc);
+      insert into ai_review_uploads(user_id, dataset_id, source_type, source_name, filename, row_counts_json, status, created_at, updated_at)
+      select
+        d.user_id,
+        d.id,
+        d.source_type,
+        coalesce(d.metadata_json->>'source', d.source_type),
+        d.filename,
+        coalesce(d.row_counts_json, '{}'::jsonb),
+        'migrated',
+        d.created_at,
+        d.updated_at
+      from customer_datasets d
+      where not exists (
+        select 1 from ai_review_uploads u where u.dataset_id = d.id
+      );
       insert into review_report_payloads(report_db_id, summary_json, report_json, markdown, created_at, updated_at)
       select id, summary_json, report_json, markdown, created_at, updated_at
       from review_reports
@@ -736,6 +904,45 @@ async function requireAdmin(req, res) {
   return user;
 }
 
+function getClientIp(req) {
+  const candidates = [
+    req.headers["cf-connecting-ip"],
+    req.headers["x-real-ip"],
+    String(req.headers["x-forwarded-for"] || "").split(",")[0],
+    req.socket?.remoteAddress,
+  ];
+  for (const value of candidates) {
+    let text = String(value || "").trim();
+    if (!text) continue;
+    if (text.startsWith("::ffff:")) text = text.slice(7);
+    if (net.isIP(text)) return text;
+  }
+  return null;
+}
+
+async function recordAuthOperation(req, { userId = null, loginIdentifier = "", operationType = "login", success = false, failureReason = "", metadata = {} }) {
+  try {
+    if (!(await isDbAvailable())) return null;
+    const result = await queryDb(
+      "select record_auth_operation($1,$2,$3,$4,$5,$6,$7,$8) as id",
+      [
+        userId || null,
+        String(loginIdentifier || "").slice(0, 200),
+        String(operationType || "login").slice(0, 60),
+        Boolean(success),
+        failureReason ? String(failureReason).slice(0, 500) : null,
+        getClientIp(req),
+        String(req.headers["user-agent"] || "").slice(0, 500),
+        jsonClone(metadata || {}),
+      ],
+    );
+    return result.rows[0]?.id || null;
+  } catch (error) {
+    console.warn(`Auth operation log skipped: ${error.message}`);
+    return null;
+  }
+}
+
 async function saveDatasetRecord(userId, sourceType, summary, filename = "") {
   const rowCounts = summary.rowCounts || {};
   const sheetStatus = summary.sheetStatus || summary.datasetFiles || [];
@@ -750,7 +957,13 @@ async function saveDatasetRecord(userId, sourceType, summary, filename = "") {
        values($1,$2,$3,$4,$5,$6) returning id`,
       [userId, sourceType, filename, jsonClone(rowCounts), jsonClone(sheetStatus), jsonClone(metadata)],
     );
-    return result.rows[0].id;
+    const datasetId = result.rows[0].id;
+    await queryDb(
+      `insert into ai_review_uploads(user_id, dataset_id, source_type, source_name, filename, row_counts_json, status)
+       values($1,$2,$3,$4,$5,$6,'parsed')`,
+      [userId, datasetId, sourceType, summary.source || sourceType, filename, jsonClone(rowCounts)],
+    );
+    return datasetId;
   }
   const data = readLocalData();
   const record = {
@@ -767,6 +980,16 @@ async function saveDatasetRecord(userId, sourceType, summary, filename = "") {
   data.customerDatasets.push(record);
   writeLocalData(data);
   return record.id;
+}
+
+async function linkDatasetToReviewReport(datasetId, reportDbId, status = "completed", errorMessage = "") {
+  if (!datasetId || !(await isDbAvailable())) return;
+  await queryDb(
+    `update ai_review_uploads
+     set report_db_id = $2, status = $3, error_message = nullif($4, ''), updated_at = now()
+     where dataset_id = $1`,
+    [datasetId, reportDbId || null, status, errorMessage || ""],
+  );
 }
 
 function reviewReportDigest(summary, report) {
@@ -1027,29 +1250,7 @@ function normalizeReviewReportRow(row) {
 
 async function listReviewReports(user) {
   if (await isDbAvailable()) {
-    const columns = `
-      id,
-      user_id,
-      source_type,
-      source_name,
-      status,
-      report_title,
-      report_id,
-      row_counts_json,
-      health_score,
-      risk_level,
-      share_url,
-      svg_url,
-      qr_svg_url,
-      excel_url,
-      normalized_data_url,
-      diagnostics_url,
-      created_at
-    `;
-    const result =
-      user.role === "admin"
-        ? await queryDb(`select ${columns} from review_reports order by created_at desc limit 100`)
-        : await queryDb(`select ${columns} from review_reports where user_id = $1 order by created_at desc limit 100`, [user.id]);
+    const result = await queryDb("select * from get_review_report_list($1,$2,$3)", [user.id, user.role === "admin", 100]);
     return result.rows.map(normalizeReviewReportRow);
   }
   const data = readLocalData();
@@ -3285,11 +3486,13 @@ async function handleReviewReport(req, res) {
 
   const jobKey = `excel:${user.id}`;
   const startedAt = beginReviewJob(jobKey);
+  let datasetId = "";
   console.log(`[review] start ${jobKey} ${filename}`);
   try {
-    await saveDatasetRecord(user.id, "excel", summary, filename);
+    datasetId = await saveDatasetRecord(user.id, "excel", summary, filename);
     const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary);
     const dbReportId = await saveReviewReportRecord(user.id, "excel", filename, summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
+    await linkDatasetToReviewReport(datasetId, dbReportId, "completed");
     finishReviewJob(jobKey, startedAt, reportId);
     sendJson(res, 200, {
       ok: true,
@@ -3307,6 +3510,7 @@ async function handleReviewReport(req, res) {
     });
   } catch (error) {
     activeReviewJobs.delete(jobKey);
+    await linkDatasetToReviewReport(datasetId, null, "failed", error.message);
     console.error(`[review] failed ${jobKey}:`, error);
     throw error;
   }
@@ -3324,6 +3528,7 @@ async function handleSijichanReviewReport(req, res) {
 
   const jobKey = `login:${user.id}`;
   const startedAt = beginReviewJob(jobKey);
+  let datasetId = "";
   console.log(`[review] start ${jobKey} ${body.username || ""}`);
   try {
     const summary = await runSijichanExport(body);
@@ -3333,13 +3538,15 @@ async function handleSijichanReviewReport(req, res) {
       finishReviewJob(jobKey, startedAt, "empty");
       return;
     }
-    await saveDatasetRecord(user.id, "login", summary, summary.source || "登录获取");
+    datasetId = await saveDatasetRecord(user.id, "login", summary, summary.source || "登录获取");
     const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary);
     const dbReportId = await saveReviewReportRecord(user.id, "login", "登录获取", summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
+    await linkDatasetToReviewReport(datasetId, dbReportId, "completed");
     finishReviewJob(jobKey, startedAt, reportId);
     sendJson(res, 200, { ok: true, id: dbReportId, summary, report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
   } catch (error) {
     activeReviewJobs.delete(jobKey);
+    await linkDatasetToReviewReport(datasetId, null, "failed", error.message);
     console.error(`[review] failed ${jobKey}:`, error);
     throw error;
   }
@@ -3351,20 +3558,25 @@ async function handleRegister(req, res) {
   const companyName = String(body.companyName || "").trim();
   const phone = String(body.phone || "").trim();
   const email = String(body.email || "").trim();
+  const loginIdentifier = email || phone || name;
   const password = String(body.password || "");
   if (!name || !password || (!phone && !email)) {
+    await recordAuthOperation(req, { loginIdentifier, operationType: "register", success: false, failureReason: "missing_required_fields" });
     sendJson(res, 400, { error: "请填写姓名、手机号或邮箱、密码。" });
     return;
   }
   if (password.length < 6) {
+    await recordAuthOperation(req, { loginIdentifier, operationType: "register", success: false, failureReason: "weak_password" });
     sendJson(res, 400, { error: "密码至少需要6位。" });
     return;
   }
   if (await findUserByLogin(email || phone)) {
+    await recordAuthOperation(req, { loginIdentifier, operationType: "register", success: false, failureReason: "duplicate_login" });
     sendJson(res, 409, { error: "该手机号或邮箱已注册。" });
     return;
   }
   const user = await createUser({ name, phone, email, password, companyName });
+  await recordAuthOperation(req, { userId: user.id, loginIdentifier, operationType: "register", success: true, metadata: { role: user.role } });
   setSessionCookie(res, user);
   sendJson(res, 200, { ok: true, user: publicUser(user), profile: await getCustomerProfile(user.id) });
 }
@@ -3375,18 +3587,23 @@ async function handleLogin(req, res) {
   const password = String(body.password || "");
   const user = await findUserByLogin(login);
   if (!user || !verifyPassword(password, user.password_hash)) {
+    await recordAuthOperation(req, { userId: user?.id || null, loginIdentifier: login, operationType: "login", success: false, failureReason: "invalid_credentials" });
     sendJson(res, 401, { error: "账号或密码不正确。" });
     return;
   }
   if (user.status !== "active") {
+    await recordAuthOperation(req, { userId: user.id, loginIdentifier: login, operationType: "login", success: false, failureReason: "inactive_user" });
     sendJson(res, 403, { error: "账号当前不可用，请联系管理员。" });
     return;
   }
+  await recordAuthOperation(req, { userId: user.id, loginIdentifier: login, operationType: "login", success: true, metadata: { role: user.role } });
   setSessionCookie(res, user);
   sendJson(res, 200, { ok: true, user: publicUser(user), profile: await getCustomerProfile(user.id) });
 }
 
-async function handleLogout(_req, res) {
+async function handleLogout(req, res) {
+  const user = await getCurrentUser(req);
+  await recordAuthOperation(req, { userId: user?.id || null, loginIdentifier: user?.email || user?.phone || user?.name || "", operationType: "logout", success: true });
   clearSessionCookie(res);
   sendJson(res, 200, { ok: true });
 }

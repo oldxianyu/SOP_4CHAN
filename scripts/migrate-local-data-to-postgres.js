@@ -139,6 +139,20 @@ async function ensureSchema(pool) {
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     );
+    create table if not exists ai_review_uploads (
+      id text primary key default gen_random_uuid()::text,
+      user_id text references users(id) on delete set null,
+      dataset_id text references customer_datasets(id) on delete set null,
+      report_db_id text references review_reports(id) on delete set null,
+      source_type text not null,
+      source_name text,
+      filename text,
+      row_counts_json jsonb not null default '{}'::jsonb,
+      status text not null default 'parsed',
+      error_message text,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
     create table if not exists capability_test_submissions (
       id text primary key default gen_random_uuid()::text,
       name text not null,
@@ -152,6 +166,19 @@ async function ensureSchema(pool) {
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     );
+    create table if not exists auth_operation_logs (
+      id text primary key default gen_random_uuid()::text,
+      user_id text references users(id) on delete set null,
+      login_identifier text,
+      operation_type text not null,
+      success boolean not null default false,
+      failure_reason text,
+      ip_address inet,
+      user_agent text,
+      metadata_json jsonb not null default '{}'::jsonb,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
     alter table review_reports add column if not exists status text not null default 'completed';
     alter table review_reports add column if not exists report_title text;
     alter table review_reports add column if not exists row_counts_json jsonb not null default '{}'::jsonb;
@@ -160,11 +187,131 @@ async function ensureSchema(pool) {
     alter table review_reports add column if not exists excel_url text;
     alter table review_reports add column if not exists normalized_data_url text;
     alter table review_reports add column if not exists diagnostics_url text;
+    alter table ai_review_uploads add column if not exists report_db_id text references review_reports(id) on delete set null;
+    alter table ai_review_uploads add column if not exists error_message text;
+    alter table auth_operation_logs add column if not exists metadata_json jsonb not null default '{}'::jsonb;
     create index if not exists idx_customer_datasets_user_created on customer_datasets(user_id, created_at desc);
+    create index if not exists idx_ai_review_uploads_user_created on ai_review_uploads(user_id, created_at desc);
+    create unique index if not exists idx_ai_review_uploads_dataset_unique on ai_review_uploads(dataset_id) where dataset_id is not null;
+    create index if not exists idx_ai_review_uploads_report on ai_review_uploads(report_db_id);
+    create index if not exists idx_ai_review_uploads_status_created on ai_review_uploads(status, created_at desc);
     create index if not exists idx_capability_test_submissions_created on capability_test_submissions(created_at desc);
+    create index if not exists idx_auth_logs_user_created on auth_operation_logs(user_id, created_at desc);
+    create index if not exists idx_auth_logs_identifier_created on auth_operation_logs(login_identifier, created_at desc);
+    create index if not exists idx_auth_logs_success_created on auth_operation_logs(success, created_at desc);
     create index if not exists idx_review_reports_user_created on review_reports(user_id, created_at desc);
     create index if not exists idx_review_reports_created on review_reports(created_at desc);
     create index if not exists idx_review_reports_status_created on review_reports(status, created_at desc);
+  `);
+  await pool.query(`
+    create or replace function set_updated_at()
+    returns trigger
+    language plpgsql
+    as $$
+    begin
+      new.updated_at = now();
+      return new;
+    end;
+    $$;
+    create or replace function record_auth_operation(
+      p_user_id text,
+      p_login_identifier text,
+      p_operation_type text,
+      p_success boolean,
+      p_failure_reason text,
+      p_ip_address inet,
+      p_user_agent text,
+      p_metadata_json jsonb default '{}'::jsonb
+    )
+    returns text
+    language plpgsql
+    as $$
+    declare
+      v_id text;
+    begin
+      insert into auth_operation_logs(user_id, login_identifier, operation_type, success, failure_reason, ip_address, user_agent, metadata_json)
+      values(p_user_id, p_login_identifier, p_operation_type, coalesce(p_success, false), p_failure_reason, p_ip_address, p_user_agent, coalesce(p_metadata_json, '{}'::jsonb))
+      returning id into v_id;
+      return v_id;
+    end;
+    $$;
+    create or replace function get_review_report_list(p_user_id text, p_is_admin boolean, p_limit integer default 100)
+    returns table(
+      id text,
+      user_id text,
+      source_type text,
+      source_name text,
+      status text,
+      report_title text,
+      report_id text,
+      row_counts_json jsonb,
+      health_score numeric,
+      risk_level text,
+      share_url text,
+      svg_url text,
+      qr_svg_url text,
+      excel_url text,
+      normalized_data_url text,
+      diagnostics_url text,
+      created_at timestamptz
+    )
+    language sql
+    stable
+    as $$
+      select
+        r.id,
+        r.user_id,
+        r.source_type,
+        r.source_name,
+        r.status,
+        r.report_title,
+        r.report_id,
+        r.row_counts_json,
+        r.health_score,
+        r.risk_level,
+        r.share_url,
+        r.svg_url,
+        r.qr_svg_url,
+        r.excel_url,
+        r.normalized_data_url,
+        r.diagnostics_url,
+        r.created_at
+      from review_reports r
+      where coalesce(p_is_admin, false) or r.user_id = p_user_id
+      order by r.created_at desc
+      limit greatest(1, least(coalesce(p_limit, 100), 500));
+    $$;
+    create or replace function review_report_payload_count()
+    returns integer
+    language sql
+    stable
+    as $$
+      select count(*)::integer from review_report_payloads;
+    $$;
+    do $$
+    declare
+      t text;
+      trigger_name text;
+    begin
+      foreach t in array array[
+        'users',
+        'customer_profiles',
+        'ai_configs',
+        'customer_datasets',
+        'ai_review_uploads',
+        'review_reports',
+        'review_report_payloads',
+        'capability_test_submissions',
+        'auth_operation_logs'
+      ]
+      loop
+        trigger_name := 'trg_' || t || '_updated_at';
+        if not exists (select 1 from pg_trigger where tgname = trigger_name and not tgisinternal) then
+          execute format('create trigger %I before update on %I for each row execute function set_updated_at()', trigger_name, t);
+        end if;
+      end loop;
+    end;
+    $$;
   `);
 }
 
@@ -255,6 +402,21 @@ async function migrate() {
         json(row.row_counts_json || row.rowCountsJson, {}),
         json(row.sheet_status_json || row.sheetStatusJson, []),
         json(row.metadata_json || row.metadataJson, {}),
+        row.created_at || row.createdAt || new Date().toISOString(),
+        row.updated_at || row.updatedAt || new Date().toISOString(),
+      ],
+    );
+    await pool.query(
+      `insert into ai_review_uploads(user_id, dataset_id, source_type, source_name, filename, row_counts_json, status, created_at, updated_at)
+       select $1,$2,$3,$4,$5,$6::jsonb,'migrated',$7,$8
+       where not exists (select 1 from ai_review_uploads where dataset_id = $2)`,
+      [
+        nullIfBlank(row.user_id || row.userId),
+        row.id,
+        row.source_type || row.sourceType || "unknown",
+        row.metadata_json?.source || row.metadataJson?.source || row.source_type || row.sourceType || "unknown",
+        row.filename || "",
+        json(row.row_counts_json || row.rowCountsJson, {}),
         row.created_at || row.createdAt || new Date().toISOString(),
         row.updated_at || row.updatedAt || new Date().toISOString(),
       ],

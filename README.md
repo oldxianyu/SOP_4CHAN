@@ -132,8 +132,10 @@ AI 复盘报告支持两种来源。
 - `customer_profiles`：客户/连锁主体信息。
 - `ai_configs`：管理员维护的 AI 配置。
 - `customer_datasets`：客户数据来源记录。
+- `ai_review_uploads`：AI 复盘报告上传/登录取数记录，关联数据来源和历史报告。
 - `review_reports`：AI 复盘历史报告。
 - `review_report_payloads`：AI 复盘完整载荷，保存完整 `summary_json`、`report_json` 和 `markdown`。
+- `auth_operation_logs`：注册、登录、退出、失败登录等操作审计记录。
 - `capability_test_submissions`：五大金刚测评提交记录。
 
 生产环境采用“轻量主表 + 大对象载荷表”的设计：
@@ -143,6 +145,8 @@ AI 复盘报告支持两种来源。
 - 历史报告列表接口不读取完整 `summary_json/report_json`，避免大 JSON 占用 Node 内存。
 - `.server/reports/{reportId}/` 继续保存可直接分享和下载的静态产物；数据库保存结构化内容和产物索引。
 - 生产环境设置 `DISABLE_LOCAL_DATA_FALLBACK=true`，数据库启用后不再回退读取 `.server/portal-data.json`。
+- 所有业务表使用主键和核心查询索引；`updated_at` 由统一触发器自动维护。
+- 生产库包含 `get_review_report_list`、`record_auth_operation`、`review_report_payload_count` 等数据库函数，分别用于历史报告轻量列表、登录审计写入和载荷完整性检查。
 
 当前 `192.168.1.200` 使用本地 PostgreSQL 作为生产库，历史报告主表已压缩为轻量元数据表；完整分析载荷存放在 `review_report_payloads`。
 
