@@ -54,6 +54,8 @@ https://sijichan.top
 - 二维码在当前页面弹框展示，不再跳转到单独二维码页面。
 - 手机端适配已覆盖首页、页签、AI 复盘、历史报告、对接行事历、登录注册和 4 个友链资料页。
 - 五大金刚测评页支持保存提交数据，管理员可在门户查看答题明细。
+- 服务器已切换为本地 PostgreSQL 存储：用户、AI配置、历史复盘、数据来源和测评提交统一入库。
+- 历史报告列表改为轻量 SQL 查询，只返回标题、来源、时间和下载链接，不再加载大体量 `summary_json/report_json`，列表打开更快、更省内存。
 
 ## AI 复盘数据来源
 
@@ -119,7 +121,7 @@ AI 复盘报告支持两种来源。
 - **AI 调用**：支持 OpenAI Responses 协议和 OpenAI-compatible Chat Completions 协议。
 - **推荐模型配置**：DeepSeek 可使用 `https://api.deepseek.com` + `deepseek-v4-flash`。
 - **报告产物**：HTML、JSON、SVG、二维码、Excel、接口诊断、标准化数据。
-- **数据存储**：优先使用 Supabase/Postgres；未配置数据库时回退到 `.server/portal-data.json`。
+- **数据存储**：优先使用 Postgres。线上服务器使用本地 PostgreSQL；未配置数据库时才回退到 `.server/portal-data.json`。
 - **手机端**：使用 `<=640px` 和 `<=380px` 断点，长表格在手机端转换为卡片列表。
 
 ## 数据库与后台能力
@@ -193,6 +195,17 @@ DB_NAME=postgres
 DB_USER=sijichan
 DB_PASSWORD=********
 DB_SSL=true
+
+# 本地 PostgreSQL 部署示例
+DB_HOST=127.0.0.1
+DB_PORT=5432
+DB_NAME=sop_4chan
+DB_USER=sop_4chan_app
+DB_PASSWORD=********
+DB_SSL=false
+
+# 数据库启用后可关闭本地 JSON 兜底，避免异常时读取大文件
+DISABLE_LOCAL_DATA_FALLBACK=true
 ```
 
 `PUBLIC_REPORT_BASE_URL` 会影响分享页、二维码、SVG、Excel、接口诊断和标准化数据链接。通过 Cloudflare Tunnel 暴露服务时，应设置为：
@@ -217,6 +230,25 @@ codex mcp login supabase
 ```bash
 npx skills add supabase/agent-skills
 ```
+
+## 本地数据库迁移
+
+服务器从 `.server/portal-data.json` 迁移到本地 PostgreSQL 时，可执行：
+
+```bash
+npm run migrate:local-data
+```
+
+该脚本会迁移：
+
+- `users`
+- `customer_profiles`
+- `ai_configs`
+- `customer_datasets`
+- `review_reports`
+- `capability_test_submissions`
+
+迁移完成后，历史分析数据保存在数据库中；分享网页、SVG、二维码、Excel、接口诊断和标准化数据仍保存在 `.server/reports/{reportId}/`，数据库保存可访问链接和结构化报告内容。
 
 ## 部署
 

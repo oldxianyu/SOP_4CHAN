@@ -45,6 +45,7 @@ let dbReady = false;
 let dbChecked = false;
 const activeReviewJobs = new Set();
 const workbookDetailRowLimit = Number(process.env.WORKBOOK_DETAIL_ROW_LIMIT || 5000);
+const disableLocalDataFallback = process.env.DISABLE_LOCAL_DATA_FALLBACK === "true";
 
 const mime = {
   ".html": "text/html; charset=utf-8",
@@ -132,9 +133,14 @@ function clearSessionCookie(res) {
   res.setHeader("Set-Cookie", `${cookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
 }
 
+function emptyLocalData() {
+  return { users: [], customerProfiles: [], aiConfigs: [], customerDatasets: [], reviewReports: [], capabilityTestSubmissions: [] };
+}
+
 function readLocalData() {
+  if (disableLocalDataFallback) return emptyLocalData();
   if (!fs.existsSync(localDataPath)) {
-    return { users: [], customerProfiles: [], aiConfigs: [], customerDatasets: [], reviewReports: [], capabilityTestSubmissions: [] };
+    return emptyLocalData();
   }
   try {
     const data = JSON.parse(fs.readFileSync(localDataPath, "utf8"));
@@ -147,11 +153,14 @@ function readLocalData() {
       capabilityTestSubmissions: data.capabilityTestSubmissions || [],
     };
   } catch {
-    return { users: [], customerProfiles: [], aiConfigs: [], customerDatasets: [], reviewReports: [], capabilityTestSubmissions: [] };
+    return emptyLocalData();
   }
 }
 
 function writeLocalData(data) {
+  if (disableLocalDataFallback) {
+    throw new Error("本地JSON兜底存储已关闭，请检查数据库连接。");
+  }
   ensureServerDir();
   fs.writeFileSync(localDataPath, JSON.stringify(data, null, 2), "utf8");
 }
@@ -362,6 +371,9 @@ async function ensureDatabase() {
       share_url text,
       svg_url text,
       qr_svg_url text,
+      excel_url text,
+      normalized_data_url text,
+      diagnostics_url text,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     );
@@ -382,6 +394,11 @@ async function ensureDatabase() {
     create index if not exists idx_customer_datasets_user_created on customer_datasets(user_id, created_at desc);
     create index if not exists idx_capability_test_submissions_created on capability_test_submissions(created_at desc);
   `);
+    await activePool.query(`
+      alter table review_reports add column if not exists excel_url text;
+      alter table review_reports add column if not exists normalized_data_url text;
+      alter table review_reports add column if not exists diagnostics_url text;
+    `);
     dbReady = true;
     return true;
   } catch (error) {
@@ -707,8 +724,8 @@ async function saveReviewReportRecord(userId, sourceType, sourceName, summary, g
   const profile = await getCustomerProfile(userId);
   if (await isDbAvailable()) {
     const result = await queryDb(
-      `insert into review_reports(user_id, customer_profile_id, source_type, source_name, summary_json, report_json, markdown, report_id, share_url, svg_url, qr_svg_url)
-       values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning id`,
+      `insert into review_reports(user_id, customer_profile_id, source_type, source_name, summary_json, report_json, markdown, report_id, share_url, svg_url, qr_svg_url, excel_url, normalized_data_url, diagnostics_url)
+       values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) returning id`,
       [
         userId,
         profile?.id || null,
@@ -721,6 +738,9 @@ async function saveReviewReportRecord(userId, sourceType, sourceName, summary, g
         generated.shareUrl,
         generated.svgUrl,
         generated.qrSvgUrl,
+        generated.excelUrl || "",
+        generated.normalizedDataUrl || "",
+        generated.diagnosticsUrl || "",
       ],
     );
     return result.rows[0].id;
@@ -880,7 +900,7 @@ function normalizeReviewReportRow(row) {
     userId: row.user_id || row.userId,
     sourceType: row.source_type || row.sourceType,
     sourceName: row.source_name || row.sourceName || "",
-    reportTitle: row.report_json?.title || row.reportJson?.title || "四季蝉AI复盘报告",
+    reportTitle: row.report_title || row.reportTitle || row.report_json?.title || row.reportJson?.title || "四季蝉AI复盘报告",
     report: row.report_json || row.reportJson || null,
     summary: row.summary_json || row.summaryJson || null,
     markdown: row.markdown || "",
@@ -897,10 +917,25 @@ function normalizeReviewReportRow(row) {
 
 async function listReviewReports(user) {
   if (await isDbAvailable()) {
+    const columns = `
+      id,
+      user_id,
+      source_type,
+      source_name,
+      report_json->>'title' as report_title,
+      report_id,
+      share_url,
+      svg_url,
+      qr_svg_url,
+      excel_url,
+      normalized_data_url,
+      diagnostics_url,
+      created_at
+    `;
     const result =
       user.role === "admin"
-        ? await queryDb("select * from review_reports order by created_at desc limit 100")
-        : await queryDb("select * from review_reports where user_id = $1 order by created_at desc limit 100", [user.id]);
+        ? await queryDb(`select ${columns} from review_reports order by created_at desc limit 100`)
+        : await queryDb(`select ${columns} from review_reports where user_id = $1 order by created_at desc limit 100`, [user.id]);
     return result.rows.map(normalizeReviewReportRow);
   }
   const data = readLocalData();

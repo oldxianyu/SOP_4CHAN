@@ -5,7 +5,8 @@
   "description": "海典四季蝉业务对接与AI复盘门户",
   "scripts": {
     "start": "node preview-server.js",
-    "dev": "node preview-server.js"
+    "dev": "node preview-server.js",
+    "migrate:local-data": "node scripts/migrate-local-data-to-postgres.js"
   },
   "dependencies": {
     "busboy": "^1.6.0",
