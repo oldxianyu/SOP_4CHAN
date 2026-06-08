@@ -2616,6 +2616,8 @@
         const createWeComBrowserSession = async () => {
           const values = sourceForm.getFieldsValue();
           try {
+            setWeComBrowserSession(null);
+            setWeComHandoff(null);
             const response = await fetch("/api/wecom-browser-session", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -2626,7 +2628,7 @@
             setWeComBrowserSession(data.session);
             setWeComHandoff({ id: data.session.handoffId, captured: data.session.captured });
             pollWeComBrowserSession(data.session.id);
-            message.success("服务器扫码会话已创建，请扫描页面中的企微二维码");
+            message.success("服务器扫码会话已创建，请用企业微信扫描页面二维码");
           } catch (err) {
             message.error(err.message || "服务器扫码会话创建失败");
           }
@@ -2646,11 +2648,11 @@
             return;
           }
           if (!weComHandoff?.id) {
-            message.warning("请先创建企微授权交接会话");
+            message.warning("请先创建服务器扫码会话");
             return;
           }
           if (!weComHandoff?.captured) {
-            message.warning("尚未捕获授权token，请先扫码并运行授权助手");
+            message.warning("尚未捕获新零售授权，请先扫码进入新零售管理平台");
             return;
           }
           const values = sourceForm.getFieldsValue();
@@ -2881,8 +2883,8 @@
                       h(Alert, {
                         type: "info",
                         showIcon: true,
-                        message: "数据来源：企微扫码登录",
-                        description: "先打开企业微信扫码页进入新零售管理平台；获得平台接口授权token后填入下方，服务器即可使用该授权读取数据并生成复盘报告。",
+                        message: "???????????",
+                        description: "???????????????????????????????????????????????????????????????????????",
                       }),
                       h(
                         Form,
@@ -2890,79 +2892,86 @@
                         h(
                           Row,
                           { gutter: [12, 0] },
-                          h(Col, { xs: 24, md: 12 }, h(Form.Item, { label: "客户编码（选填）", name: "merCode" }, h(Input, { placeholder: "扫码后可粘贴到四季蝉后台" }))),
-                          h(Col, { xs: 24, md: 12 }, h(Form.Item, { label: "客户名称（选填）", name: "merName" }, h(Input, { placeholder: "用于人工标记或核验" }))),
+                          h(Col, { xs: 24, md: 12 }, h(Form.Item, { label: "????????", name: "merCode" }, h(Input, { placeholder: "?????????????????" }))),
+                          h(Col, { xs: 24, md: 12 }, h(Form.Item, { label: "????????", name: "merName" }, h(Input, { placeholder: "?????????????" }))),
                         ),
-                        h(Form.Item, { label: "新零售管理平台授权token", name: "token" }, h(Input.TextArea, { rows: 3, placeholder: "粘贴登录后接口请求中的 Authorization token；可带 Bearer 前缀，系统会自动清理。" })),
-                      ),
-                      h(
-                        Space,
-                        { style: { marginTop: 4 }, wrap: true },
-                        h(Button, { type: "primary", onClick: openWeComSso }, "打开企微扫码登录"),
-                        h(Button, {
-                          onClick: () => {
-                            const merCode = String(sourceForm.getFieldValue("merCode") || "").trim();
-                            if (!merCode) {
-                              message.warning("请先填写客户编码");
-                              return;
-                            }
-                            copyText(merCode).then(() => message.success("客户编码已复制"));
-                          },
-                        }, "复制客户编码"),
-                        h(Button, { type: "primary", loading, onClick: generateFromWeComToken }, "使用授权生成报告"),
                       ),
                       h(
                         Card,
                         { size: "small", className: "gate-card", style: { marginTop: 16 } },
-                        h(Title, { level: 5, style: { marginBottom: 8 } }, "扫码授权自动交接"),
-                        h(Paragraph, { type: "secondary" }, "创建一次性交接会话后，扫码会进入海典新零售管理平台；在新零售页面运行授权助手，再点击首页、活动或报表页面触发接口请求，系统会自动把token交给服务器。"),
+                        h(Title, { level: 5, style: { marginBottom: 8 } }, "??????????????"),
+                        h(Paragraph, { type: "secondary" }, "???????????????????????????????????????????????????????????????? token?"),
                         h(
                           Space,
                           { wrap: true },
-                          h(Button, { onClick: createWeComBrowserSession }, "服务器扫码获取"),
-                          h(Button, { type: "primary", onClick: createWeComHandoff }, "创建交接并打开扫码"),
-                          h(Button, { disabled: !weComHandoff?.helperScript, onClick: copyWeComHelperScript }, "复制授权助手"),
-                          h(Button, { type: "primary", loading, disabled: !weComHandoff?.captured, onClick: generateFromWeComHandoff }, "用已捕获授权生成报告"),
+                          h(Button, { type: "primary", loading, onClick: createWeComBrowserSession }, "?????????"),
+                          h(Button, { type: "primary", loading, disabled: !weComHandoff?.captured, onClick: generateFromWeComHandoff }, "??????????"),
+                          h(Button, {
+                            onClick: () => {
+                              const merCode = String(sourceForm.getFieldValue("merCode") || "").trim();
+                              if (!merCode) {
+                                message.warning("????????");
+                                return;
+                              }
+                              copyText(merCode).then(() => message.success("???????"));
+                            },
+                          }, "??????"),
                         ),
                         weComBrowserSession
                           ? h(
                               "div",
-                              { style: { marginTop: 14 } },
+                              { className: "wecom-qr-panel", style: { marginTop: 14 } },
                               weComBrowserSession.qrImage
-                                ? h("img", { src: weComBrowserSession.qrImage, alt: "企微扫码登录", style: { width: "100%", maxWidth: 360, borderRadius: 8, border: "1px solid #d8e1f2" } })
+                                ? h("img", { src: weComBrowserSession.qrImage, alt: "??????", style: { width: "100%", maxWidth: 360, borderRadius: 8, border: "1px solid #d8e1f2", background: "#fff" } })
                                 : null,
                               h(
-                                Text,
-                                { type: weComBrowserSession.status === "error" || weComBrowserSession.status === "expired" ? "danger" : "secondary" },
-                                weComBrowserSession.captured
-                                  ? "服务器已捕获新零售授权，可直接生成报告。"
-                                  : weComBrowserSession.lastError || "请用企业微信扫描上方二维码；扫码进入新零售后，系统会在服务器浏览器中监听接口授权。",
+                                Alert,
+                                {
+                                  style: { marginTop: 12 },
+                                  type: weComBrowserSession.status === "error" || weComBrowserSession.status === "expired" ? "error" : weComBrowserSession.captured ? "success" : "info",
+                                  showIcon: true,
+                                  message: weComBrowserSession.captured ? "???????????" : weComBrowserSession.status === "expired" ? "???????" : weComBrowserSession.status === "error" ? "??????" : "????????",
+                                  description: weComBrowserSession.captured
+                                    ? "????????????????????????????"
+                                    : weComBrowserSession.lastError || "????????????????????????????????????????????????????",
+                                },
                               ),
                             )
                           : null,
-                        weComHandoff
+                        weComHandoff && !weComBrowserSession?.captured
                           ? h(
-                              Alert,
-                              {
-                                style: { marginTop: 12 },
-                                type: weComHandoff.captured ? "success" : "info",
-                                showIcon: true,
-                                message: weComHandoff.captured ? "已捕获授权token" : "等待授权token回传",
-                                description: weComHandoff.captured
-                                  ? "服务器已收到新零售管理平台token，可直接生成复盘报告。"
-                                  : weComHandoff.lastError
-                                    ? `自动交换未拿到业务token：${weComHandoff.lastError}。请在扫码打开的新零售页面运行授权助手，并点击报表或活动页面触发接口。`
-                                    : "请在扫码打开的新零售页面地址栏粘贴运行授权助手；若地址栏阻止 javascript: 前缀，请在控制台运行复制内容，然后点击报表或活动页面触发接口。",
-                              },
+                              Text,
+                              { type: weComHandoff.captured ? "success" : "secondary", style: { display: "block", marginTop: 10 } },
+                              weComHandoff.captured ? "?? token ???????" : "?????????????????????????",
                             )
                           : null,
+                      ),
+                      h(
+                        Collapse,
+                        { ghost: true, style: { marginTop: 12 } },
+                        h(
+                          Collapse.Panel,
+                          { key: "fallback", header: "???????????" },
+                          h(Paragraph, { type: "secondary" }, "????????????????????????????????????? Authorization token ?????"),
+                          h(Form, { form: sourceForm, layout: "vertical" },
+                            h(Form.Item, { label: "?????????token", name: "token" }, h(Input.TextArea, { rows: 3, placeholder: "??????????? Authorization token??? Bearer ???????????" })),
+                          ),
+                          h(
+                            Space,
+                            { wrap: true },
+                            h(Button, { onClick: openWeComSso }, "????????"),
+                            h(Button, { onClick: createWeComHandoff }, "?????????"),
+                            h(Button, { disabled: !weComHandoff?.helperScript, onClick: copyWeComHelperScript }, "??????"),
+                            h(Button, { type: "primary", loading, onClick: generateFromWeComToken }, "????token????"),
+                          ),
+                        ),
                       ),
                       h(Alert, {
                         style: { marginTop: 16 },
                         type: "warning",
                         showIcon: true,
-                        message: "当前集成说明",
-                        description: "本站不会抓取第三方域名Cookie，也不会把token写入报告或GitHub。当前版本需要把扫码登录后获得的接口授权token交给服务器；如后续海典后台提供本站回调或token交换接口，可改成扫码后自动交接。",
+                        message: "????",
+                        description: "???????????????????????????????????GitHub?????????????????????????",
                       }),
                     )
 

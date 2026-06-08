@@ -4167,6 +4167,77 @@ async function createWeComBrowserSession(user, body = {}) {
       }
     });
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    await context.exposeBinding("sop4chanCaptureToken", async (source, payload = {}) => {
+      const from = payload.from || `server-browser-binding:${source.frame?.url?.() || ""}`;
+      const href = payload.href || source.frame?.url?.() || session.currentUrl;
+      await maybeCapture(payload.token || payload.authorization || payload.text || "", from, href);
+    });
+    await context.addInitScript(() => {
+      if (window.__sop4chanServerHookInstalled) return;
+      window.__sop4chanServerHookInstalled = true;
+      const tokenPattern = /(?:Authorization|authorization)\s*[:=]\s*["']?(?:Bearer\s+)?([A-Za-z0-9._\-]{20,})|(?:token|access_token|merchant_token|accessToken)\s*["']?\s*[:=]\s*["']([A-Za-z0-9._\-]{20,})["']/i;
+      const pushToken = (value, from) => {
+        const text = typeof value === "string" ? value : JSON.stringify(value || "");
+        const match = text.match(tokenPattern);
+        const token = match ? (match[1] || match[2] || "") : text;
+        if (!token || token.length < 20 || !window.sop4chanCaptureToken) return;
+        window.sop4chanCaptureToken({ token, from, href: location.href }).catch(() => null);
+      };
+      const headersToText = (headers) => {
+        try {
+          if (!headers) return "";
+          if (headers instanceof Headers) return Array.from(headers.entries()).map(([key, value]) => `${key}: ${value}`).join("\n");
+          if (Array.isArray(headers)) return headers.map(([key, value]) => `${key}: ${value}`).join("\n");
+          if (typeof headers === "object") return Object.entries(headers).map(([key, value]) => `${key}: ${value}`).join("\n");
+          return String(headers);
+        } catch {
+          return "";
+        }
+      };
+      const originalFetch = window.fetch;
+      if (originalFetch) {
+        window.fetch = async function patchedFetch(input, init) {
+          try {
+            pushToken(headersToText(init?.headers || input?.headers), "fetch-request-headers");
+            pushToken(init?.body || "", "fetch-request-body");
+          } catch {}
+          const response = await originalFetch.apply(this, arguments);
+          try {
+            pushToken(headersToText(response.headers), "fetch-response-headers");
+            const contentType = response.headers?.get?.("content-type") || "";
+            if (/json|text|javascript/i.test(contentType)) {
+              response.clone().text().then((text) => pushToken(text, "fetch-response-body")).catch(() => null);
+            }
+          } catch {}
+          return response;
+        };
+      }
+      const originalOpen = XMLHttpRequest.prototype.open;
+      const originalSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
+      const originalSend = XMLHttpRequest.prototype.send;
+      XMLHttpRequest.prototype.open = function patchedOpen(method, url) {
+        this.__sop4chanUrl = url;
+        this.__sop4chanHeaders = {};
+        return originalOpen.apply(this, arguments);
+      };
+      XMLHttpRequest.prototype.setRequestHeader = function patchedSetRequestHeader(name, value) {
+        this.__sop4chanHeaders = this.__sop4chanHeaders || {};
+        this.__sop4chanHeaders[name] = value;
+        pushToken(`${name}: ${value}`, "xhr-request-header");
+        return originalSetRequestHeader.apply(this, arguments);
+      };
+      XMLHttpRequest.prototype.send = function patchedSend(body) {
+        pushToken(headersToText(this.__sop4chanHeaders), "xhr-request-headers");
+        pushToken(body || "", "xhr-request-body");
+        this.addEventListener("load", () => {
+          try {
+            pushToken(this.getAllResponseHeaders(), "xhr-response-headers");
+            pushToken(this.responseText || "", "xhr-response-body");
+          } catch {}
+        });
+        return originalSend.apply(this, arguments);
+      };
+    });
     const page = await context.newPage();
     session.page = page;
     page.on("close", () => {
