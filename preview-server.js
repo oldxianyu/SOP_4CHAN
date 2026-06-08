@@ -441,6 +441,9 @@ async function ensureDatabase() {
       user_id text references users(id) on delete set null,
       username text not null,
       password_encrypted text not null,
+      auth_type text not null default 'password',
+      token_encrypted text,
+      token_expires_at timestamptz,
       mer_name text,
       mer_code text not null default '',
       status text not null default 'active',
@@ -609,6 +612,9 @@ async function ensureDatabase() {
       alter table sijichan_account_authorizations add column if not exists last_report_db_id text references review_reports(id) on delete set null;
       alter table sijichan_account_authorizations add column if not exists last_success_at timestamptz;
       alter table sijichan_account_authorizations add column if not exists last_error text;
+      alter table sijichan_account_authorizations add column if not exists auth_type text not null default 'password';
+      alter table sijichan_account_authorizations add column if not exists token_encrypted text;
+      alter table sijichan_account_authorizations add column if not exists token_expires_at timestamptz;
       alter table monthly_marketing_recommendations add column if not exists error_message text;
       create index if not exists idx_review_reports_user_created on review_reports(user_id, created_at desc);
       create index if not exists idx_review_reports_created on review_reports(created_at desc);
@@ -1419,12 +1425,45 @@ async function upsertSijichanAuthorization(userId, body, summary, reportDbId = "
   return result.rows[0]?.id || null;
 }
 
+async function upsertSijichanTokenAuthorization(userId, body, summary, reportDbId = "") {
+  if (!(await isDbAvailable())) return null;
+  const token = normalizeSijichanToken(body.token || body.authorization || "");
+  if (!userId || !token) return null;
+  const requestInfo = summary?.requestInfo || {};
+  const merCode = String(body.merCode || requestInfo.merCode || "").trim();
+  const merName = String(body.merName || requestInfo.merName || "").trim();
+  const tokenFingerprint = crypto.createHash("sha256").update(token).digest("hex").slice(0, 12);
+  const username = String(body.username || body.account || `wecom_token_${tokenFingerprint}`).trim();
+  const expiresAt = body.expiresAt ? new Date(body.expiresAt) : null;
+  const result = await queryDb(
+    `insert into sijichan_account_authorizations(user_id, username, password_encrypted, auth_type, token_encrypted, token_expires_at, mer_name, mer_code, status, last_report_db_id, last_success_at, last_error)
+     values($1,$2,'','token',$3,$4,$5,$6,'active',$7,now(),null)
+     on conflict(user_id, username, mer_code)
+     do update set
+       auth_type = 'token',
+       token_encrypted = excluded.token_encrypted,
+       token_expires_at = excluded.token_expires_at,
+       mer_name = coalesce(nullif(excluded.mer_name, ''), sijichan_account_authorizations.mer_name),
+       status = 'active',
+       last_report_db_id = excluded.last_report_db_id,
+       last_success_at = now(),
+       last_error = null,
+       updated_at = now()
+     returning id`,
+    [userId, username, encryptSecret(token), expiresAt && !Number.isNaN(expiresAt.getTime()) ? expiresAt.toISOString() : null, merName, merCode, reportDbId || null],
+  );
+  return result.rows[0]?.id || null;
+}
+
 function normalizeSijichanAuthorizationRow(row) {
   return {
     id: row.id,
     userId: row.user_id,
     username: row.username,
     password: row.password_encrypted ? decryptSecret(row.password_encrypted) : "",
+    authType: row.auth_type || "password",
+    token: row.token_encrypted ? decryptSecret(row.token_encrypted) : "",
+    tokenExpiresAt: row.token_expires_at || null,
     merName: row.mer_name || "",
     merCode: row.mer_code || "",
     status: row.status || "active",
@@ -1553,8 +1592,12 @@ function marketingRecommendationMarkdown(recommendation) {
 }
 
 async function collectMonthlyMarketingData(auth, monthKey = monthKeyFromDate()) {
-  const login = await sijichanLogin({ username: auth.username, password: auth.password });
-  const token = login.token;
+  const isTokenAuth = auth.authType === "token";
+  if (isTokenAuth && auth.tokenExpiresAt && new Date(auth.tokenExpiresAt).getTime() <= Date.now()) {
+    throw new Error("企微扫码授权token已过期，请重新扫码获取授权。");
+  }
+  const login = isTokenAuth ? null : await sijichanLogin({ username: auth.username, password: auth.password });
+  const token = isTokenAuth ? auth.token : login.token;
   const merCode = String(auth.merCode || "").trim();
   const diagnostics = [];
   const client = createSijichanClient(token, merCode, diagnostics);
@@ -1577,7 +1620,7 @@ async function collectMonthlyMarketingData(auth, monthKey = monthKeyFromDate()) 
       monthRange: { start: window.start, end: window.end },
       username: auth.username,
       merCode,
-      merName: auth.merName || login.merName || "",
+      merName: auth.merName || login?.merName || "",
       generatedAt: new Date().toISOString(),
     },
     activityCatalog: {
@@ -3542,6 +3585,19 @@ function randomClientId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+function normalizeSijichanToken(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  return text.replace(/^authorization\s*:\s*/i, "").replace(/^bearer\s+/i, "").trim();
+}
+
+function assertSijichanTokenFormat(token) {
+  const text = normalizeSijichanToken(token);
+  if (!text) throw new Error("缺少可用于新零售管理平台接口的授权token。");
+  if (text.length < 20) throw new Error("授权token格式过短，请粘贴完整的 Authorization token。");
+  return text;
+}
+
 function networkErrorMessage(error) {
   const parts = [error?.message].filter(Boolean);
   const cause = error?.cause;
@@ -4170,13 +4226,25 @@ function responseData(result) {
 
 async function collectSijichanData(body) {
   const login = await sijichanLogin(body);
-  const token = login.token;
-  const merCode = String(body.merCode || "").trim();
-  const merName = String(body.merName || login.merName || "").trim();
-  const windows = buildSijichanWindows(body.asOf || "2026-06-06");
+  return collectSijichanDataWithToken({
+    token: login.token,
+    merCode: body.merCode,
+    merName: body.merName || login.merName,
+    loginUserName: login.userName,
+    loginSystem: login.loginSystem,
+    source: "登录获取",
+    asOf: body.asOf,
+  });
+}
+
+async function collectSijichanDataWithToken({ token, merCode: inputMerCode = "", merName: inputMerName = "", loginUserName = "", loginSystem = "", source = "企微扫码授权", asOf = "" } = {}) {
+  const normalizedToken = assertSijichanTokenFormat(token);
+  const merCode = String(inputMerCode || "").trim();
+  const merName = String(inputMerName || "").trim();
+  const windows = buildSijichanWindows(asOf || "2026-06-06");
   const withMerCode = (payload = {}) => (merCode ? { merCode, ...payload } : payload);
   const diagnostics = [];
-  const client = createSijichanClient(token, merCode, diagnostics);
+  const client = createSijichanClient(normalizedToken, merCode, diagnostics);
 
   const salesPeriods = {
     lastMonth_vs_priorTwoMonths: [windows.lastMonth, windows.priorTwoMonths],
@@ -4215,13 +4283,13 @@ async function collectSijichanData(body) {
 
   return {
     meta: {
-      source: "登录获取",
+      source,
       merCode,
       merName,
       generatedAt: new Date().toISOString(),
       windows,
-      loginUserName: login.userName,
-      loginSystem: login.loginSystem,
+      loginUserName,
+      loginSystem,
     },
     sales,
     rewardStatistics: {
@@ -4387,7 +4455,7 @@ function summarizeSijichanRaw(raw) {
   const rewardMetric = ["rewardCommodityAmount", "singleRewardMoney", "rewardAmount", "amount", "奖励金额"];
 
   return {
-    source: "登录获取",
+    source: raw.meta.source || "登录获取",
     requestInfo: {
       asOf: "2026-06-06",
       merCode: raw.meta.merCode || "",
@@ -4450,6 +4518,19 @@ function summarizeSijichanRaw(raw) {
 
 async function runSijichanExport(body) {
   const raw = await collectSijichanData(body);
+  return summarizeSijichanRaw(raw);
+}
+
+async function runSijichanTokenExport(body) {
+  const raw = await collectSijichanDataWithToken({
+    token: body.token || body.authorization,
+    merCode: body.merCode,
+    merName: body.merName,
+    loginUserName: body.username || "企微扫码授权",
+    loginSystem: "wecom-sso",
+    source: "企微扫码授权",
+    asOf: body.asOf,
+  });
   return summarizeSijichanRaw(raw);
 }
 
@@ -4595,6 +4676,52 @@ async function handleSijichanReviewReport(req, res) {
     const dbReportId = await saveReviewReportRecord(user.id, "login", "登录获取", summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
     await upsertSijichanAuthorization(user.id, body, summary, dbReportId).catch((error) => {
       console.warn(`Sijichan authorization save skipped: ${error.message}`);
+    });
+    await linkDatasetToReviewReport(datasetId, dbReportId, "completed");
+    finishReviewJob(jobKey, startedAt, reportId);
+    sendJson(res, 200, { ok: true, id: dbReportId, summary: summaryForResponse(summary), report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
+  } catch (error) {
+    activeReviewJobs.delete(jobKey);
+    await linkDatasetToReviewReport(datasetId, null, "failed", error.message);
+    console.error(`[review] failed ${jobKey}:`, error);
+    throw error;
+  }
+}
+
+async function handleWeComTokenReviewReport(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const body = await readJsonBody(req, 1024 * 1024);
+  let token = "";
+  try {
+    token = assertSijichanTokenFormat(body.token || body.authorization || "");
+  } catch (error) {
+    sendJson(res, 400, { error: error.message || "请填写企微扫码登录后获得的新零售管理平台授权token。" });
+    return;
+  }
+  const config = await loadAiConfigForUser(user);
+  if (!config.apiKey || !config.model) {
+    sendJson(res, 400, { error: "AI服务未配置，请在AI配置页面保存自己的API Key，或联系管理员hydee配置兜底API。" });
+    return;
+  }
+
+  const jobKey = `wecom:${user.id}`;
+  const startedAt = beginReviewJob(jobKey);
+  let datasetId = "";
+  console.log(`[review] start ${jobKey} ${String(body.merCode || "").trim()}`);
+  try {
+    const summary = await runSijichanTokenExport({ ...body, token });
+    const files = summary.datasetFiles || [];
+    if (!files.some((file) => file.rowCount > 0)) {
+      sendJson(res, 422, { error: "授权token可访问接口，但当前账号/客户在当前口径无可复盘明细数据。", summary: summaryForResponse(summary) });
+      finishReviewJob(jobKey, startedAt, "empty");
+      return;
+    }
+    datasetId = await saveDatasetRecord(user.id, "wecom_token", summary, summary.source || "企微扫码授权");
+    const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary, user);
+    const dbReportId = await saveReviewReportRecord(user.id, "wecom_token", "企微扫码授权", summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
+    await upsertSijichanTokenAuthorization(user.id, { ...body, token }, summary, dbReportId).catch((error) => {
+      console.warn(`Sijichan token authorization save skipped: ${error.message}`);
     });
     await linkDatasetToReviewReport(datasetId, dbReportId, "completed");
     finishReviewJob(jobKey, startedAt, reportId);
@@ -4820,6 +4947,7 @@ function createServer() {
       if (url.pathname === "/api/ai-config/test" && req.method === "POST") return await handleTestConfig(req, res);
       if (url.pathname === "/api/review-report" && req.method === "POST") return await handleReviewReport(req, res);
       if (url.pathname === "/api/sijichan-review-report" && req.method === "POST") return await handleSijichanReviewReport(req, res);
+      if (url.pathname === "/api/wecom-token-review-report" && req.method === "POST") return await handleWeComTokenReviewReport(req, res);
       if (url.pathname === "/api/monthly-marketing-recommendations" && req.method === "GET") return await handleListMonthlyMarketing(req, res);
       if (url.pathname === "/api/monthly-marketing-recommendations/generate" && req.method === "POST") return await handleGenerateMonthlyMarketing(req, res);
       if (url.pathname === "/api/review-reports" && req.method === "GET") return await handleListReports(req, res);
