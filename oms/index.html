@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>O2O 新零售 · FAQ 速查表</title>
+<style>
+  :root {
+    --primary: #1565c0;
+    --primary-light: #e3f2fd;
+    --secondary: #0d47a1;
+    --accent: #e65100;
+    --bg: #f5f7fa;
+    --card: #fff;
+    --text: #333;
+    --text-light: #555;
+    --border: #dde;
+    --radius: 8px;
+    --shadow: 0 1px 6px rgba(0,0,0,.05);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.65;
+  }
+
+  .hero {
+    background: linear-gradient(135deg, #0d47a1 0%, #1565c0 60%, #1976d2 100%);
+    color: #fff;
+    padding: 40px 24px 32px;
+    text-align: center;
+  }
+  .hero h1 { font-size: 1.7rem; font-weight: 700; letter-spacing: 1px; }
+  .hero .sub { font-size: .95rem; margin-top: 6px; opacity: .85; }
+  .hero .tags { margin-top: 14px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .hero .tag {
+    background: rgba(255,255,255,.15);
+    backdrop-filter: blur(3px);
+    padding: 3px 14px;
+    border-radius: 14px;
+    font-size: .8rem;
+  }
+
+  .container { max-width: 960px; margin: 0 auto; padding: 28px 18px 60px; }
+
+  /* search */
+  .search-bar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+  .search-bar input {
+    flex: 1; min-width: 200px;
+    padding: 10px 16px;
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    font-size: .95rem;
+    outline: none;
+    transition: border .2s;
+  }
+  .search-bar input:focus { border-color: var(--primary); }
+  .search-bar select {
+    padding: 10px 14px;
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    font-size: .9rem;
+    background: #fff;
+    min-width: 160px;
+  }
+
+  /* category */
+  .cat-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--primary);
+    margin: 30px 0 12px;
+    padding-left: 14px;
+    border-left: 4px solid var(--accent);
+  }
+
+  /* faq block */
+  .faq {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    margin-bottom: 10px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .faq .q {
+    padding: 13px 18px;
+    font-weight: 600;
+    font-size: .94rem;
+    cursor: default;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    background: #f9fafb;
+  }
+  .faq .q .flag {
+    flex-shrink: 0;
+    width: 26px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 4px;
+    font-size: .78rem;
+    font-weight: 700;
+    color: #fff;
+    margin-top: 1px;
+  }
+  .flag.order { background: #1976d2; }
+  .flag.stock { background: #388e3c; }
+  .flag.product { background: #e65100; }
+  .flag.refund { background: #c62828; }
+  .flag.print { background: #6a1b9a; }
+  .flag.system { background: #455a64; }
+  .flag.ops { background: #00838f; }
+  .flag.acc { background: #ad1457; }
+
+  .faq .a {
+    padding: 12px 18px 14px 54px;
+    font-size: .9rem;
+    color: var(--text-light);
+    border-top: 1px solid #f0f0f0;
+  }
+  .faq .a ol, .faq .a ul { padding-left: 18px; }
+  .faq .a li { margin-bottom: 4px; }
+  .faq .a code {
+    background: #f3f4f6;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: .83rem;
+  }
+  .faq .a .warn {
+    display: inline-block;
+    background: #fff3e0;
+    color: #e65100;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-weight: 600;
+    font-size: .82rem;
+    margin-left: 4px;
+  }
+
+  /* quick nav */
+  .quick-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 20px;
+  }
+  .quick-nav a {
+    padding: 5px 14px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    font-size: .82rem;
+    color: var(--primary);
+    text-decoration: none;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .quick-nav a:hover { background: var(--primary-light); border-color: var(--primary); }
+
+  .footer {
+    text-align: center;
+    color: #999;
+    font-size: .8rem;
+    padding: 30px 0 10px;
+    border-top: 1px solid var(--border);
+    margin-top: 30px;
+  }
+
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>O2O 新零售 · FAQ 速查表</h1>
+  <div class="sub">覆盖订单 / 库存 / 商品 / 退款 / 打印 / 系统 常见问题与处理方案</div>
+  <div class="tags">
+    <span class="tag">美团 &amp; 饿了么</span>
+    <span class="tag">OMS 中台</span>
+    <span class="tag">ERP 对接</span>
+    <span class="tag">追溯码</span>
+    <span class="tag">打印服务</span>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- quick nav -->
+<div class="quick-nav">
+  <a onclick="scrollToCat('订单')">🛒 订单</a>
+  <a onclick="scrollToCat('库存')">📦 库存</a>
+  <a onclick="scrollToCat('商品')">🏷️ 商品</a>
+  <a onclick="scrollToCat('退款')">💸 退款</a>
+  <a onclick="scrollToCat('打印')">🖨️ 打印</a>
+  <a onclick="scrollToCat('系统')">⚙️ 系统</a>
+  <a onclick="scrollToCat('操作')">📋 操作</a>
+  <a onclick="scrollToCat('账户')">🔐 账户</a>
+</div>
+
+<!-- search -->
+<div class="search-bar">
+  <input type="text" id="searchInput" placeholder="输入关键词搜索问题…" oninput="filterFAQ()">
+  <select id="catSelect" onchange="filterFAQ()">
+    <option value="">全部类别</option>
+    <option value="订单">订单类</option>
+    <option value="库存">库存类</option>
+    <option value="商品">商品类</option>
+    <option value="退款">退款类</option>
+    <option value="打印">打印类</option>
+    <option value="系统">系统类</option>
+    <option value="操作">操作类</option>
+    <option value="账户">账户类</option>
+  </select>
+</div>
+
+<!-- ==================== 订单 ==================== -->
+<div class="cat-title" id="cat-订单">🛒 订单问题</div>
+
+<div class="faq" data-cat="订单" data-kw="缺货 库存 提示 下单 失败">
+  <div class="q"><span class="flag order">Q1</span> 库存充足但订单提示缺货</div>
+  <div class="a">
+    <ol>
+      <li>获取订单号 → 新零售 → B2C订单查询 → 查看订单日志，确认是否合并订单（合并订单下账后 ERP 无法显示原始平台单号）</li>
+      <li>获取商品机构和商品编码 → 新零售 → 商品 → 库存机构查询 → 查看可用库存</li>
+      <li>如可用库存为 0 → 点击"库存详情"查看是否入库或未推送库存</li>
+    </ol>
+  </div>
+</div>
+
+<div class="faq" data-cat="订单" data-kw="流水 查询 搜索 找不到">
+  <div class="q"><span class="flag order">Q2</span> 订单流水无法查询</div>
+  <div class="a">
+    问清下单时间及订单号 → B2C订单查询 → 查订单日志看是否合并订单。合并订单的流水会生成新单号，原平台单号无法直接查到。若无销售单号，查 OMS 订单查询动态报表，看备注报错信息。
+  </div>
+</div>
+
+<div class="faq" data-cat="订单" data-kw="待审核 一直 卡住 不通过">
+  <div class="q"><span class="flag order">Q3</span> 订单一直显示"待审核"</div>
+  <div class="a">联系开发刷新处理，或直接重启接口平台。</div>
+</div>
+
+<div class="faq" data-cat="订单" data-kw="同步 美团 没收到 不显示">
+  <div class="q"><span class="flag order">Q4</span> 美团订单无法同步到系统</div>
+  <div class="a">
+    <ol>
+      <li>查平台套餐是否到期：<code>https://middle.hydee.cn/operation/user.html#/login</code></li>
+      <li>新零售 → 设置 → 网店管理 → 店铺管理 → 确认店铺 ID 绑定到正确机构</li>
+      <li>如店铺名称可查但店铺 ID 错误 → 查授权绑定（参考"自研平台新增门店绑定操作步骤"）</li>
+    </ol>
+  </div>
+</div>
+
+<div class="faq" data-cat="订单" data-kw="超卖 库存 不够">
+  <div class="q"><span class="flag order">Q5</span> 订单超卖原因排查</div>
+  <div class="a">
+    <ol>
+      <li>获取问题订单号 → 查订单日志，确认锁库存是否成功（成功 = 下单时 ERP 有库存）</li>
+      <li>商品 → 第三方商品 → 查看商品下载对码时间，是否晚于订单下单时间</li>
+      <li>商品 → 库存价格查询 → 输入机构和商品编码，查下单时刻实际库存</li>
+    </ol>
+  </div>
+</div>
+
+<div class="faq" data-cat="订单" data-kw="快递 物流 面单 运单">
+  <div class="q"><span class="flag order">Q6</span> 快递信息不下发到 ERP / 面单修改</div>
+  <div class="a">
+    <ul>
+      <li>数据表 <code>t_b2c_sale_h</code> 和 <code>t_b2c_sale_d</code> 中 <code>opertype=3</code> 时才显示快递单号</li>
+      <li><code>expressCode</code> = 快递公司编码，<code>expressNumber</code> = 快递单号</li>
+      <li>opertype：1=接单记录，2=取消接单，3=零售下账，4=零售退货</li>
+      <li>面单模板修改：新零售 → 设置 → B2C订单设置 → 模板管理 → 模板配置（改后需重新获取面单）</li>
+    </ul>
+  </div>
+</div>
+
+<div class="faq" data-cat="订单" data-kw="出库 规则 批次 效期 排序">
+  <div class="q"><span class="flag order">Q7</span> 订单商品出库规则怎么设定</div>
+  <div class="a">
+    系统参数 <code>2825</code> 控制出库规则：<br>
+    <code>0</code> = 按批次先进先出 ｜ <code>1</code> = 按效期 ｜ <code>2</code> = 按库存数（多者先出）｜ <code>3</code> = 按批号（生产日期排序）
+  </div>
+</div>
+
+<div class="faq" data-cat="订单" data-kw="排序 自定义 拖动 列">
+  <div class="q"><span class="flag order">Q8</span> 订单列表如何自定义排序</div>
+  <div class="a">点击齿轮图标 → 找到需要的字段 → 鼠标左键按住红框图案变成十字光标 → 拖动到目标位置即可。</div>
+</div>
+
+<!-- ==================== 库存 ==================== -->
+<div class="cat-title" id="cat-库存">📦 库存问题</div>
+
+<div class="faq" data-cat="库存" data-kw="批号 库存0 无库存 其他批号有">
+  <div class="q"><span class="flag stock">Q1</span> 商品提示某批号库存为 0，但其他批号库存充足</div>
+  <div class="a">
+    门店数据库执行 SQL 并传输两次：
+    <code>update u_oms_sale_m_err set isBatchNoStock='0' where isnull(isBatchNoStock,'1')='1'</code>
+    <br>执行完 <span class="warn">务必传输两次</span>。如提示库存为 0 则需补充库存后重新传输。
+  </div>
+</div>
+
+<div class="faq" data-cat="库存" data-kw="商品同步 饿了么 锁定 报错">
+  <div class="q"><span class="flag stock">Q2</span> 饿了么商品同步报错 / 商品被锁定</div>
+  <div class="a">
+    <ul>
+      <li>点击系统订单号查看是否有多个发货单（对接 WMS 时地址修改会新增单据）→ 线下 ERP 操作退款</li>
+      <li>饿了么退款时理由选"商品缺货"→ 平台自动锁定该商品 <span class="warn">一天内无法同步库存</span></li>
+    </ul>
+  </div>
+</div>
+
+<div class="faq" data-cat="库存" data-kw="库存机构查询 门店 推送">
+  <div class="q"><span class="flag stock">Q3</span> 门店无此商品编码，提示需拉取库存</div>
+  <div class="a">商品 → 库存价格查询 → 点击"拉取 ERP 库存" → 勾选对应门店机构 → 输入商品编码 → 同步即可。</div>
+</div>
+
+<div class="faq" data-cat="库存" data-kw="下账 订单 未下账 取消 状态">
+  <div class="q"><span class="flag stock">Q4</span> 已下账订单如何取消下账（库存退回）</div>
+  <div class="a">
+    订单 → 订单查询 → 修改订单 → 修改订单状态为"已下账取消下账信息" → 输入订单号点击确定。
+    <span class="warn">必须按 1→2→3→4 顺序操作，不能跳过任何一步。</span>取消后库存自动退回。
+  </div>
+</div>
+
+<!-- ==================== 商品 ==================== -->
+<div class="cat-title" id="cat-商品">🏷️ 商品问题</div>
+
+<div class="faq" data-cat="商品" data-kw="新品铺货 上架 美团 饿百 铺货失败">
+  <div class="q"><span class="flag product">Q1</span> 新品铺货失败，报错"药品已存在"</div>
+  <div class="a">检查该商品在平台上是否已维护 ERP 编码。若已维护，按"商品新增对码流程"操作，不走新品铺货。</div>
+</div>
+
+<div class="faq" data-cat="商品" data-kw="超出范围 资质 补齐 审核">
+  <div class="q"><span class="flag product">Q2</span> 新品铺货提示"超出售卖范围 / 需补齐资质"</div>
+  <div class="a">在平台店铺设置中补齐对应资质 → 等待平台审核通过 → 重新操作新品铺货。</div>
+</div>
+
+<div class="faq" data-cat="商品" data-kw="标品库 创建 标品 SPU">
+  <div class="q"><span class="flag product">Q3</span> 新品铺货提示"请到标品库创建"</div>
+  <div class="a">
+    <strong>美团：</strong>外卖商家中心 → 商品管理 → 商品列表 → 新建单个商品 → 搜索 UPC/标题 → 填名称类目/UPC → 提报标品。<br>
+    <strong>饿了么：</strong>一般为药品强控类目，需通过商家端 → 商品管理 → 强控标品提报 → 提交 SPU 标品信息 → 审核通过后创建。非药品类目需确认 cat3_id 正确。
+  </div>
+</div>
+
+<div class="faq" data-cat="商品" data-kw="换货 订单换货 替换 商品 交换">
+  <div class="q"><span class="flag product">Q4</span> 订单如何换货（未下账）</div>
+  <div class="a">
+    订单 → 订单处理 → 销售单下账 → 找到订单点击蓝色订单号 → 勾选商品点击"换货" → 输入正确商品和金额 → 下账。
+    <br>如需把一个商品换成多个，可同时勾选多个目标商品并输入各自金额。
+  </div>
+</div>
+
+<div class="faq" data-cat="商品" data-kw="换货 差价 金额 校验">
+  <div class="q"><span class="flag product">Q5</span> 换货时有差价怎么处理</div>
+  <div class="a">
+    设置 → 店铺管理 → 找到门店点击设置 → 店铺设置 → "换货是否校验总金额"改为<strong>不校验</strong>。
+    <span class="warn">换货完成后必须改回，防止随意换货。</span>
+  </div>
+</div>
+
+<div class="faq" data-cat="商品" data-kw="换货 已下账 取消">
+  <div class="q"><span class="flag product">Q6</span> 已下账订单如何换货</div>
+  <div class="a">
+    先按"库存 Q4"取消下账 → 库存自动退回 → 再按"商品 Q4"步骤换货 → 换货完成后在下账列表重新下账。
+    <span class="warn">修改的订单不会在 ERP 产生流水。</span>
+  </div>
+</div>
+
+<div class="faq" data-cat="商品" data-kw="删除商品 删减 部分下账">
+  <div class="q"><span class="flag product">Q7</span> 订单中有不需要下账的商品如何剔除</div>
+  <div class="a">
+    换货校验改"不校验" → 销售单下账 → 点击订单号 → 勾选多个商品 → 换货 → 只输入需要保留的商品和金额 → 下账即可。
+  </div>
+</div>
+
+<!-- ==================== 退款 ==================== -->
+<div class="cat-title" id="cat-退款">💸 退款问题</div>
+
+<div class="faq" data-cat="退款" data-kw="退款单 无法下账 失败">
+  <div class="q"><span class="flag refund">Q1</span> 退款单无法下账</div>
+  <div class="a">
+    点击系统订单号查看是否有多个发货单（对接 WMS 后地址修改会新增单据）→ 多个发货单会导致线上订单和 ERP 流水号无法对应 → 线下 ERP 操作退款即可。
+  </div>
+</div>
+
+<div class="faq" data-cat="退款" data-kw="退款 0数量 0元 零元">
+  <div class="q"><span class="flag refund">Q2</span> 0 数量退款单如何处理</div>
+  <div class="a">专项处理路径：需在退款单下账界面确认，参见"0 数量退款单专项处理"文档。</div>
+</div>
+
+<div class="faq" data-cat="退款" data-kw="退款 类型 退货退款 仅退款 拒绝">
+  <div class="q"><span class="flag refund">Q3</span> 退款审核时三种选项怎么选</div>
+  <div class="a">
+    <strong>退货退款：</strong>库存需退回系统，下账类型选"退货退款"<br>
+    <strong>仅退款：</strong>库存不退回系统，下账类型选"仅退款"<br>
+    <strong>拒绝退款：</strong>驳回客户退款申请，需填写备注
+  </div>
+</div>
+
+<div class="faq" data-cat="退款" data-kw="追溯码 退款 扫码">
+  <div class="q"><span class="flag refund">Q4</span> 退款时追溯码怎么处理</div>
+  <div class="a">
+    <strong>订单只有一个商品：</strong>退款单追溯码自动带出，无需手动录入。<br>
+    <strong>订单有多个商品：</strong>退款单下账 → 点击订单商品 → 手动录入追溯码 → 下账。
+  </div>
+</div>
+
+<!-- ==================== 打印 ==================== -->
+<div class="cat-title" id="cat-打印">🖨️ 打印问题</div>
+
+<div class="faq" data-cat="打印" data-kw="打印服务 安装 下载 配置">
+  <div class="q"><span class="flag print">Q1</span> 打印服务如何安装配置</div>
+  <div class="a">
+    <ol>
+      <li>下载 HydeePrintServer 安装包 → 安装前关闭杀毒软件</li>
+      <li>默认安装路径：<code>D:\Program Files(HydeePrx86)\intTool</code></li>
+      <li>安装完成后启动打印服务 → 点击系统设置</li>
+      <li>输入商家编码（一般为商品编码对接群群名前几位数字）</li>
+      <li>输入门店编码 → 选择打印机 → 保存</li>
+    </ol>
+  </div>
+</div>
+
+<div class="faq" data-cat="打印" data-kw="测试 小票 打印成功 语音播报">
+  <div class="q"><span class="flag print">Q2</span> 如何测试打印是否正常</div>
+  <div class="a">
+    登录 O2O 账号 → 右上角账号 → 打印设置 → 点击"测试机构" → 选择机构 → 打印测试小票和语音播报。如有订单可直接点击"重打小票"。
+  </div>
+</div>
+
+<div class="faq" data-cat="打印" data-kw="小票模板 修改 分配 门店">
+  <div class="q"><span class="flag print">Q3</span> 如何修改小票模板 / 分配给门店</div>
+  <div class="a">
+    <strong>修改：</strong>登录新零售 → 设置 → 订单设置 → 小票模板设置 → 修改或新增模板。<br>
+    <strong>分配门店：</strong>设置 → 门店管理 → 店铺管理 → 批量修改配置 → 勾选门店 → 订单处理设置 → 选择模板分配。
+  </div>
+</div>
+
+<!-- ==================== 系统 ==================== -->
+<div class="cat-title" id="cat-系统">⚙️ 系统 &amp; 接口问题</div>
+
+<div class="faq" data-cat="系统" data-kw="接口平台 登录 闪退 卡顿">
+  <div class="q"><span class="flag system">Q1</span> 系统卡单 / 接口异常怎么办</div>
+  <div class="a">联系开发刷新处理，或直接重启接口平台。</div>
+</div>
+
+<div class="faq" data-cat="系统" data-kw="权限 登录 提示 无权限 访问拒绝">
+  <div class="q"><span class="flag system">Q2</span> 登录新零售提示"无权限访问"</div>
+  <div class="a">检查账号权限分配是否正确 → 联系管理员核对组织员工权限配置（参考"组织员工权限分配"视频）。</div>
+</div>
+
+<div class="faq" data-cat="系统" data-kw="系统参数 ERP设置 H1 H2">
+  <div class="q"><span class="flag system">Q3</span> H1/H2 ERP 相关系统设置</div>
+  <div class="a">系统参数已设置且为联营商品时需参考相应文档。参见"<code>H1 ERP相关设置.docx</code>"和"<code>H2 ERP相关设置.docx</code>"。</div>
+</div>
+
+<!-- ==================== 操作 ==================== -->
+<div class="cat-title" id="cat-操作">📋 操作流程</div>
+
+<div class="faq" data-cat="操作" data-kw="拣货 骑手 配送 流程">
+  <div class="q"><span class="flag ops">Q1</span> 骑手配送完整流程</div>
+  <div class="a">
+    来单 → 订单进入待拣货 → 点击拣货 → 录批号 → 选拣货员 → 完成拣货 → 骑手取货。
+    <span class="warn">必须在骑手取货前完成拣货，否则需手动下账。</span>如需代发货可在呼叫骑手前修改门店。
+  </div>
+</div>
+
+<div class="faq" data-cat="操作" data-kw="自提 门店 顾客 取货">
+  <div class="q"><span class="flag ops">Q2</span> 门店自提完整流程</div>
+  <div class="a">来单 → 待拣货 → 拣货（录批号+选拣货员+完成拣货） → 顾客到店 → 点击"到店取货" → 选配送员工 → 确定。</div>
+</div>
+
+<div class="faq" data-cat="操作" data-kw="员工配送 自配送 妥投">
+  <div class="q"><span class="flag ops">Q3</span> 员工配送完整流程</div>
+  <div class="a">来单 → 待拣货 → 拣货（录批号+选拣货员+完成拣货） → 点击"配送出库"选配送员 → 点击"确认妥投"完成。</div>
+</div>
+
+<div class="faq" data-cat="操作" data-kw="追溯码 扫码 旧包装 无码">
+  <div class="q"><span class="flag ops">Q4</span> 拣货时追溯码怎么操作</div>
+  <div class="a">
+    拣货复核 → 提示"待扫码" → 录批号 → 手动输追溯码或用扫码枪扫。
+    <strong>旧包装无追溯码：</strong>在"无码商品"输入商品数量即可正常下账。
+  </div>
+</div>
+
+<div class="faq" data-cat="操作" data-kw="追溯码 查看 查询 ERP 路径">
+  <div class="q"><span class="flag ops">Q5</span> ERP 中如何查看追溯码记录</div>
+  <div class="a">
+    路径一：零售流水账查询 → 右侧"追溯码"按钮。<br>
+    路径二：码上放心上传记录 → 按追溯码查询（仅扫了大包装码的才会下载小包装码到码清单）。
+  </div>
+</div>
+
+<div class="faq" data-cat="操作" data-kw="退款 审核 按钮 操作 选择">
+  <div class="q"><span class="flag ops">Q6</span> 退款审核标准流程</div>
+  <div class="a">
+    顾客申请退款 → 退款中界面 → 点击"退款审核" → 弹出三种选择：退货退款 / 仅退款 / 拒绝退款 → 选择后打备注 → 提交完成。
+  </div>
+</div>
+
+<div class="faq" data-cat="操作" data-kw="退款 下账 销售单 已下账">
+  <div class="q"><span class="flag ops">Q7</span> 销售单已下账后如何退款</div>
+  <div class="a">
+    退款单下账 → 选择下账审核类型：<br>
+    <strong>退货退款：</strong>库存退回系统<br>
+    <strong>仅退款：</strong>库存不退回<br>
+    点击下账即可完成。
+  </div>
+</div>
+
+<div class="faq" data-cat="操作" data-kw="条形码 维护 编辑 没有">
+  <div class="q"><span class="flag ops">Q8</span> 新品铺货前发现商品无条形码</div>
+  <div class="a">商品库 → 编辑 → 维护条形码。或双击 ERP 编码 → 修改 → 补充条形码。</div>
+</div>
+
+<div class="faq" data-cat="操作" data-kw="铺货失败 排查 任务进度 结果 下载">
+  <div class="q"><span class="flag ops">Q9</span> 新品铺货后关联数据未更新怎么排查</div>
+  <div class="a">
+    商品 → 第三方商品 → 任务进度 → 找到"新品铺货"任务记录 → 若提示失败 → 点击"下载结果"查看详细失败原因。
+  </div>
+</div>
+
+<!-- ==================== 账户 ==================== -->
+<div class="cat-title" id="cat-账户">🔐 账户 &amp; 门店</div>
+
+<div class="faq" data-cat="账户" data-kw="登录 地址 后台 URL 入口">
+  <div class="q"><span class="flag acc">Q1</span> 新零售后台登录地址</div>
+  <div class="a"><code>https://merchants.hydee.cn/app-login</code>（门店端）｜ <code>https://merchants.hydee.cn/yaodianjia/#/home</code>（后台管理端）</div>
+</div>
+
+<div class="faq" data-cat="账户" data-kw="账号 新增 创建 前缀">
+  <div class="q"><span class="flag acc">Q2</span> 如何新增门店 O2O 账号</div>
+  <div class="a">参见视频"账号新增1.mp4"。账号前缀格式：<code>536370_xxxxxx</code>。</div>
+</div>
+
+<div class="faq" data-cat="账户" data-kw="权限 员工 组织 分配 设置">
+  <div class="q"><span class="flag acc">Q3</span> 如何分配员工权限</div>
+  <div class="a">参见视频"组织员工权限分配.mp4"。通过组织结构配置不同门店/不同角色的操作权限。</div>
+</div>
+
+<div class="faq" data-cat="账户" data-kw="饿了么 开发者 账号 申请 总管">
+  <div class="q"><span class="flag acc">Q4</span> 饿了么开发者账号如何申请</div>
+  <div class="a">门店大于 1 个时，饿了么总管账号即为开发者账号。单体门店无法申请，需新增门店后再操作。</div>
+</div>
+
+<div class="faq" data-cat="账户" data-kw="打印 商家编码 店铺ID 门店编码">
+  <div class="q"><span class="flag acc">Q5</span> 打印服务需要哪些编码，哪里找</div>
+  <div class="a">
+    <strong>商家编码：</strong>一般为商品编码对接群群名前几位数字。<br>
+    <strong>门店编码：</strong>新零售 → 订单处理 → 页面括号内即为门店编码；ERP → 机构编码也可作为门店编码。
+  </div>
+</div>
+
+</div>
+
+<div class="footer">
+  O2O 新零售 · FAQ 速查表 | 华东大区运营部 · 内部参考<br>
+  覆盖：美团饿百平台 + OMS 中台 + ERP 对接 | 即时更新
+</div>
+
+<script>
+function scrollToCat(cat) {
+  var el = document.getElementById('cat-'+cat);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function filterFAQ() {
+  var kw = (document.getElementById('searchInput').value || '').trim().toLowerCase();
+  var cat = document.getElementById('catSelect').value;
+  var items = document.querySelectorAll('.faq');
+  items.forEach(function(el) {
+    var matchKw = kw === '' || el.getAttribute('data-kw').toLowerCase().indexOf(kw) >= 0;
+    var matchCat = cat === '' || el.getAttribute('data-cat') === cat;
+    el.classList.toggle('hidden', !(matchKw && matchCat));
+  });
+  // hide/show category titles based on visible items
+  var seen = {};
+  items.forEach(function(el) {
+    var c = el.getAttribute('data-cat');
+    if (!el.classList.contains('hidden')) seen[c] = true;
+  });
+  document.querySelectorAll('.cat-title').forEach(function(t) {
+    var c = t.id.replace('cat-','');
+    t.classList.toggle('hidden', !seen[c]);
+  });
+}
+</script>
+
+</body>
+</html>
