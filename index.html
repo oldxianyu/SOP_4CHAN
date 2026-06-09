@@ -3056,6 +3056,7 @@
                                 { className: "diagnostic-mini", style: { marginTop: 10 } },
                                 weComBrowserSession.pageTitle ? h(Text, { type: "secondary" }, `页面标题：${weComBrowserSession.pageTitle}`) : null,
                                 weComBrowserSession.currentUrl ? h(Text, { type: "secondary", style: { display: "block", wordBreak: "break-all" } }, `主页面：${weComBrowserSession.currentUrl}`) : null,
+                                weComBrowserSession.pageTextHint ? h(Text, { type: "secondary", style: { display: "block", wordBreak: "break-all" } }, `页面状态：${weComBrowserSession.pageTextHint}`) : null,
                                 weComBrowserSession.lastRequestUrl ? h(Text, { type: "secondary", style: { display: "block", wordBreak: "break-all" } }, `最近请求：${weComBrowserSession.lastRequestUrl}`) : null,
                                 weComBrowserSession.autoReport
                                   ? h(

@@ -4048,6 +4048,7 @@ function getWeComBrowserSessionPublic(session) {
     merCodeSubmitTried: Boolean(session.merCodeSubmitTried),
     scanStage: session.scanStage || "",
     scanHint: session.scanHint || "",
+    pageTextHint: session.pageTextHint || "",
     qrImage: session.qrImage || "",
     currentUrl: session.currentUrl || "",
     lastRequestUrl: session.lastRequestUrl || "",
@@ -4272,6 +4273,7 @@ async function createWeComBrowserSession(user, body = {}) {
     if (isMerchantRuntimeUrl(pageUrl)) {
       session.scanStage = "merchant";
       session.scanHint = "已进入新零售管理平台";
+      session.pageTextHint = await session.page.evaluate(() => (document.body?.innerText || "").replace(/\s+/g, " ").trim().slice(0, 220)).catch(() => "");
       return;
     }
     const state = await session.page.evaluate(() => {
@@ -4296,6 +4298,7 @@ async function createWeComBrowserSession(user, body = {}) {
       session.scanStage = "unknown";
       session.scanHint = text.slice(0, 160);
     }
+    session.pageTextHint = text.slice(0, 220);
   };
   const refreshWeComQrImage = async (reason = "") => {
     if (!session.page || session.page.isClosed() || isMerchantRuntimeUrl(session.page.url())) return false;
@@ -4373,11 +4376,15 @@ async function createWeComBrowserSession(user, body = {}) {
     } catch {
       parsed = null;
     }
-    const headers = response.headers();
-    const location = headers.location || headers.Location || "";
+    const headers = await response.allHeaders().catch(() => response.headers());
+    const setCookies = await response.headerValues("set-cookie").catch(() => []);
+    const location = headers.location || headers.Location || await response.headerValue("location").catch(() => "") || "";
     const status = response.status();
     const contentType = headers["content-type"] || "";
-    const headerText = Object.entries(headers).map(([key, value]) => `${key}: ${value}`).join("\n");
+    const headerText = [
+      ...Object.entries(headers).map(([key, value]) => `${key}: ${value}`),
+      ...setCookies.map((value) => `set-cookie: ${value}`),
+    ].join("\n");
     addSsoDiagnostic({
       from,
       status,
