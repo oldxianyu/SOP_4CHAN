@@ -4036,7 +4036,7 @@ async function markSijichanHandoffCapturedById(handoffId, userId, token, details
 }
 
 function getWeComBrowserSessionPublic(session) {
-  const merchantReady = Boolean(session.currentUrl && isMerchantRuntimeUrl(session.currentUrl));
+  const merchantReady = Boolean(session.currentUrl && canProbeMerchantBusiness(session.currentUrl));
   const openPages = Array.isArray(session.openPages) ? session.openPages.slice(-8) : [];
   const loginPageReady = Boolean(session.currentUrl && /merchants\.hydee\.cn\/app-login/i.test(session.currentUrl));
   return {
@@ -4084,7 +4084,7 @@ function logWeComSessionState(session, reason = "state") {
   const snapshot = {
     status: session.status || "",
     captured: session.status === "captured",
-    merchantReady: Boolean(session.currentUrl && isMerchantRuntimeUrl(session.currentUrl)),
+    merchantReady: Boolean(session.currentUrl && canProbeMerchantBusiness(session.currentUrl)),
     exportReady: Boolean(session.exportReady),
     pageTitle: session.pageTitle || "",
     scanStage: session.scanStage || "",
@@ -4093,7 +4093,7 @@ function logWeComSessionState(session, reason = "state") {
     openPages: Array.isArray(session.openPages) ? session.openPages.slice(-4).map((page) => ({
       title: page.title || "",
       url: compactUrl(page.url || ""),
-      merchantReady: Boolean(page.url && isMerchantRuntimeUrl(page.url)),
+      merchantReady: Boolean(page.url && canProbeMerchantBusiness(page.url)),
     })) : [],
     exportProbeError: session.exportProbeError || "",
     exportProbeDetails: Array.isArray(session.exportProbeDetails) ? session.exportProbeDetails.slice(0, 4) : [],
@@ -4186,7 +4186,7 @@ function isMerchantRuntimeUrl(url) {
     const parsed = new URL(String(url || ""), sijichanApiOrigin);
     if (parsed.hostname !== "merchants.hydee.cn") return false;
     if (/\/app-login/i.test(parsed.pathname)) return false;
-    if (/\/app-jump\/super-admin-login/i.test(parsed.pathname)) return false;
+    if (/\/app-jump\/(super-admin-login|ewx-login)/i.test(parsed.pathname)) return false;
     const routeText = `${parsed.pathname}${parsed.hash}${parsed.search}`;
     return /businesses-gateway|super-admin|merchant|mer-manager|report|activity|industryOrder|imActivityReward|orderShareMoment/i.test(routeText);
   } catch {
@@ -4207,8 +4207,19 @@ function canProbeMerchantBusiness(url) {
     const parsed = new URL(String(url || ""), sijichanApiOrigin);
     if (parsed.hostname !== "merchants.hydee.cn") return false;
     if (/\/app-login/i.test(parsed.pathname)) return false;
-    if (/\/app-jump\/super-admin-login/i.test(parsed.pathname)) return false;
+    if (/\/app-jump\/(super-admin-login|ewx-login)/i.test(parsed.pathname)) return false;
     return parsed.pathname === "/" || isMerchantRuntimeUrl(parsed.href);
+  } catch {
+    return false;
+  }
+}
+
+function canAttemptMerchantCodeFill(url) {
+  try {
+    const parsed = new URL(String(url || ""), sijichanApiOrigin);
+    if (parsed.hostname !== "merchants.hydee.cn") return false;
+    if (/\/app-login/i.test(parsed.pathname)) return false;
+    return true;
   } catch {
     return false;
   }
@@ -4217,7 +4228,7 @@ function canProbeMerchantBusiness(url) {
 function isWeComSsoJumpUrl(url) {
   try {
     const parsed = new URL(String(url || ""), sijichanApiOrigin);
-    return parsed.hostname === "merchants.hydee.cn" && /\/app-jump\/super-admin-login/i.test(parsed.pathname);
+    return parsed.hostname === "merchants.hydee.cn" && /\/app-jump\/(super-admin-login|ewx-login)/i.test(parsed.pathname);
   } catch {
     return false;
   }
@@ -4235,7 +4246,7 @@ async function createWeComBrowserSession(user, body = {}) {
   const handoff = await createSijichanTokenHandoff(user, { ...body, ttlMs: profileReuse ? 6 * 60 * 60 * 1000 : 30 * 60 * 1000 });
   const baseUrl = publicReportBaseUrl.replace(/\/+$/, "");
   const merchantRedirect = `${sijichanApiOrigin}/app-jump/super-admin-login`;
-  const merchantWecomSsoUrl = `https://login.work.weixin.qq.com/wwlogin/sso/login/?login_type=CorpApp&appid=ww408c023179829552&agentid=1000157&redirect_uri=${encodeURIComponent(merchantRedirect)}&state=${encodeURIComponent(handoff.handoffToken)}`;
+  const merchantWecomSsoUrl = `https://login.work.weixin.qq.com/wwlogin/sso/login/?login_type=CorpApp&appid=ww408c023179829552&agentid=1000157&redirect_uri=${encodeURIComponent(merchantRedirect)}&state=WWLogin`;
   const session = {
     id: createId("wbs"),
     userId: user.id,
@@ -4297,7 +4308,7 @@ async function createWeComBrowserSession(user, body = {}) {
     const pageUrl = session.page.url();
     if (/merchants\.hydee\.cn\/app-login/i.test(pageUrl)) {
       session.scanStage = "login_expired";
-      session.scanHint = "服务器登录态已失效，请重新企微扫码";
+      session.scanHint = session.qrImage ? "企微二维码已生成，请扫码确认登录" : "服务器登录态已失效，请重新企微扫码";
       return;
     }
     if (isMerchantRuntimeUrl(pageUrl)) {
@@ -4330,8 +4341,59 @@ async function createWeComBrowserSession(user, body = {}) {
     }
     session.pageTextHint = text.slice(0, 220);
   };
+  const openWeComFromMerchantLogin = async () => {
+    if (!session.page || session.page.isClosed()) return false;
+    if (!/merchants\.hydee\.cn\/app-login/i.test(session.page.url())) return false;
+    let clicked = false;
+    for (const pattern of [/企微扫码登录/, /企业微信扫码登录/, /企业微信/]) {
+      try {
+        const locator = session.page.getByText(pattern).last();
+        if (await locator.count()) {
+          await locator.click({ timeout: 3000 });
+          clicked = true;
+          break;
+        }
+      } catch {
+        // try the DOM fallback below
+      }
+    }
+    if (!clicked) clicked = await session.page.evaluate(() => {
+      const candidates = [
+        ...document.querySelectorAll("button, a, span, div, p"),
+      ].map((node) => {
+        const rect = node.getBoundingClientRect();
+        return { node, text: (node.innerText || node.textContent || "").trim(), area: rect.width * rect.height, visible: rect.width > 0 && rect.height > 0 };
+      }).filter((item) => item.visible && /企微扫码登录|企业微信扫码登录|企业微信|企微/i.test(item.text))
+        .sort((a, b) => a.area - b.area);
+      const targetItem = candidates.find((item) => {
+        const node = item.node;
+        const rect = node.getBoundingClientRect();
+        return rect.width > 20 && rect.height > 12 && rect.width < 260 && rect.height < 80;
+      });
+      const target = targetItem?.node?.closest?.("button,a,[role='button']") || targetItem?.node;
+      if (!target) return false;
+      target.click();
+      return true;
+    }).catch(() => false);
+    if (clicked) {
+      session.scanStage = "opening_wecom";
+      session.scanHint = "正在打开企微扫码登录";
+      session.updatedAt = new Date().toISOString();
+      await session.page.waitForTimeout(1200).catch(() => null);
+      await refreshOpenPages().catch(() => null);
+      await refreshScanStage().catch(() => null);
+      return true;
+    }
+    await session.page.goto(merchantWecomSsoUrl, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => null);
+    session.currentUrl = session.page.url();
+    session.pageTitle = await session.page.title().catch(() => session.pageTitle || "");
+    await refreshOpenPages().catch(() => null);
+    await refreshScanStage().catch(() => null);
+    return true;
+  };
   const refreshWeComQrImage = async (reason = "") => {
     if (!session.page || session.page.isClosed() || isMerchantRuntimeUrl(session.page.url())) return false;
+    await openWeComFromMerchantLogin().catch(() => false);
     const now = Date.now();
     if (reason === "expired" && session.lastQrReloadAt && now - session.lastQrReloadAt < 60000) return false;
     if (reason === "expired") {
@@ -4487,7 +4549,7 @@ async function createWeComBrowserSession(user, body = {}) {
     }
   };
   const tryFillMerchantCode = async () => {
-    if (!handoff.merCode || !session.page || session.page.isClosed() || !isMerchantRuntimeUrl(session.page.url()) || session.merCodeFilled) return;
+    if (!handoff.merCode || !session.page || session.page.isClosed() || !canAttemptMerchantCodeFill(session.page.url()) || session.merCodeFilled) return;
     const filled = await session.page.evaluate((merCode) => {
       const candidates = Array.from(document.querySelectorAll("input, textarea"));
       const target = candidates.find((input) => {
@@ -4498,8 +4560,9 @@ async function createWeComBrowserSession(user, body = {}) {
           input.getAttribute("aria-label"),
           input.closest("label")?.textContent,
           input.parentElement?.textContent,
+          input.closest(".h-form-item, .ant-form-item, .h-modal, .ant-modal, .el-dialog, .modal")?.textContent,
         ].filter(Boolean).join(" ");
-        return /客户编码|客户代码|商户编码|门店编码|merCode|merchantCode|customerCode/i.test(text);
+        return /客户编码|客户代码|商户编码|适用用户|门店编码|merCode|merchantCode|customerCode/i.test(text);
       });
       if (!target) return false;
       target.focus();
@@ -4509,7 +4572,7 @@ async function createWeComBrowserSession(user, body = {}) {
       ["keydown", "keypress", "keyup"].forEach((type) => {
         target.dispatchEvent(new KeyboardEvent(type, { key: "Enter", code: "Enter", bubbles: true }));
       });
-      const buttons = Array.from(document.querySelectorAll("button, [role='button'], .ant-btn"));
+      const buttons = Array.from(document.querySelectorAll("button, [role='button'], .ant-btn, .h-button, .el-button"));
       const action = buttons.find((button) => /确认|确定|登录|进入|查询|切换|提交|搜索|下一步|授权/i.test(button.textContent || button.getAttribute("aria-label") || ""));
       if (action) {
         action.click();
@@ -4961,7 +5024,7 @@ async function createWeComBrowserSession(user, body = {}) {
           await refreshOpenPages();
           await refreshScanStage();
           noteMerchantReady();
-          if (isMerchantRuntimeUrl(session.currentUrl)) triggerWeComBrowserAutoReport(session, "merchant-ready-poll");
+          if (canProbeMerchantBusiness(session.currentUrl)) triggerWeComBrowserAutoReport(session, "merchant-ready-poll");
           if (session.scanStage === "qr_expired") await refreshWeComQrImage("expired");
           session.updatedAt = new Date().toISOString();
           await scanMerchantPageStorage();
@@ -5791,7 +5854,7 @@ async function collectSijichanDataWithToken({ token, merCode: inputMerCode = "",
 
 async function collectSijichanDataWithBrowserSession(session, { merCode: inputMerCode = "", merName: inputMerName = "", source = "企微扫码授权", asOf = "" } = {}) {
   if (!session?.page || session.page.isClosed()) throw new Error("服务器扫码浏览器会话已关闭，请重新扫码。");
-  if (!isMerchantRuntimeUrl(session.page.url())) throw new Error("服务器浏览器尚未进入新零售管理平台，请扫码确认登录后再生成报告。");
+  if (!canProbeMerchantBusiness(session.page.url())) throw new Error("服务器浏览器尚未进入新零售管理平台，请扫码确认登录后再生成报告。");
   const merCode = String(inputMerCode || session.handoff?.merCode || "").trim();
   const merName = String(inputMerName || session.handoff?.merName || "").trim();
   const diagnostics = [];
@@ -6350,7 +6413,7 @@ async function handleCreateWeComHandoff(req, res) {
   const ssoRedirect = `${baseUrl}/api/wecom-sso/callback?handoffId=${encodeURIComponent(handoff.id)}`;
   const wecomSsoUrl = `https://login.work.weixin.qq.com/wwlogin/sso/login/?login_type=CorpApp&appid=ww408c023179829552&agentid=1000157&redirect_uri=${encodeURIComponent(ssoRedirect)}&state=${encodeURIComponent(handoff.handoffToken)}`;
   const merchantRedirect = `${sijichanApiOrigin}/app-jump/super-admin-login`;
-  const merchantWecomSsoUrl = `https://login.work.weixin.qq.com/wwlogin/sso/login/?login_type=CorpApp&appid=ww408c023179829552&agentid=1000157&redirect_uri=${encodeURIComponent(merchantRedirect)}&state=${encodeURIComponent(handoff.handoffToken)}`;
+  const merchantWecomSsoUrl = `https://login.work.weixin.qq.com/wwlogin/sso/login/?login_type=CorpApp&appid=ww408c023179829552&agentid=1000157&redirect_uri=${encodeURIComponent(merchantRedirect)}&state=WWLogin`;
   const helperScript = renderWeComHandoffHelperScript({ endpoint: `${baseUrl}/api/wecom-token-capture`, handoffToken: handoff.handoffToken, merCode: handoff.merCode });
   sendJson(res, 200, { ok: true, ...handoff, wecomSsoUrl, merchantWecomSsoUrl, helperScript });
 }
@@ -6395,7 +6458,10 @@ async function handleGetWeComBrowserSession(req, res, id) {
   }
   if (session.status === "captured") triggerWeComBrowserAutoReport(session, "handoff-captured");
   if (session.exportReady) triggerWeComBrowserAutoReport(session, "export-ready-poll");
-  if (session.page && !session.page.isClosed() && isMerchantRuntimeUrl(session.page.url())) triggerWeComBrowserAutoReport(session, "merchant-ready-poll");
+  if (session.page && !session.page.isClosed() && canProbeMerchantBusiness(session.page.url())) {
+    await session.prepareBrowserExport?.().catch(() => null);
+    triggerWeComBrowserAutoReport(session, "merchant-ready-poll");
+  }
   logWeComSessionState(session, "poll");
   sendJson(res, 200, { ok: true, session: getWeComBrowserSessionPublic(session), handoff });
 }
@@ -6556,7 +6622,7 @@ async function triggerWeComBrowserAutoReport(session, reason = "") {
   if (!session || !session.userId || !session.id) return;
   if (session.autoReport?.status === "running" || session.autoReport?.status === "completed") return;
   if (activeWeComAutoReports.has(session.id)) return;
-  const canUseBrowserSession = Boolean(session.page && !session.page.isClosed() && isMerchantRuntimeUrl(session.page.url()));
+  const canUseBrowserSession = Boolean(session.page && !session.page.isClosed() && canProbeMerchantBusiness(session.page.url()));
   if (!session.exportReady && session.status !== "captured" && !canUseBrowserSession) return;
   activeWeComAutoReports.add(session.id);
   session.autoReport = { status: "running", reason, startedAt: new Date().toISOString() };
@@ -6626,7 +6692,7 @@ async function handleWeComBrowserSessionReviewReport(req, res) {
     sendJson(res, 409, { error: session.lastError || "服务器扫码会话不可用，请重新生成二维码并扫码。" });
     return;
   }
-  if (!isMerchantRuntimeUrl(session.page.url())) {
+  if (!canProbeMerchantBusiness(session.page.url())) {
     sendJson(res, 409, { error: "服务器浏览器尚未进入新零售管理平台，请扫码确认登录后再生成报告。" });
     return;
   }
