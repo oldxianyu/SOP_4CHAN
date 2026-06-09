@@ -3057,6 +3057,18 @@
                                 weComBrowserSession.pageTitle ? h(Text, { type: "secondary" }, `页面标题：${weComBrowserSession.pageTitle}`) : null,
                                 weComBrowserSession.currentUrl ? h(Text, { type: "secondary", style: { display: "block", wordBreak: "break-all" } }, `主页面：${weComBrowserSession.currentUrl}`) : null,
                                 weComBrowserSession.lastRequestUrl ? h(Text, { type: "secondary", style: { display: "block", wordBreak: "break-all" } }, `最近请求：${weComBrowserSession.lastRequestUrl}`) : null,
+                                Array.isArray(weComBrowserSession.exportProbeDetails) && weComBrowserSession.exportProbeDetails.length
+                                  ? h(
+                                      "div",
+                                      { style: { marginTop: 8 } },
+                                      h(Text, { type: "secondary", strong: true }, "接口探测："),
+                                      ...weComBrowserSession.exportProbeDetails.map((item, index) => h(
+                                        Text,
+                                        { key: `${item.label || ""}-${index}`, type: String(item.code || "") === "10000" || item.hasData ? "success" : "secondary", style: { display: "block", wordBreak: "break-all" } },
+                                        `${item.label || `接口${index + 1}`}：HTTP ${item.status || "-"}${item.code ? ` / ${item.code}` : ""}${item.msg ? ` / ${item.msg}` : ""}${item.hasData ? " / 有数据" : ""}`,
+                                      )),
+                                    )
+                                  : null,
                                 Array.isArray(weComBrowserSession.openPages) && weComBrowserSession.openPages.length
                                   ? h(
                                       "div",

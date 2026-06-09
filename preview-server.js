@@ -4014,6 +4014,7 @@ function getWeComBrowserSessionPublic(session) {
     exportReady: Boolean(session.exportReady),
     exportProbeAt: session.exportProbeAt || "",
     exportProbeError: session.exportProbeError || "",
+    exportProbeDetails: Array.isArray(session.exportProbeDetails) ? session.exportProbeDetails.slice(0, 8) : [],
     merCodeFilled: Boolean(session.merCodeFilled),
     merCodeSubmitTried: Boolean(session.merCodeSubmitTried),
     scanStage: session.scanStage || "",
@@ -4056,6 +4057,7 @@ function logWeComSessionState(session, reason = "state") {
       merchantReady: Boolean(page.url && isMerchantRuntimeUrl(page.url)),
     })) : [],
     exportProbeError: session.exportProbeError || "",
+    exportProbeDetails: Array.isArray(session.exportProbeDetails) ? session.exportProbeDetails.slice(0, 4) : [],
   };
   const nextKey = JSON.stringify(snapshot);
   if (session.lastLoggedStateKey === nextKey) return;
@@ -4384,27 +4386,49 @@ async function createWeComBrowserSession(user, body = {}) {
     if (session.lastExportProbeAt && now - session.lastExportProbeAt < 10000) return;
     session.lastExportProbeAt = now;
     try {
-      const result = await session.page.evaluate(async ({ url }) => {
-        const response = await fetch(url, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({}),
-          credentials: "include",
-        });
-        const text = await response.text();
-        let json;
-        try {
-          json = JSON.parse(text);
-        } catch {
-          json = { raw: text };
-        }
-        return { status: response.status, code: json?.code || "", msg: json?.msg || "", hasData: Boolean(json?.data) };
-      }, { url: `${sijichanManagerPathBase}report/activityReward/queryTopStatisticData` });
-      if (result.status >= 200 && result.status < 500 && (!result.code || String(result.code) === "10000")) {
+      const probes = [
+        { label: "活动奖励概览", url: `${sijichanManagerPathBase}report/activityReward/queryTopStatisticData`, body: {} },
+        { label: "店员奖励概览", url: `${sijichanManagerPathBase}report/account/emp/overview/queryRewardStat`, body: {} },
+        { label: "晒单打赏概览", url: `${sijichanManagerPathBase}report/order_share/orderShareMomentSummary`, body: {} },
+        { label: "销售概览", url: `${sijichanManagerPathBase}industryOrder/queryProductOverview`, body: saleBody(buildSijichanWindows("2026-06-06").lastMonth) },
+      ];
+      const results = await session.page.evaluate(async ({ items }) => {
+        const readJson = (text) => {
+          try { return JSON.parse(text); } catch { return { raw: text }; }
+        };
+        const run = async (item) => {
+          try {
+            const response = await fetch(item.url, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(item.body || {}),
+              credentials: "include",
+            });
+            const text = await response.text();
+            const json = readJson(text);
+            return {
+              label: item.label,
+              path: new URL(item.url).pathname,
+              status: response.status,
+              code: json?.code || "",
+              msg: json?.msg || json?.message || "",
+              hasData: Boolean(json?.data),
+              dataType: Array.isArray(json?.data) ? "array" : json?.data && typeof json.data === "object" ? "object" : typeof json?.data,
+            };
+          } catch (error) {
+            return { label: item.label, path: "", status: 0, code: "", msg: error?.message || "probe failed", hasData: false, dataType: "" };
+          }
+        };
+        return Promise.all(items.map(run));
+      }, { items: probes });
+      session.exportProbeDetails = results;
+      const success = results.find((item) => item.status >= 200 && item.status < 500 && (!item.code || String(item.code) === "10000"));
+      if (success) {
         session.exportReady = true;
         session.exportProbeError = "";
       } else {
-        session.exportProbeError = result.msg || result.code || `HTTP ${result.status}`;
+        const firstError = results.find((item) => item.msg || item.code || item.status);
+        session.exportProbeError = firstError ? `${firstError.label}：${firstError.msg || firstError.code || `HTTP ${firstError.status}`}` : "业务接口探测未返回有效结果";
       }
       session.exportProbeAt = new Date().toISOString();
       session.updatedAt = session.exportProbeAt;
