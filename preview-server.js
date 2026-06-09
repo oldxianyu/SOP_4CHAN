@@ -1603,6 +1603,20 @@ async function getSijichanTokenHandoffForUser(user, id, includeToken = false) {
   return result.rows[0] ? normalizeSijichanTokenHandoff(result.rows[0], includeToken) : null;
 }
 
+async function findRecentSijichanMerInfoForUser(userId) {
+  if (!userId || !(await isDbAvailable())) return null;
+  const result = await queryDb(
+    `select mer_code, mer_name
+     from sijichan_token_handoffs
+     where user_id=$1 and coalesce(mer_code,'') <> ''
+     order by created_at desc
+     limit 1`,
+    [userId],
+  ).catch(() => ({ rows: [] }));
+  const row = result.rows[0];
+  return row ? { merCode: row.mer_code || "", merName: row.mer_name || "" } : null;
+}
+
 async function captureSijichanTokenHandoff(handoffToken, token, details = {}) {
   const payload = verifyHandoffToken(handoffToken);
   if (!payload?.id || !payload?.userId) throw new Error("企微授权交接码无效或已过期。");
@@ -1623,6 +1637,13 @@ async function captureSijichanTokenHandoff(handoffToken, token, details = {}) {
   );
   if (!result.rows[0]) throw new Error("企微授权交接会话不存在或已过期。");
   const handoff = normalizeSijichanTokenHandoff(result.rows[0], true);
+  if (!handoff.merCode) {
+    const recent = await findRecentSijichanMerInfoForUser(payload.userId);
+    if (recent?.merCode) {
+      handoff.merCode = recent.merCode;
+      handoff.merName = handoff.merName || recent.merName || "";
+    }
+  }
   triggerWeComTokenAutoReport(payload.userId, handoff, normalizedToken, details.from || "handoff-capture");
   return normalizeSijichanTokenHandoff(result.rows[0]);
 }
@@ -4147,6 +4168,7 @@ function isMerchantRuntimeUrl(url) {
     const parsed = new URL(String(url || ""), sijichanApiOrigin);
     if (parsed.hostname !== "merchants.hydee.cn") return false;
     if (/\/app-login/i.test(parsed.pathname)) return false;
+    if (/\/app-jump\/super-admin-login/i.test(parsed.pathname)) return false;
     const routeText = `${parsed.pathname}${parsed.hash}${parsed.search}`;
     return parsed.pathname === "/"
       || /businesses-gateway|app-jump|super-admin|merchant|mer-manager|report|activity|industryOrder|imActivityReward|orderShareMoment/i.test(routeText);
@@ -4275,12 +4297,19 @@ async function createWeComBrowserSession(user, body = {}) {
     if (!token || token.length < 20 || !/^[A-Za-z0-9._\-]+$/.test(token)) return;
     try {
       const capturedHandoff = await markSijichanHandoffCapturedById(handoff.id, user.id, token, { from, href: runtimeUrl });
+      if (!capturedHandoff.merCode) {
+        const recent = await findRecentSijichanMerInfoForUser(user.id);
+        if (recent?.merCode) {
+          capturedHandoff.merCode = recent.merCode;
+          capturedHandoff.merName = capturedHandoff.merName || recent.merName || "";
+        }
+      }
       await upsertSijichanTokenAuthorization(user.id, {
         token,
-        merCode: handoff.merCode,
-        merName: handoff.merName,
-        username: `wecom_${handoff.merCode || handoff.id}`,
-      }, { requestInfo: { merCode: handoff.merCode, merName: handoff.merName } }).catch((error) => {
+        merCode: capturedHandoff.merCode,
+        merName: capturedHandoff.merName,
+        username: `wecom_${capturedHandoff.merCode || capturedHandoff.id}`,
+      }, { requestInfo: { merCode: capturedHandoff.merCode, merName: capturedHandoff.merName } }).catch((error) => {
         console.warn(`[wecom-browser] token authorization persist skipped: ${error.message}`);
       });
       session.status = "captured";
@@ -4321,7 +4350,7 @@ async function createWeComBrowserSession(user, body = {}) {
     for (const cookie of cookies) {
       const key = cookie?.name || "";
       const value = cookie?.value || "";
-      if (/token|authorization|access|session|sso|jwt/i.test(key) || /Bearer\s+|^[A-Za-z0-9._\-]{20,}$/i.test(value)) {
+      if (/token|authorization|access|jwt/i.test(key) || /Bearer\s+/i.test(value)) {
         await maybeCapture(value, `server-browser-cookie:${key}`, session.page.url());
       }
     }
@@ -4398,7 +4427,7 @@ async function createWeComBrowserSession(user, body = {}) {
         { label: "晒单打赏概览", url: `${sijichanManagerPathBase}report/order_share/orderShareMomentSummary`, body: {} },
         { label: "销售概览", url: `${sijichanManagerPathBase}industryOrder/queryProductOverview`, body: saleBody(buildSijichanWindows("2026-06-06").lastMonth) },
       ];
-      const results = await session.page.evaluate(async ({ items }) => {
+      const results = await session.page.evaluate(async ({ items, origin }) => {
         const readJson = (text) => {
           try { return JSON.parse(text); } catch { return { raw: text }; }
         };
@@ -4414,7 +4443,7 @@ async function createWeComBrowserSession(user, body = {}) {
             const json = readJson(text);
             return {
               label: item.label,
-              path: new URL(item.url).pathname,
+              path: new URL(item.url, origin).pathname,
               status: response.status,
               code: json?.code || "",
               msg: json?.msg || json?.message || "",
@@ -4426,7 +4455,7 @@ async function createWeComBrowserSession(user, body = {}) {
           }
         };
         return Promise.all(items.map(run));
-      }, { items: probes });
+      }, { items: probes, origin: sijichanApiOrigin });
       session.exportProbeDetails = results;
       const success = results.find((item) => item.status >= 200 && item.status < 500 && (!item.code || String(item.code) === "10000"));
       if (success) {
@@ -4773,6 +4802,7 @@ function sijichanHeaders(token, merCode) {
   const headers = {
     "content-type": "application/json",
     Authorization: token,
+    Cookie: `_pati=${token}`,
   };
   if (merCode) {
     headers.merCode = merCode;
