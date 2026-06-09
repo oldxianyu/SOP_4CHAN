@@ -1562,7 +1562,8 @@ async function createSijichanTokenHandoff(user, body = {}) {
   const id = createId("whf");
   const merCode = String(body.merCode || "").trim();
   const merName = String(body.merName || "").trim();
-  const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+  const ttlMs = Math.max(5 * 60 * 1000, Math.min(Number(body.ttlMs || 30 * 60 * 1000), 12 * 60 * 60 * 1000));
+  const expiresAt = new Date(Date.now() + ttlMs);
   await queryDb(
     `insert into sijichan_token_handoffs(id, user_id, mer_name, mer_code, status, expires_at)
      values($1,$2,$3,$4,'pending',$5)`,
@@ -4218,7 +4219,8 @@ async function createWeComBrowserSession(user, body = {}) {
     throw new Error("服务器未安装 playwright-core，暂不能使用服务器扫码模式。");
   }
   await closeActiveWeComBrowserSessionsForUser(user.id);
-  const handoff = await createSijichanTokenHandoff(user, body);
+  const profileReuse = Boolean(body.profileReuse);
+  const handoff = await createSijichanTokenHandoff(user, { ...body, ttlMs: profileReuse ? 6 * 60 * 60 * 1000 : 30 * 60 * 1000 });
   const baseUrl = publicReportBaseUrl.replace(/\/+$/, "");
   const merchantRedirect = `${sijichanApiOrigin}/app-jump/super-admin-login`;
   const merchantWecomSsoUrl = `https://login.work.weixin.qq.com/wwlogin/sso/login/?login_type=CorpApp&appid=ww408c023179829552&agentid=1000157&redirect_uri=${encodeURIComponent(merchantRedirect)}&state=${encodeURIComponent(handoff.handoffToken)}`;
@@ -4239,7 +4241,7 @@ async function createWeComBrowserSession(user, body = {}) {
     browser: null,
     context: null,
     page: null,
-    profileReuse: Boolean(body.profileReuse),
+    profileReuse,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     expiresAt: handoff.expiresAt,
@@ -4959,11 +4961,11 @@ async function createWeComBrowserSession(user, body = {}) {
     session.expireTimer = setTimeout(async () => {
       if (session.status !== "expired") {
         session.status = "expired";
-        session.lastError = "服务器扫码会话已过期，请重新创建。";
+        session.lastError = session.profileReuse ? "服务器扫码监控会话已过期，已保留浏览器登录资料，可重新检测服务器已登录态。" : "服务器扫码会话已过期，请重新创建。";
         session.updatedAt = new Date().toISOString();
         await closeWeComBrowserSession(session, "expired");
       }
-    }, 30 * 60 * 1000);
+    }, session.profileReuse ? 6 * 60 * 60 * 1000 : 30 * 60 * 1000);
     return getWeComBrowserSessionPublic(session);
   } catch (error) {
     session.status = "error";
