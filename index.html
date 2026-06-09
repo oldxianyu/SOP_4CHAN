@@ -3078,6 +3078,18 @@
                                       )),
                                     )
                                   : null,
+                                Array.isArray(weComBrowserSession.ssoDiagnostics) && weComBrowserSession.ssoDiagnostics.length
+                                  ? h(
+                                      "div",
+                                      { style: { marginTop: 8 } },
+                                      h(Text, { type: "secondary", strong: true }, "企微跳转诊断："),
+                                      ...weComBrowserSession.ssoDiagnostics.map((item, index) => h(
+                                        Text,
+                                        { key: `${item.at || ""}-${index}`, type: item.tokenFound ? "success" : item.codeSeen ? "secondary" : "secondary", style: { display: "block", wordBreak: "break-all" } },
+                                        `${dayjs(item.at).isValid() ? dayjs(item.at).format("HH:mm:ss") : ""} ${item.from || "诊断"}：${item.status ? `HTTP ${item.status} / ` : ""}${item.codeSeen ? "已看到企微code / " : ""}${item.tokenFound ? "发现授权 / " : ""}${item.message || ""}${item.location ? ` / 跳转：${item.location}` : ""}`,
+                                      )),
+                                    )
+                                  : null,
                                 Array.isArray(weComBrowserSession.openPages) && weComBrowserSession.openPages.length
                                   ? h(
                                       "div",

@@ -4042,6 +4042,7 @@ function getWeComBrowserSessionPublic(session) {
     exportProbeAt: session.exportProbeAt || "",
     exportProbeError: session.exportProbeError || "",
     exportProbeDetails: Array.isArray(session.exportProbeDetails) ? session.exportProbeDetails.slice(0, 8) : [],
+    ssoDiagnostics: Array.isArray(session.ssoDiagnostics) ? session.ssoDiagnostics.slice(-8) : [],
     autoReport: session.autoReport || null,
     merCodeFilled: Boolean(session.merCodeFilled),
     merCodeSubmitTried: Boolean(session.merCodeSubmitTried),
@@ -4086,6 +4087,7 @@ function logWeComSessionState(session, reason = "state") {
     })) : [],
     exportProbeError: session.exportProbeError || "",
     exportProbeDetails: Array.isArray(session.exportProbeDetails) ? session.exportProbeDetails.slice(0, 4) : [],
+    ssoDiagnostics: Array.isArray(session.ssoDiagnostics) ? session.ssoDiagnostics.slice(-3) : [],
   };
   const nextKey = JSON.stringify(snapshot);
   if (session.lastLoggedStateKey === nextKey) return;
@@ -4183,6 +4185,15 @@ function isMerchantRuntimeUrl(url) {
   }
 }
 
+function isWeComSsoJumpUrl(url) {
+  try {
+    const parsed = new URL(String(url || ""), sijichanApiOrigin);
+    return parsed.hostname === "merchants.hydee.cn" && /\/app-jump\/super-admin-login/i.test(parsed.pathname);
+  } catch {
+    return false;
+  }
+}
+
 async function createWeComBrowserSession(user, body = {}) {
   let chromium;
   try {
@@ -4207,6 +4218,7 @@ async function createWeComBrowserSession(user, body = {}) {
     pageTitle: "",
     scanStage: "",
     scanHint: "",
+    ssoDiagnostics: [],
     lastError: "",
     browser: null,
     context: null,
@@ -4217,6 +4229,22 @@ async function createWeComBrowserSession(user, body = {}) {
   };
   activeWeComBrowserSessions.set(session.id, session);
   const tokenPattern = /(?:Authorization|authorization)\s*[:=]\s*["']?(?:Bearer\s+)?([A-Za-z0-9._\-]{20,})|(?:token|access_token|merchant_token|accessToken)\s*["']?\s*[:=]\s*["']([A-Za-z0-9._\-]{20,})["']/i;
+  const addSsoDiagnostic = (item = {}) => {
+    session.ssoDiagnostics = Array.isArray(session.ssoDiagnostics) ? session.ssoDiagnostics : [];
+    const next = {
+      at: new Date().toISOString(),
+      from: item.from || "",
+      status: item.status || "",
+      path: item.path || "",
+      location: item.location || "",
+      codeSeen: Boolean(item.codeSeen),
+      tokenFound: Boolean(item.tokenFound),
+      message: item.message || "",
+    };
+    session.ssoDiagnostics.push(next);
+    session.ssoDiagnostics = session.ssoDiagnostics.slice(-12);
+    session.updatedAt = next.at;
+  };
   const refreshOpenPages = async () => {
     const context = session.browser?.contexts?.()?.[0];
     const pages = context?.pages?.() || [];
@@ -4295,11 +4323,15 @@ async function createWeComBrowserSession(user, body = {}) {
     }
     return false;
   };
-  const maybeCapture = async (raw, from, sourceUrl = "") => {
+  const maybeCapture = async (raw, from, sourceUrl = "", options = {}) => {
     if (session.status === "captured") return;
     const runtimeUrl = sourceUrl || session.currentUrl || "";
-    if (!isMerchantRuntimeUrl(runtimeUrl)) return;
-    const token = normalizeSijichanToken((String(raw || "").match(tokenPattern) || [])[1] || (String(raw || "").match(tokenPattern) || [])[2] || raw);
+    const allowSsoJump = Boolean(options.allowSsoJump);
+    if (!isMerchantRuntimeUrl(runtimeUrl) && !(allowSsoJump && isWeComSsoJumpUrl(runtimeUrl))) return;
+    const sourceText = String(raw || "");
+    const match = sourceText.match(tokenPattern);
+    if (!match && !options.explicitToken) return;
+    const token = normalizeSijichanToken(match ? (match[1] || match[2] || "") : raw);
     if (!token || token.length < 20 || !/^[A-Za-z0-9._\-]+$/.test(token)) return;
     try {
       const capturedHandoff = await markSijichanHandoffCapturedById(handoff.id, user.id, token, { from, href: runtimeUrl });
@@ -4321,12 +4353,54 @@ async function createWeComBrowserSession(user, body = {}) {
       session.status = "captured";
       session.lastError = "";
       session.updatedAt = new Date().toISOString();
+      if (allowSsoJump || isWeComSsoJumpUrl(runtimeUrl)) {
+        addSsoDiagnostic({ from, path: "/app-jump/super-admin-login", tokenFound: true, message: "企微跳转中发现可用授权" });
+      }
       logWeComSessionState(session, `captured:${from}`);
       triggerWeComTokenAutoReport(user.id, capturedHandoff, token, `server-browser:${from}`);
       triggerWeComBrowserAutoReport(session, `captured:${from}`);
     } catch (error) {
       session.lastError = error.message || "服务器扫码 token 保存失败。";
       session.updatedAt = new Date().toISOString();
+    }
+  };
+  const inspectSsoJumpResponse = async (response, from = "response") => {
+    const url = response.url();
+    if (!isWeComSsoJumpUrl(url)) return;
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch {
+      parsed = null;
+    }
+    const headers = response.headers();
+    const location = headers.location || headers.Location || "";
+    const status = response.status();
+    const contentType = headers["content-type"] || "";
+    const headerText = Object.entries(headers).map(([key, value]) => `${key}: ${value}`).join("\n");
+    addSsoDiagnostic({
+      from,
+      status,
+      path: parsed ? parsed.pathname : "/app-jump/super-admin-login",
+      location: location ? location.slice(0, 240) : "",
+      codeSeen: Boolean(parsed?.searchParams?.get("code")),
+      tokenFound: Boolean(extractSijichanTokenFromText(`${location}\n${headerText}`)),
+      message: "检测到企微 SSO 跳转响应",
+    });
+    await maybeCapture(`${location}\n${headerText}`, `server-browser-sso-${from}-headers`, url, { allowSsoJump: true });
+    if (/json|text|javascript|html/i.test(contentType)) {
+      const text = await response.text().catch(() => "");
+      if (text) {
+        addSsoDiagnostic({
+          from: `${from}-body`,
+          status,
+          path: parsed ? parsed.pathname : "/app-jump/super-admin-login",
+          codeSeen: Boolean(parsed?.searchParams?.get("code")),
+          tokenFound: Boolean(extractSijichanTokenFromText(text)),
+          message: text.slice(0, 180).replace(/\s+/g, " "),
+        });
+        await maybeCapture(text, `server-browser-sso-${from}-body`, url, { allowSsoJump: true });
+      }
     }
   };
   const scanMerchantPageStorage = async () => {
@@ -4576,8 +4650,18 @@ async function createWeComBrowserSession(user, body = {}) {
       nextPage.on("request", (request) => {
         session.lastRequestUrl = request.url();
         tryExchangeWeComCodeFromUrl(request.url()).catch(() => null);
+        if (isWeComSsoJumpUrl(request.url())) {
+          let parsed;
+          try { parsed = new URL(request.url()); } catch { parsed = null; }
+          addSsoDiagnostic({
+            from: "request",
+            path: parsed ? parsed.pathname : "/app-jump/super-admin-login",
+            codeSeen: Boolean(parsed?.searchParams?.get("code")),
+            message: "浏览器请求企微 SSO 跳转地址",
+          });
+        }
         const headers = request.headers();
-        maybeCapture(headers.authorization || headers.Authorization, "server-browser-request-header", request.url());
+        maybeCapture(headers.authorization || headers.Authorization, "server-browser-request-header", request.url(), { explicitToken: true });
         maybeCapture(request.url(), "server-browser-request-url", request.url());
         const postData = request.postData();
         if (postData) maybeCapture(postData, "server-browser-request-body", request.url());
@@ -4585,8 +4669,11 @@ async function createWeComBrowserSession(user, body = {}) {
       nextPage.on("response", async (response) => {
         session.lastRequestUrl = response.url();
         tryExchangeWeComCodeFromUrl(response.url()).catch(() => null);
+        await inspectSsoJumpResponse(response, "response").catch((error) => {
+          addSsoDiagnostic({ from: "response-error", path: "/app-jump/super-admin-login", message: error.message || "SSO 响应检查失败" });
+        });
         const headers = response.headers();
-        maybeCapture(headers.authorization || headers.Authorization, "server-browser-response-header", response.url());
+        maybeCapture(headers.authorization || headers.Authorization, "server-browser-response-header", response.url(), { explicitToken: true });
         const contentType = headers["content-type"] || "";
         if (/json|text|javascript/i.test(contentType)) {
           response.text().then((text) => maybeCapture(text, "server-browser-response-body", response.url())).catch(() => null);
@@ -4705,8 +4792,18 @@ async function createWeComBrowserSession(user, body = {}) {
     page.on("request", (request) => {
       session.lastRequestUrl = request.url();
       tryExchangeWeComCodeFromUrl(request.url()).catch(() => null);
+      if (isWeComSsoJumpUrl(request.url())) {
+        let parsed;
+        try { parsed = new URL(request.url()); } catch { parsed = null; }
+        addSsoDiagnostic({
+          from: "request",
+          path: parsed ? parsed.pathname : "/app-jump/super-admin-login",
+          codeSeen: Boolean(parsed?.searchParams?.get("code")),
+          message: "浏览器请求企微 SSO 跳转地址",
+        });
+      }
       const headers = request.headers();
-      maybeCapture(headers.authorization || headers.Authorization, "server-browser-request-header", request.url());
+      maybeCapture(headers.authorization || headers.Authorization, "server-browser-request-header", request.url(), { explicitToken: true });
       maybeCapture(request.url(), "server-browser-request-url", request.url());
       const postData = request.postData();
       if (postData) maybeCapture(postData, "server-browser-request-body", request.url());
@@ -4714,8 +4811,11 @@ async function createWeComBrowserSession(user, body = {}) {
     page.on("response", async (response) => {
       session.lastRequestUrl = response.url();
       tryExchangeWeComCodeFromUrl(response.url()).catch(() => null);
+      await inspectSsoJumpResponse(response, "response").catch((error) => {
+        addSsoDiagnostic({ from: "response-error", path: "/app-jump/super-admin-login", message: error.message || "SSO 响应检查失败" });
+      });
       const headers = response.headers();
-      maybeCapture(headers.authorization || headers.Authorization, "server-browser-response-header", response.url());
+      maybeCapture(headers.authorization || headers.Authorization, "server-browser-response-header", response.url(), { explicitToken: true });
       const contentType = headers["content-type"] || "";
       if (/json|text|javascript/i.test(contentType)) {
         response.text().then((text) => maybeCapture(text, "server-browser-response-body", response.url())).catch(() => null);
