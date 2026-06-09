@@ -46,7 +46,7 @@ const sessionMaxAgeMs = Number(process.env.SESSION_MAX_AGE_MS || 1000 * 60 * 60 
 let pool = null;
 let dbReady = false;
 let dbChecked = false;
-const activeReviewJobs = new Set();
+const activeReviewJobs = new Map();
 const activeWeComBrowserSessions = new Map();
 const activeWeComAutoReports = new Set();
 const workbookDetailRowLimit = Number(process.env.WORKBOOK_DETAIL_ROW_LIMIT || 5000);
@@ -411,6 +411,11 @@ async function ensureDatabase() {
       report_json jsonb not null default '{}'::jsonb,
       markdown text,
       report_id text unique not null,
+      job_key text,
+      error_message text,
+      retry_payload_json jsonb not null default '{}'::jsonb,
+      started_at timestamptz,
+      finished_at timestamptz,
       share_url text,
       svg_url text,
       qr_svg_url text,
@@ -536,6 +541,23 @@ async function ensureDatabase() {
     create index if not exists idx_monthly_marketing_user_created on monthly_marketing_recommendations(user_id, created_at desc);
   `);
     await activePool.query(`
+      alter table review_reports add column if not exists status text not null default 'completed';
+      alter table review_reports add column if not exists report_title text;
+      alter table review_reports add column if not exists row_counts_json jsonb not null default '{}'::jsonb;
+      alter table review_reports add column if not exists health_score numeric;
+      alter table review_reports add column if not exists risk_level text;
+      alter table review_reports add column if not exists excel_url text;
+      alter table review_reports add column if not exists normalized_data_url text;
+      alter table review_reports add column if not exists diagnostics_url text;
+      alter table review_reports add column if not exists job_key text;
+      alter table review_reports add column if not exists error_message text;
+      alter table review_reports add column if not exists retry_payload_json jsonb not null default '{}'::jsonb;
+      alter table review_reports add column if not exists started_at timestamptz;
+      alter table review_reports add column if not exists finished_at timestamptz;
+      create index if not exists idx_review_reports_job_key on review_reports(job_key);
+      drop function if exists get_review_report_list(text, boolean, integer);
+    `);
+    await activePool.query(`
       create or replace function set_updated_at()
       returns trigger
       language plpgsql
@@ -585,6 +607,10 @@ async function ensureDatabase() {
         excel_url text,
         normalized_data_url text,
         diagnostics_url text,
+        job_key text,
+        error_message text,
+        started_at timestamptz,
+        finished_at timestamptz,
         created_at timestamptz
       )
       language sql
@@ -607,6 +633,10 @@ async function ensureDatabase() {
           r.excel_url,
           r.normalized_data_url,
           r.diagnostics_url,
+          r.job_key,
+          r.error_message,
+          r.started_at,
+          r.finished_at,
           r.created_at
         from review_reports r
         where coalesce(p_is_admin, false) or r.user_id = p_user_id
@@ -655,6 +685,11 @@ async function ensureDatabase() {
       alter table review_reports add column if not exists excel_url text;
       alter table review_reports add column if not exists normalized_data_url text;
       alter table review_reports add column if not exists diagnostics_url text;
+      alter table review_reports add column if not exists job_key text;
+      alter table review_reports add column if not exists error_message text;
+      alter table review_reports add column if not exists retry_payload_json jsonb not null default '{}'::jsonb;
+      alter table review_reports add column if not exists started_at timestamptz;
+      alter table review_reports add column if not exists finished_at timestamptz;
       alter table ai_configs add column if not exists owner_user_id text references users(id) on delete cascade;
       alter table ai_review_uploads add column if not exists report_db_id text references review_reports(id) on delete set null;
       alter table ai_review_uploads add column if not exists error_message text;
@@ -684,6 +719,7 @@ async function ensureDatabase() {
       create index if not exists idx_review_reports_user_created on review_reports(user_id, created_at desc);
       create index if not exists idx_review_reports_created on review_reports(created_at desc);
       create index if not exists idx_review_reports_status_created on review_reports(status, created_at desc);
+      create index if not exists idx_review_reports_job_key on review_reports(job_key);
       update ai_configs set owner_user_id = updated_by where owner_user_id is null and updated_by is not null;
       create index if not exists idx_ai_configs_owner_updated on ai_configs(owner_user_id, updated_at desc);
       create index if not exists idx_ai_review_uploads_user_created on ai_review_uploads(user_id, created_at desc);
@@ -1388,7 +1424,99 @@ function numericOrNull(value) {
   return Number.isFinite(number) ? number : null;
 }
 
-async function saveReviewReportRecord(userId, sourceType, sourceName, summary, generated) {
+function pendingReportId() {
+  return `pending-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
+}
+
+function reviewStatusLabel(status) {
+  return {
+    running: "生成中",
+    completed: "已完成",
+    failed: "生成失败",
+    cancelled: "已取消",
+  }[status] || status || "未知";
+}
+
+async function createRunningReviewReportRecord(userId, sourceType, sourceName, jobKey, retryPayload = {}) {
+  const profile = await getCustomerProfile(userId);
+  const reportTitle = `${sourceName || "AI复盘报告"}生成中`;
+  if (await isDbAvailable()) {
+    const result = await queryDb(
+      `insert into review_reports(
+        user_id, customer_profile_id, source_type, source_name, status, report_title, row_counts_json,
+        summary_json, report_json, markdown, report_id, job_key, retry_payload_json, started_at
+      )
+       values($1,$2,$3,$4,'running',$5,'{}'::jsonb,'{}'::jsonb,$6::jsonb,'',$7,$8,$9::jsonb,now())
+       returning id`,
+      [
+        userId,
+        profile?.id || null,
+        sourceType,
+        sourceName,
+        reportTitle,
+        jsonParam({ title: reportTitle, status: "running" }, {}),
+        pendingReportId(),
+        jobKey,
+        jsonParam(retryPayload, {}),
+      ],
+    );
+    return result.rows[0].id;
+  }
+  const data = readLocalData();
+  const record = {
+    id: createId("rep"),
+    userId,
+    customerProfileId: profile?.id || "",
+    sourceType,
+    sourceName,
+    status: "running",
+    reportTitle,
+    rowCountsJson: {},
+    summaryJson: {},
+    reportJson: { title: reportTitle, status: "running" },
+    markdown: "",
+    reportId: pendingReportId(),
+    jobKey,
+    retryPayloadJson: retryPayload || {},
+    errorMessage: "",
+    startedAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  data.reviewReports.push(record);
+  writeLocalData(data);
+  return record.id;
+}
+
+async function markReviewReportStatus(reportDbId, status, errorMessage = "") {
+  if (!reportDbId) return;
+  if (await isDbAvailable()) {
+    await queryDb(
+      `update review_reports
+       set status=$2, error_message=nullif($3, ''), report_title=case
+             when $2='failed' then '复盘报告生成失败'
+             when $2='cancelled' then '复盘报告已取消'
+             else report_title
+           end,
+           finished_at=case when $2 in ('failed','cancelled','completed') then now() else finished_at end,
+           updated_at=now()
+       where id=$1`,
+      [reportDbId, status, String(errorMessage || "").slice(0, 2000)],
+    );
+    return;
+  }
+  const data = readLocalData();
+  const record = data.reviewReports.find((item) => item.id === reportDbId);
+  if (!record) return;
+  record.status = status;
+  record.errorMessage = errorMessage || "";
+  record.reportTitle = status === "failed" ? "复盘报告生成失败" : status === "cancelled" ? "复盘报告已取消" : record.reportTitle;
+  record.finishedAt = ["failed", "cancelled", "completed"].includes(status) ? new Date().toISOString() : record.finishedAt;
+  record.updatedAt = new Date().toISOString();
+  writeLocalData(data);
+}
+
+async function saveReviewReportRecord(userId, sourceType, sourceName, summary, generated, options = {}) {
   const profile = await getCustomerProfile(userId);
   if (await isDbAvailable()) {
     const activePool = await getPool();
@@ -1398,34 +1526,72 @@ async function saveReviewReportRecord(userId, sourceType, sourceName, summary, g
     const reportTitle = generated.report?.title || digest.reportTitle || "四季蝉AI复盘报告";
     try {
       await client.query("begin");
-      const result = await client.query(
-        `insert into review_reports(
-          user_id, customer_profile_id, source_type, source_name, status, report_title, row_counts_json, health_score, risk_level,
-          summary_json, report_json, markdown, report_id, share_url, svg_url, qr_svg_url, excel_url, normalized_data_url, diagnostics_url
-        )
-         values($1,$2,$3,$4,'completed',$5,$6::jsonb,$7,$8,$9::jsonb,$10::jsonb,'',$11,$12,$13,$14,$15,$16,$17)
-         returning id`,
-        [
-          userId,
-          profile?.id || null,
-          sourceType,
-          sourceName,
-          reportTitle,
-          jsonParam(summary.rowCounts || {}, {}),
-          numericOrNull(summary.operationInsights?.healthScore),
-          summary.operationInsights?.retentionRisk || "",
-          jsonParam(digest, {}),
-          jsonParam({ title: reportTitle, executiveSummary: generated.report?.executiveSummary || "" }, {}),
-          generated.reportId,
-          generated.shareUrl,
-          generated.svgUrl,
-          generated.qrSvgUrl,
-          generated.excelUrl || "",
-          generated.normalizedDataUrl || "",
-          generated.diagnosticsUrl || "",
-        ],
-      );
-      const id = result.rows[0].id;
+      let id = options.reportDbId || "";
+      if (id) {
+        const result = await client.query(
+          `update review_reports
+           set customer_profile_id=$2, source_type=$3, source_name=$4, status='completed', report_title=$5,
+               row_counts_json=$6::jsonb, health_score=$7, risk_level=$8, summary_json=$9::jsonb,
+               report_json=$10::jsonb, markdown='', report_id=$11, share_url=$12, svg_url=$13,
+               qr_svg_url=$14, excel_url=$15, normalized_data_url=$16, diagnostics_url=$17,
+               error_message=null, finished_at=now(), updated_at=now()
+           where id=$1 and user_id=$18
+           returning id`,
+          [
+            id,
+            profile?.id || null,
+            sourceType,
+            sourceName,
+            reportTitle,
+            jsonParam(summary.rowCounts || {}, {}),
+            numericOrNull(summary.operationInsights?.healthScore),
+            summary.operationInsights?.retentionRisk || "",
+            jsonParam(digest, {}),
+            jsonParam({ title: reportTitle, executiveSummary: generated.report?.executiveSummary || "" }, {}),
+            generated.reportId,
+            generated.shareUrl,
+            generated.svgUrl,
+            generated.qrSvgUrl,
+            generated.excelUrl || "",
+            generated.normalizedDataUrl || "",
+            generated.diagnosticsUrl || "",
+            userId,
+          ],
+        );
+        id = result.rows[0]?.id || "";
+      }
+      if (!id) {
+        const result = await client.query(
+          `insert into review_reports(
+            user_id, customer_profile_id, source_type, source_name, status, report_title, row_counts_json, health_score, risk_level,
+            summary_json, report_json, markdown, report_id, share_url, svg_url, qr_svg_url, excel_url, normalized_data_url, diagnostics_url,
+            job_key, finished_at
+          )
+           values($1,$2,$3,$4,'completed',$5,$6::jsonb,$7,$8,$9::jsonb,$10::jsonb,'',$11,$12,$13,$14,$15,$16,$17,$18,now())
+           returning id`,
+          [
+            userId,
+            profile?.id || null,
+            sourceType,
+            sourceName,
+            reportTitle,
+            jsonParam(summary.rowCounts || {}, {}),
+            numericOrNull(summary.operationInsights?.healthScore),
+            summary.operationInsights?.retentionRisk || "",
+            jsonParam(digest, {}),
+            jsonParam({ title: reportTitle, executiveSummary: generated.report?.executiveSummary || "" }, {}),
+            generated.reportId,
+            generated.shareUrl,
+            generated.svgUrl,
+            generated.qrSvgUrl,
+            generated.excelUrl || "",
+            generated.normalizedDataUrl || "",
+            generated.diagnosticsUrl || "",
+            options.jobKey || null,
+          ],
+        );
+        id = result.rows[0].id;
+      }
       await client.query(
         `insert into review_report_payloads(report_db_id, summary_json, report_json, markdown)
          values($1,$2::jsonb,$3::jsonb,$4)
@@ -1443,25 +1609,35 @@ async function saveReviewReportRecord(userId, sourceType, sourceName, summary, g
   }
   const data = readLocalData();
   const record = {
-    id: createId("rep"),
+    id: options.reportDbId || createId("rep"),
     userId,
     customerProfileId: profile?.id || "",
     sourceType,
     sourceName,
+    status: "completed",
     summaryJson: summary,
     reportJson: generated.report,
     markdown: generated.markdown || "",
     reportId: generated.reportId,
+    reportTitle: generated.report?.title || "四季蝉AI复盘报告",
     shareUrl: generated.shareUrl,
     svgUrl: generated.svgUrl,
     qrSvgUrl: generated.qrSvgUrl,
     excelUrl: generated.excelUrl,
     normalizedDataUrl: generated.normalizedDataUrl,
     diagnosticsUrl: generated.diagnosticsUrl,
+    jobKey: options.jobKey || "",
+    errorMessage: "",
+    finishedAt: new Date().toISOString(),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
-  data.reviewReports.push(record);
+  const existingIndex = data.reviewReports.findIndex((item) => item.id === record.id);
+  if (existingIndex >= 0) {
+    data.reviewReports[existingIndex] = { ...data.reviewReports[existingIndex], ...record, createdAt: data.reviewReports[existingIndex].createdAt || record.createdAt };
+  } else {
+    data.reviewReports.push(record);
+  }
   writeLocalData(data);
   return record.id;
 }
@@ -2162,6 +2338,10 @@ function normalizeReviewReportRow(row) {
     excelUrl: normalizePublicArtifactUrl(row.excel_url || row.excelUrl || reportArtifactUrl(shareUrl, "review.xlsx")),
     normalizedDataUrl: normalizePublicArtifactUrl(row.normalized_data_url || row.normalizedDataUrl || reportArtifactUrl(shareUrl, encodeURIComponent("四季蝉登录获取标准化数据.json"))),
     diagnosticsUrl: normalizePublicArtifactUrl(row.diagnostics_url || row.diagnosticsUrl || reportArtifactUrl(shareUrl, encodeURIComponent("四季蝉接口诊断.json"))),
+    jobKey: row.job_key || row.jobKey || "",
+    errorMessage: row.error_message || row.errorMessage || "",
+    startedAt: row.started_at || row.startedAt || "",
+    finishedAt: row.finished_at || row.finishedAt || "",
     createdAt: row.created_at || row.createdAt,
   };
 }
@@ -2195,6 +2375,43 @@ async function getReviewReport(user, id) {
   }
   const report = readLocalData().reviewReports.find((item) => item.id === id && (user.role === "admin" || item.userId === user.id));
   return report ? normalizeReviewReportRow(report) : null;
+}
+
+async function updateReviewReportByUser(user, id, changes) {
+  if (await isDbAvailable()) {
+    const params = [id, user.id, user.role === "admin"];
+    const assignments = [];
+    if (changes.status !== undefined) {
+      params.push(changes.status);
+      assignments.push(`status=$${params.length}`);
+    }
+    if (changes.errorMessage !== undefined) {
+      params.push(changes.errorMessage || "");
+      assignments.push(`error_message=nullif($${params.length}, '')`);
+    }
+    if (changes.clearFinishedAt) assignments.push("finished_at=null");
+    if (changes.finishNow) assignments.push("finished_at=now()");
+    if (changes.startedNow) assignments.push("started_at=now()");
+    assignments.push("updated_at=now()");
+    const result = await queryDb(
+      `update review_reports set ${assignments.join(", ")}
+       where id=$1 and ($3::boolean or user_id=$2)
+       returning *`,
+      params,
+    );
+    return normalizeReviewReportRow(result.rows[0]);
+  }
+  const data = readLocalData();
+  const report = data.reviewReports.find((item) => item.id === id && (user.role === "admin" || item.userId === user.id));
+  if (!report) return null;
+  if (changes.status !== undefined) report.status = changes.status;
+  if (changes.errorMessage !== undefined) report.errorMessage = changes.errorMessage || "";
+  if (changes.clearFinishedAt) report.finishedAt = "";
+  if (changes.finishNow) report.finishedAt = new Date().toISOString();
+  if (changes.startedNow) report.startedAt = new Date().toISOString();
+  report.updatedAt = new Date().toISOString();
+  writeLocalData(data);
+  return normalizeReviewReportRow(report);
 }
 
 async function parseMultipartFile(req) {
@@ -4188,6 +4405,7 @@ function isMerchantRuntimeUrl(url) {
     if (parsed.hostname !== "merchants.hydee.cn") return false;
     if (/\/app-login/i.test(parsed.pathname)) return false;
     if (/\/app-jump\/(super-admin-login|ewx-login)/i.test(parsed.pathname)) return false;
+    if (/^\/(home|index|dashboard)?$/i.test(parsed.pathname)) return true;
     const routeText = `${parsed.pathname}${parsed.hash}${parsed.search}`;
     return /businesses-gateway|super-admin|merchant|mer-manager|report|activity|industryOrder|imActivityReward|orderShareMoment/i.test(routeText);
   } catch {
@@ -4209,7 +4427,7 @@ function canProbeMerchantBusiness(url) {
     if (parsed.hostname !== "merchants.hydee.cn") return false;
     if (/\/app-login/i.test(parsed.pathname)) return false;
     if (/\/app-jump\/(super-admin-login|ewx-login)/i.test(parsed.pathname)) return false;
-    return parsed.pathname === "/" || isMerchantRuntimeUrl(parsed.href);
+    return parsed.pathname === "/" || /^\/(home|index|dashboard)?$/i.test(parsed.pathname) || isMerchantRuntimeUrl(parsed.href);
   } catch {
     return false;
   }
@@ -4377,7 +4595,23 @@ async function createWeComBrowserSession(user, body = {}) {
     session.openPages = items.sort((a, b) => Number(Boolean(b.current)) - Number(Boolean(a.current))).slice(0, 10);
     session.updatedAt = new Date().toISOString();
   };
+  const selectBestMerchantPage = async () => {
+    const context = session.browser?.contexts?.()?.[0];
+    const pages = context?.pages?.() || [];
+    const visiblePages = pages.filter((pageItem) => pageItem && !pageItem.isClosed() && pageItem.url() !== "about:blank");
+    const runtimePage = visiblePages.find((pageItem) => canProbeMerchantBusiness(pageItem.url()));
+    const codePage = visiblePages.find((pageItem) => canAttemptMerchantCodeFill(pageItem.url()) && !/login\.work\.weixin\.qq\.com/i.test(pageItem.url()));
+    const best = runtimePage || codePage || session.page;
+    if (best && !best.isClosed() && best !== session.page) {
+      session.page = best;
+      session.currentUrl = best.url();
+      session.pageTitle = await best.title().catch(() => session.pageTitle || "");
+    }
+    await refreshOpenPages().catch(() => null);
+    return best && !best.isClosed() ? best : null;
+  };
   const refreshScanStage = async () => {
+    await selectBestMerchantPage().catch(() => null);
     if (!session.page || session.page.isClosed()) return;
     const pageUrl = session.page.url();
     if (/merchants\.hydee\.cn\/app-login/i.test(pageUrl)) {
@@ -4397,7 +4631,11 @@ async function createWeComBrowserSession(user, body = {}) {
       return { text: text.slice(0, 500), hasQr: Boolean(image) };
     }).catch(() => ({ text: "", hasQr: false }));
     const text = state.text || "";
-    if (/已扫码|扫描成功|请在企业微信中确认|请在手机上确认|请确认|确认登录/i.test(text)) {
+    if (/选择访问用户|商户编码|客户编码|访问用户|适用用户/i.test(text)) {
+      session.scanStage = "merchant_code";
+      session.scanHint = "已进入访问用户页面，请手动填写客户编码并点击登录";
+      session.pageTextHint = text.slice(0, 220);
+    } else if (/已扫码|扫描成功|请在企业微信中确认|请在手机上确认|请确认|确认登录/i.test(text)) {
       session.scanStage = "confirming";
       session.scanHint = "已扫码，等待企业微信手机端确认";
     } else if (/二维码已失效|二维码失效|已过期|重新刷新|刷新二维码/i.test(text)) {
@@ -4628,7 +4866,62 @@ async function createWeComBrowserSession(user, body = {}) {
       return false;
     }
     session.merchantCodeFillAvailable = await detectMerchantCodeInputInPage(session.page);
+    if (session.merchantCodeFillAvailable && !session.merCodeSubmitTried) {
+      session.scanStage = "merchant_code";
+      session.scanHint = "已进入访问用户页面，正在自动填写客户编码";
+      session.pageTextHint = await session.page.evaluate(() => (document.body?.innerText || "").replace(/\s+/g, " ").trim().slice(0, 220)).catch(() => session.pageTextHint || "");
+      session.updatedAt = new Date().toISOString();
+    }
     return session.merchantCodeFillAvailable;
+  };
+  const autoFillMerchantCodeIfReady = async (reason = "") => {
+    if (!session.page || session.page.isClosed() || session.merCodeSubmitTried) return false;
+    const merCode = String(session.handoff?.merCode || body.merCode || "").trim();
+    if (!/^\d{6}$/.test(merCode)) {
+      if (session.merchantCodeFillAvailable) {
+        session.lastError = "已进入访问用户页面，但未提供6位客户编码，无法自动填写。";
+        session.scanHint = "已进入访问用户页面，请先填写6位客户编码";
+        session.updatedAt = new Date().toISOString();
+      }
+      return false;
+    }
+    if (!canAttemptMerchantCodeFill(session.page.url())) return false;
+    const available = await updateMerchantCodeFillAvailability().catch(() => false);
+    if (!available) return false;
+    session.scanStage = "merchant_code";
+    session.scanHint = "已进入访问用户页面，正在自动填写客户编码";
+    session.updatedAt = new Date().toISOString();
+    const filled = await fillMerchantCodeInPage(session.page, merCode);
+    if (!filled) {
+      session.lastError = "已检测到客户编码输入框，但自动填写失败，可点击“重新提交客户编码”。";
+      session.updatedAt = new Date().toISOString();
+      logWeComSessionState(session, `auto-mer-code-failed:${reason}`);
+      return false;
+    }
+    session.handoff.merCode = merCode;
+    session.handoff.merName = String(session.handoff?.merName || body.merName || "").trim();
+    session.merCodeFilled = true;
+    session.merCodeSubmitTried = filled === "filled-clicked";
+    session.merchantCodeFillAvailable = false;
+    session.lastError = "";
+    session.scanStage = "merchant_code_submitted";
+    session.scanHint = "客户编码已自动提交，正在进入新零售管理平台";
+    session.updatedAt = new Date().toISOString();
+    await session.page.waitForTimeout(3000).catch(() => null);
+    await session.page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => null);
+    await selectBestMerchantPage().catch(() => null);
+    if (session.page && !session.page.isClosed()) {
+      session.currentUrl = session.page.url();
+      session.pageTitle = await session.page.title().catch(() => session.pageTitle || "");
+    }
+    await refreshOpenPages().catch(() => null);
+    await refreshScanStage().catch(() => null);
+    await scanMerchantPageStorage().catch(() => null);
+    await scanMerchantCookies().catch(() => null);
+    await triggerMerchantProbe().catch(() => null);
+    await probeExportReady().catch(() => null);
+    logWeComSessionState(session, `auto-mer-code-${filled}:${reason}`);
+    return true;
   };
   const noteMerchantReady = () => {
     const ready = Boolean(session.page && !session.page.isClosed() && canProbeMerchantBusiness(session.page.url()));
@@ -4724,11 +5017,14 @@ async function createWeComBrowserSession(user, body = {}) {
     }
   };
   session.prepareBrowserExport = async () => {
+    await selectBestMerchantPage().catch(() => null);
     if (!session.page || session.page.isClosed()) return;
     await updateMerchantCodeFillAvailability().catch(() => null);
+    await autoFillMerchantCodeIfReady("prepare").catch(() => null);
     await triggerMerchantProbe().catch(() => null);
     await probeExportReady().catch(() => null);
   };
+  session.focusBestMerchantPage = selectBestMerchantPage;
   const tryExchangeWeComCodeFromUrl = async (pageUrl) => {
     if (session.weComCodeExchangeTried || session.status === "captured") return;
     let parsed;
@@ -4865,11 +5161,12 @@ async function createWeComBrowserSession(user, body = {}) {
           session.updatedAt = new Date().toISOString();
           logWeComSessionState(session, "navigate");
           tryExchangeWeComCodeFromUrl(session.currentUrl).catch(() => null);
+          selectBestMerchantPage().catch(() => null);
           noteMerchantReady();
-          if (isMerchantRuntimeUrl(session.currentUrl)) triggerWeComBrowserAutoReport(session, "merchant-ready-navigate");
+          if (canProbeMerchantBusiness(session.currentUrl)) triggerWeComBrowserAutoReport(session, "merchant-ready-navigate");
           scanMerchantPageStorage().catch(() => null);
           scanMerchantCookies().catch(() => null);
-          updateMerchantCodeFillAvailability().catch(() => null);
+          updateMerchantCodeFillAvailability().then(() => autoFillMerchantCodeIfReady("popup-navigate")).catch(() => null);
           triggerMerchantProbe().catch(() => null);
           probeExportReady().catch(() => null);
         }
@@ -5008,11 +5305,12 @@ async function createWeComBrowserSession(user, body = {}) {
         session.updatedAt = new Date().toISOString();
         logWeComSessionState(session, "navigate");
         tryExchangeWeComCodeFromUrl(session.currentUrl).catch(() => null);
+        selectBestMerchantPage().catch(() => null);
         noteMerchantReady();
-        if (isMerchantRuntimeUrl(session.currentUrl)) triggerWeComBrowserAutoReport(session, "merchant-ready-navigate");
+        if (canProbeMerchantBusiness(session.currentUrl)) triggerWeComBrowserAutoReport(session, "merchant-ready-navigate");
         scanMerchantPageStorage().catch(() => null);
         scanMerchantCookies().catch(() => null);
-        updateMerchantCodeFillAvailability().catch(() => null);
+        updateMerchantCodeFillAvailability().then(() => autoFillMerchantCodeIfReady("main-navigate")).catch(() => null);
         triggerMerchantProbe().catch(() => null);
         probeExportReady().catch(() => null);
       }
@@ -5025,7 +5323,7 @@ async function createWeComBrowserSession(user, body = {}) {
     await refreshScanStage().catch(() => null);
     if (session.profileReuse && canProbeMerchantBusiness(page.url())) {
       noteMerchantReady();
-      if (isMerchantRuntimeUrl(page.url())) triggerWeComBrowserAutoReport(session, "profile-reuse-merchant-ready");
+      if (canProbeMerchantBusiness(page.url())) triggerWeComBrowserAutoReport(session, "profile-reuse-merchant-ready");
       await scanMerchantPageStorage().catch(() => null);
       await scanMerchantCookies().catch(() => null);
       await updateMerchantCodeFillAvailability().catch(() => null);
@@ -5083,6 +5381,7 @@ async function createWeComBrowserSession(user, body = {}) {
           session.pageTitle = await session.page.title().catch(() => session.pageTitle || "");
           await refreshOpenPages();
           await refreshScanStage();
+          await selectBestMerchantPage();
           noteMerchantReady();
           if (canProbeMerchantBusiness(session.currentUrl)) triggerWeComBrowserAutoReport(session, "merchant-ready-poll");
           if (session.scanStage === "qr_expired") await refreshWeComQrImage("expired");
@@ -5090,6 +5389,7 @@ async function createWeComBrowserSession(user, body = {}) {
           await scanMerchantPageStorage();
           await scanMerchantCookies();
           await updateMerchantCodeFillAvailability();
+          await autoFillMerchantCodeIfReady("poll");
           await triggerMerchantProbe();
           await probeExportReady();
         }
@@ -5913,6 +6213,8 @@ async function collectSijichanDataWithToken({ token, merCode: inputMerCode = "",
 }
 
 async function collectSijichanDataWithBrowserSession(session, { merCode: inputMerCode = "", merName: inputMerName = "", source = "企微扫码授权", asOf = "" } = {}) {
+  if (typeof session?.focusBestMerchantPage === "function") await session.focusBestMerchantPage().catch(() => null);
+  if (typeof session?.prepareBrowserExport === "function") await session.prepareBrowserExport().catch(() => null);
   if (!session?.page || session.page.isClosed()) throw new Error("服务器扫码浏览器会话已关闭，请重新扫码。");
   if (!canProbeMerchantBusiness(session.page.url())) throw new Error("服务器浏览器尚未进入新零售管理平台，请扫码确认登录后再生成报告。");
   const merCode = String(inputMerCode || session.handoff?.merCode || "").trim();
@@ -6275,20 +6577,72 @@ async function handleTestConfig(req, res) {
   sendJson(res, 200, { ok: true, message: output || "连接成功" });
 }
 
-function beginReviewJob(key) {
+const reviewJobTtlMs = Number(process.env.REVIEW_JOB_TTL_MS || 30 * 60 * 1000);
+
+async function cleanupExpiredReviewJobs() {
+  const now = Date.now();
+  for (const [key, job] of activeReviewJobs.entries()) {
+    if (!job?.startedAt || now - job.startedAt <= reviewJobTtlMs) continue;
+    activeReviewJobs.delete(key);
+    await markReviewReportStatus(job.reportDbId, "failed", "任务超过30分钟未完成，系统已自动清理。请确认账号权限和网络后重试。").catch(() => null);
+    console.warn(`[review] timeout ${key}`);
+  }
+}
+
+async function beginReviewJob(key, meta = {}) {
+  await cleanupExpiredReviewJobs();
   if (activeReviewJobs.has(key)) {
     const error = new Error("已有复盘报告正在生成，请稍后刷新历史报告，或等待当前任务完成后再试。");
     error.statusCode = 429;
     throw error;
   }
-  activeReviewJobs.add(key);
-  return Date.now();
+  const startedAt = Date.now();
+  const reportDbId = await createRunningReviewReportRecord(meta.userId, meta.sourceType, meta.sourceName, key, meta.retryPayload || {});
+  activeReviewJobs.set(key, {
+    key,
+    startedAt,
+    reportDbId,
+    userId: meta.userId,
+    sourceType: meta.sourceType,
+    sourceName: meta.sourceName,
+    cancelRequested: false,
+  });
+  return { startedAt, reportDbId };
+}
+
+function getActiveReviewJob(key) {
+  return activeReviewJobs.get(key) || null;
+}
+
+async function failReviewJob(key, error, fallbackReportDbId = "") {
+  const job = activeReviewJobs.get(key);
+  activeReviewJobs.delete(key);
+  const reportDbId = job?.reportDbId || fallbackReportDbId || "";
+  const status = error?.isCancelled ? "cancelled" : "failed";
+  await markReviewReportStatus(reportDbId, status, error?.message || String(error || "复盘报告生成失败。")).catch(() => null);
+}
+
+function assertReviewJobNotCancelled(job) {
+  if (!job || job.cancelRequested) {
+    const error = new Error("复盘报告任务已取消或已超时清理。");
+    error.statusCode = 409;
+    error.isCancelled = true;
+    throw error;
+  }
 }
 
 function finishReviewJob(key, startedAt, detail = "") {
+  const job = activeReviewJobs.get(key);
+  if (job?.cancelRequested) {
+    activeReviewJobs.delete(key);
+    console.log(`[review] ignored-cancelled ${key} ${detail}`.trim());
+    return false;
+  }
   activeReviewJobs.delete(key);
-  const elapsed = startedAt ? `${Math.round((Date.now() - startedAt) / 1000)}s` : "";
+  const startMs = typeof startedAt === "number" ? startedAt : startedAt?.startedAt;
+  const elapsed = startMs ? `${Math.round((Date.now() - startMs) / 1000)}s` : "";
   console.log(`[review] finish ${key} ${elapsed} ${detail}`.trim());
+  return true;
 }
 
 async function handleReviewReport(req, res) {
@@ -6307,15 +6661,17 @@ async function handleReviewReport(req, res) {
   }
 
   const jobKey = `excel:${user.id}`;
-  const startedAt = beginReviewJob(jobKey);
+  const job = await beginReviewJob(jobKey, { userId: user.id, sourceType: "excel", sourceName: filename, retryPayload: { sourceType: "excel", filename } });
   let datasetId = "";
   console.log(`[review] start ${jobKey} ${filename}`);
   try {
     datasetId = await saveDatasetRecord(user.id, "excel", summary, filename);
+    assertReviewJobNotCancelled(getActiveReviewJob(jobKey));
     const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary, user);
-    const dbReportId = await saveReviewReportRecord(user.id, "excel", filename, summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
+    assertReviewJobNotCancelled(getActiveReviewJob(jobKey));
+    const dbReportId = await saveReviewReportRecord(user.id, "excel", filename, summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl }, { reportDbId: job.reportDbId, jobKey });
     await linkDatasetToReviewReport(datasetId, dbReportId, "completed");
-    finishReviewJob(jobKey, startedAt, reportId);
+    finishReviewJob(jobKey, job.startedAt, reportId);
     sendJson(res, 200, {
       ok: true,
       id: dbReportId,
@@ -6331,7 +6687,7 @@ async function handleReviewReport(req, res) {
       diagnosticsUrl,
     });
   } catch (error) {
-    activeReviewJobs.delete(jobKey);
+    await failReviewJob(jobKey, error, job.reportDbId);
     await linkDatasetToReviewReport(datasetId, null, "failed", error.message);
     console.error(`[review] failed ${jobKey}:`, error);
     throw error;
@@ -6349,28 +6705,32 @@ async function handleSijichanReviewReport(req, res) {
   }
 
   const jobKey = `login:${user.id}`;
-  const startedAt = beginReviewJob(jobKey);
+  const job = await beginReviewJob(jobKey, { userId: user.id, sourceType: "login", sourceName: "登录获取", retryPayload: { sourceType: "login", username: body.username || "", merCode: body.merCode || "", merName: body.merName || "" } });
   let datasetId = "";
   console.log(`[review] start ${jobKey} ${body.username || ""}`);
   try {
     const summary = await runSijichanExport(body);
+    assertReviewJobNotCancelled(getActiveReviewJob(jobKey));
     const files = summary.datasetFiles || [];
     if (!files.some((file) => file.rowCount > 0)) {
       sendJson(res, 422, { error: "接口成功返回，但该账号/客户在当前口径无可复盘明细数据。", summary: summaryForResponse(summary) });
-      finishReviewJob(jobKey, startedAt, "empty");
+      await markReviewReportStatus(job.reportDbId, "failed", "接口成功返回，但该账号/客户在当前口径无可复盘明细数据。");
+      finishReviewJob(jobKey, job.startedAt, "empty");
       return;
     }
     datasetId = await saveDatasetRecord(user.id, "login", summary, summary.source || "登录获取");
+    assertReviewJobNotCancelled(getActiveReviewJob(jobKey));
     const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary, user);
-    const dbReportId = await saveReviewReportRecord(user.id, "login", "登录获取", summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
+    assertReviewJobNotCancelled(getActiveReviewJob(jobKey));
+    const dbReportId = await saveReviewReportRecord(user.id, "login", "登录获取", summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl }, { reportDbId: job.reportDbId, jobKey });
     await upsertSijichanAuthorization(user.id, body, summary, dbReportId).catch((error) => {
       console.warn(`Sijichan authorization save skipped: ${error.message}`);
     });
     await linkDatasetToReviewReport(datasetId, dbReportId, "completed");
-    finishReviewJob(jobKey, startedAt, reportId);
+    finishReviewJob(jobKey, job.startedAt, reportId);
     sendJson(res, 200, { ok: true, id: dbReportId, summary: summaryForResponse(summary), report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
   } catch (error) {
-    activeReviewJobs.delete(jobKey);
+    await failReviewJob(jobKey, error, job.reportDbId);
     await linkDatasetToReviewReport(datasetId, null, "failed", error.message);
     console.error(`[review] failed ${jobKey}:`, error);
     throw error;
@@ -6400,30 +6760,34 @@ async function buildWeComTokenReportForUser(user, body) {
     throw error;
   }
   const jobKey = `wecom:${user.id}`;
-  const startedAt = beginReviewJob(jobKey);
+  const job = await beginReviewJob(jobKey, { userId: user.id, sourceType: "wecom_token", sourceName: "企微扫码授权", retryPayload: { sourceType: "wecom_token", merCode: body.merCode || "", merName: body.merName || "" } });
   let datasetId = "";
   console.log(`[review] start ${jobKey} ${String(body.merCode || "").trim()}`);
   try {
     const summary = await runSijichanTokenExport({ ...body, token });
+    assertReviewJobNotCancelled(getActiveReviewJob(jobKey));
     const files = summary.datasetFiles || [];
     if (!files.some((file) => file.rowCount > 0)) {
-      finishReviewJob(jobKey, startedAt, "empty");
+      await markReviewReportStatus(job.reportDbId, "failed", "授权token可访问接口，但当前账号/客户在当前口径无可复盘明细数据。");
+      finishReviewJob(jobKey, job.startedAt, "empty");
       const error = new Error("授权token可访问接口，但当前账号/客户在当前口径无可复盘明细数据。");
       error.statusCode = 422;
       error.summary = summaryForResponse(summary);
       throw error;
     }
     datasetId = await saveDatasetRecord(user.id, "wecom_token", summary, summary.source || "企微扫码授权");
+    assertReviewJobNotCancelled(getActiveReviewJob(jobKey));
     const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary, user);
-    const dbReportId = await saveReviewReportRecord(user.id, "wecom_token", "企微扫码授权", summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
+    assertReviewJobNotCancelled(getActiveReviewJob(jobKey));
+    const dbReportId = await saveReviewReportRecord(user.id, "wecom_token", "企微扫码授权", summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl }, { reportDbId: job.reportDbId, jobKey });
     await upsertSijichanTokenAuthorization(user.id, { ...body, token }, summary, dbReportId).catch((error) => {
       console.warn(`Sijichan token authorization save skipped: ${error.message}`);
     });
     await linkDatasetToReviewReport(datasetId, dbReportId, "completed");
-    finishReviewJob(jobKey, startedAt, reportId);
+    finishReviewJob(jobKey, job.startedAt, reportId);
     return { ok: true, id: dbReportId, summary: summaryForResponse(summary), report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl };
   } catch (error) {
-    activeReviewJobs.delete(jobKey);
+    await failReviewJob(jobKey, error, job.reportDbId);
     await linkDatasetToReviewReport(datasetId, null, "failed", error.message);
     console.error(`[review] failed ${jobKey}:`, error);
     throw error;
@@ -6545,6 +6909,10 @@ async function handleFillWeComBrowserMerchantCode(req, res, id) {
     sendJson(res, 400, { error: "请先填写客户编码。" });
     return;
   }
+  if (!/^\d{6}$/.test(merCode)) {
+    sendJson(res, 400, { error: "访问用户编码必须是6位数字，请检查后重新填写。" });
+    return;
+  }
   if (!canAttemptMerchantCodeFill(session.page.url())) {
     sendJson(res, 409, { error: "服务器浏览器尚未进入客户编码选择页，请先完成企微扫码确认。" });
     return;
@@ -6561,8 +6929,14 @@ async function handleFillWeComBrowserMerchantCode(req, res, id) {
   session.merCodeFilled = true;
   session.merCodeSubmitTried = filled === "filled-clicked";
   session.merchantCodeFillAvailable = false;
+  session.scanStage = "merchant_code_submitted";
+  session.scanHint = "客户编码已提交，正在进入新零售管理平台";
   session.updatedAt = new Date().toISOString();
-  await session.page.waitForTimeout(1200).catch(() => null);
+  await session.page.waitForTimeout(3000).catch(() => null);
+  session.currentUrl = session.page.url();
+  session.pageTitle = await session.page.title().catch(() => session.pageTitle || "");
+  await session.page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => null);
+  await session.focusBestMerchantPage?.().catch(() => null);
   session.currentUrl = session.page.url();
   session.pageTitle = await session.page.title().catch(() => session.pageTitle || "");
   await session.prepareBrowserExport?.().catch(() => null);
@@ -6681,7 +7055,7 @@ async function buildWeComBrowserSessionReportForUser(user, session, body = {}) {
     throw error;
   }
   const jobKey = `wecom-browser:${user.id}`;
-  const startedAt = beginReviewJob(jobKey);
+  const job = await beginReviewJob(jobKey, { userId: user.id, sourceType: "wecom_browser", sourceName: "企微扫码服务器登录", retryPayload: { sourceType: "wecom_browser", sessionId: session.id, merCode: body.merCode || session.handoff?.merCode || "", merName: body.merName || session.handoff?.merName || "" } });
   let datasetId = "";
   console.log(`[review] start ${jobKey} ${String(body.merCode || session.handoff?.merCode || "").trim()}`);
   try {
@@ -6691,23 +7065,27 @@ async function buildWeComBrowserSessionReportForUser(user, session, body = {}) {
       source: "企微扫码服务器登录",
       asOf: body.asOf,
     });
+    assertReviewJobNotCancelled(getActiveReviewJob(jobKey));
     const summary = summarizeSijichanRaw(raw);
     const files = summary.datasetFiles || [];
     if (!files.some((file) => file.rowCount > 0)) {
-      finishReviewJob(jobKey, startedAt, "empty");
+      await markReviewReportStatus(job.reportDbId, "failed", "服务器浏览器已登录新零售，但当前账号/客户在当前口径无可复盘明细数据。");
+      finishReviewJob(jobKey, job.startedAt, "empty");
       const error = new Error("服务器浏览器已登录新零售，但当前账号/客户在当前口径无可复盘明细数据。");
       error.statusCode = 422;
       error.summary = summaryForResponse(summary);
       throw error;
     }
     datasetId = await saveDatasetRecord(user.id, "wecom_browser", summary, summary.source || "企微扫码服务器登录");
+    assertReviewJobNotCancelled(getActiveReviewJob(jobKey));
     const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary, user);
-    const dbReportId = await saveReviewReportRecord(user.id, "wecom_browser", "企微扫码服务器登录", summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
+    assertReviewJobNotCancelled(getActiveReviewJob(jobKey));
+    const dbReportId = await saveReviewReportRecord(user.id, "wecom_browser", "企微扫码服务器登录", summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl }, { reportDbId: job.reportDbId, jobKey });
     await linkDatasetToReviewReport(datasetId, dbReportId, "completed");
-    finishReviewJob(jobKey, startedAt, reportId);
+    finishReviewJob(jobKey, job.startedAt, reportId);
     return { ok: true, id: dbReportId, summary: summaryForResponse(summary), report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl };
   } catch (error) {
-    activeReviewJobs.delete(jobKey);
+    await failReviewJob(jobKey, error, job.reportDbId);
     await linkDatasetToReviewReport(datasetId, null, "failed", error.message);
     console.error(`[review] failed ${jobKey}:`, error);
     throw error;
@@ -6727,7 +7105,7 @@ async function triggerWeComBrowserAutoReport(session, reason = "") {
   if (session.autoReport?.status === "running" || session.autoReport?.status === "completed") return;
   if (activeWeComAutoReports.has(session.id)) return;
   const canUseBrowserSession = Boolean(session.page && !session.page.isClosed() && canProbeMerchantBusiness(session.page.url()));
-  if (!session.exportReady && session.status !== "captured" && !canUseBrowserSession) return;
+  if (!session.exportReady && !canUseBrowserSession) return;
   activeWeComAutoReports.add(session.id);
   session.autoReport = { status: "running", reason, startedAt: new Date().toISOString() };
   session.updatedAt = session.autoReport.startedAt;
@@ -6938,6 +7316,61 @@ async function handleGetReport(req, res, id) {
   sendJson(res, 200, { report });
 }
 
+async function handleCancelReviewJob(req, res, id) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const report = await getReviewReport(user, id);
+  if (!report) {
+    sendJson(res, 404, { error: "任务不存在或无权操作。" });
+    return;
+  }
+  if (report.status === "completed") {
+    sendJson(res, 409, { error: "报告已经生成完成，不能取消。" });
+    return;
+  }
+  const activeEntry = Array.from(activeReviewJobs.entries()).find(([, job]) => job.reportDbId === id || job.key === report.jobKey);
+  if (activeEntry) {
+    activeEntry[1].cancelRequested = true;
+    activeReviewJobs.delete(activeEntry[0]);
+  }
+  const updated = await updateReviewReportByUser(user, id, {
+    status: "cancelled",
+    errorMessage: "用户已取消该复盘任务。",
+    finishNow: true,
+  });
+  sendJson(res, 200, { ok: true, report: updated });
+}
+
+async function handleRetryReviewJob(req, res, id) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const report = await getReviewReport(user, id);
+  if (!report) {
+    sendJson(res, 404, { error: "任务不存在或无权操作。" });
+    return;
+  }
+  if (report.status === "running") {
+    sendJson(res, 409, { error: "该复盘任务仍在生成中，请先取消或等待完成。" });
+    return;
+  }
+  if (report.status === "completed") {
+    sendJson(res, 409, { error: "报告已经生成完成，无需重试。" });
+    return;
+  }
+  const updated = await updateReviewReportByUser(user, id, {
+    status: "cancelled",
+    errorMessage: "已准备重试，请回到AI复盘报告页面重新发起生成。",
+    finishNow: true,
+  });
+  sendJson(res, 200, {
+    ok: true,
+    report: updated,
+    action: "open_ai_review",
+    sourceType: report.sourceType,
+    message: "请回到AI复盘报告页重新发起生成。为了数据安全，系统不会保存或回填四季蝉密码、企微token和上传Excel原文件。",
+  });
+}
+
 async function handleSubmitCapabilityTest(req, res) {
   const body = await readJsonBody(req, 1024 * 1024 * 2);
   const submission = await saveCapabilitySubmission(body, req);
@@ -7043,6 +7476,10 @@ function createServer() {
       if (browserSessionMatch && req.method === "GET") return await handleGetWeComBrowserSession(req, res, decodeURIComponent(browserSessionMatch[1]));
       const reportMatch = url.pathname.match(/^\/api\/review-reports\/([^/]+)$/);
       if (reportMatch && req.method === "GET") return await handleGetReport(req, res, decodeURIComponent(reportMatch[1]));
+      const cancelReviewJobMatch = url.pathname.match(/^\/api\/review-reports\/([^/]+)\/cancel$/);
+      if (cancelReviewJobMatch && req.method === "POST") return await handleCancelReviewJob(req, res, decodeURIComponent(cancelReviewJobMatch[1]));
+      const retryReviewJobMatch = url.pathname.match(/^\/api\/review-reports\/([^/]+)\/retry$/);
+      if (retryReviewJobMatch && req.method === "POST") return await handleRetryReviewJob(req, res, decodeURIComponent(retryReviewJobMatch[1]));
       return serveStatic(req, res);
     } catch (error) {
       const status = error.statusCode || (error.message && error.message.includes("超过10MB") ? 413 : 500);

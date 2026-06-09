@@ -1948,22 +1948,61 @@
         );
       }
 
-      function ReportActionButtons({ row, compact = false }) {
+      const reportStatusMeta = {
+        running: { text: "\u751f\u6210\u4e2d", color: "processing" },
+        completed: { text: "\u5df2\u5b8c\u6210", color: "green" },
+        failed: { text: "\u5931\u8d25", color: "red" },
+        cancelled: { text: "\u5df2\u53d6\u6d88", color: "default" },
+      };
+
+      function ReportStatusTag({ status }) {
+        const meta = reportStatusMeta[status || "completed"] || { text: status || "\u672a\u77e5", color: "default" };
+        return h(Tag, { color: meta.color }, meta.text);
+      }
+
+      function ReportActionButtons({ row, compact = false, onRefresh, onRetryOpen }) {
         const item = normalizeReportArtifact(row);
         const gridClass = compact ? "mobile-action-grid" : "";
+        const isCompleted = (row.status || "completed") === "completed" && item.shareUrl;
+        const cancelJob = async () => {
+          try {
+            await apiJson(`/api/review-reports/${encodeURIComponent(row.id)}/cancel`, { method: "POST", body: JSON.stringify({}) });
+            message.success("\u5df2\u53d6\u6d88\u8be5\u590d\u76d8\u4efb\u52a1");
+            onRefresh?.();
+          } catch (err) {
+            message.error(err.message || "\u53d6\u6d88\u5931\u8d25");
+          }
+        };
+        const retryJob = async () => {
+          try {
+            const data = await apiJson(`/api/review-reports/${encodeURIComponent(row.id)}/retry`, { method: "POST", body: JSON.stringify({}) });
+            message.info(data.message || "\u8bf7\u56de\u5230AI\u590d\u76d8\u62a5\u544a\u9875\u91cd\u65b0\u53d1\u8d77\u751f\u6210");
+            onRefresh?.();
+            onRetryOpen?.(row);
+          } catch (err) {
+            message.error(err.message || "\u91cd\u8bd5\u51c6\u5907\u5931\u8d25");
+          }
+        };
+        if (!isCompleted) {
+          return h(
+            "div",
+            { className: compact ? gridClass : "report-action-inline" },
+            row.status === "running" ? h(Button, { danger: true, onClick: cancelJob }, "\u53d6\u6d88\u4efb\u52a1") : null,
+            ["failed", "cancelled"].includes(row.status) ? h(Button, { type: "primary", onClick: retryJob }, "\u91cd\u8bd5") : null,
+          );
+        }
         return h(
           "div",
           { className: compact ? gridClass : "report-action-inline" },
-          h(Button, { href: item.shareUrl, target: "_blank", type: compact ? "primary" : "default" }, "打开分享页"),
-          h(Button, { onClick: () => showQrModal(item) }, "二维码"),
-          h(Button, { href: item.svgUrl, target: "_blank" }, "下载SVG"),
-          item.excelUrl ? h(Button, { href: item.excelUrl, target: "_blank" }, "Excel汇总") : null,
-          item.diagnosticsUrl ? h(Button, { href: item.diagnosticsUrl, target: "_blank" }, "接口诊断") : null,
-          item.normalizedDataUrl ? h(Button, { href: item.normalizedDataUrl, target: "_blank" }, "标准化数据") : null,
-          h(Button, { onClick: () => copyText(item.shareUrl).then(() => message.success("分享链接已复制")) }, "复制链接"),
+          h(Button, { href: item.shareUrl, target: "_blank", type: compact ? "primary" : "default" }, "\u6253\u5f00\u5206\u4eab\u9875"),
+          h(Button, { onClick: () => showQrModal(item) }, "\u4e8c\u7ef4\u7801"),
+          h(Button, { href: item.svgUrl, target: "_blank" }, "\u4e0b\u8f7dSVG"),
+          item.excelUrl ? h(Button, { href: item.excelUrl, target: "_blank" }, "Excel\u6c47\u603b") : null,
+          item.diagnosticsUrl ? h(Button, { href: item.diagnosticsUrl, target: "_blank" }, "\u63a5\u53e3\u8bca\u65ad") : null,
+          item.normalizedDataUrl ? h(Button, { href: item.normalizedDataUrl, target: "_blank" }, "\u6807\u51c6\u5316\u6570\u636e") : null,
+          h(Button, { onClick: () => copyText(item.shareUrl).then(() => message.success("\u5206\u4eab\u94fe\u63a5\u5df2\u590d\u5236")) }, "\u590d\u5236\u94fe\u63a5"),
         );
       }
-
       async function readApiJson(response) {
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.error || "请求处理失败。");
@@ -2658,8 +2697,8 @@
           }
           const values = sourceForm.getFieldsValue();
           const merCode = String(values.merCode || "").trim();
-          if (!merCode) {
-            message.warning("请先填写商户编码");
+          if (!/^\d{6}$/.test(merCode)) {
+            message.warning("访问用户编码请输入6位数字");
             return;
           }
           try {
@@ -2698,6 +2737,11 @@
 
         const createWeComBrowserSession = async (options = {}) => {
           const values = sourceForm.getFieldsValue();
+          const merCode = String(values.merCode || "").trim();
+          if (!/^\d{6}$/.test(merCode)) {
+            message.warning("请先填写6位访问用户编码，扫码成功后服务器会自动填入");
+            return;
+          }
           try {
             setWeComBrowserSession(null);
             setWeComHandoff(null);
@@ -2715,7 +2759,7 @@
             setWeComBrowserSession(data.session);
             setWeComHandoff({ id: data.session.handoffId, captured: data.session.captured });
             pollWeComBrowserSession(data.session.id);
-            message.success(options.autoRefresh ? "企微二维码已自动刷新，请扫描新的二维码" : "服务器扫码会话已创建，请用企业微信扫描页面二维码");
+            message.success(options.autoRefresh ? "企微二维码已自动刷新，请扫描新的二维码" : "服务器扫码会话已创建；扫码成功后会自动填写访问用户编码");
           } catch (err) {
             message.error(err.message || "服务器扫码会话创建失败");
           }
@@ -2765,6 +2809,9 @@
           if (!activeHandoff?.captured && !activeSession?.exportReady && !activeSession?.merchantReady) {
             if (!options.auto) message.warning("服务器尚未进入新零售管理平台，请扫码登录后稍等片刻");
             return;
+          }
+          if (!activeSession?.id && activeHandoff?.captured && !options.auto) {
+            message.warning("当前是备用token链路。请优先使用服务器扫码登录态；只有调试时才使用备用token。");
           }
           const values = sourceForm.getFieldsValue();
           setLoading(true);
@@ -3005,7 +3052,11 @@
                         h(
                           Row,
                           { gutter: [12, 0] },
-                          h(Col, { xs: 24, md: 12 }, h(Form.Item, { label: "访问用户编码（5位客户编码）", name: "merCode" }, h(Input, { placeholder: "企微扫码后传到选择访问用户界面" }))),
+                          h(Col, { xs: 24, md: 12 }, h(Form.Item, {
+                            label: "访问用户编码（6位客户编码）",
+                            name: "merCode",
+                            rules: [{ pattern: /^\d{6}$/, message: "请输入6位数字编码" }],
+                          }, h(Input, { maxLength: 6, inputMode: "numeric", placeholder: "扫码后在选择访问用户页面填写" }))),
                           h(Col, { xs: 24, md: 12 }, h(Form.Item, { label: "客户名称（选填）", name: "merName" }, h(Input, { placeholder: "用于报告标题和历史记录标记" }))),
                         ),
                       ),
@@ -3013,26 +3064,25 @@
                         Card,
                         { size: "small", className: "gate-card", style: { marginTop: 16 } },
                         h(Title, { level: 5, style: { marginBottom: 8 } }, "服务器扫码登录新零售管理平台"),
-                        h(Paragraph, { type: "secondary" }, "点击后会在服务器打开可复用浏览器资料，并把企微二维码显示在本页。扫码确认后如果进入新零售管理平台，登录态会保留在服务器，系统会自动监听授权并尝试导出数据。"),
+                        h(Paragraph, { type: "secondary" }, "主流程：先填写6位访问用户编码，再生成服务器二维码；你用手机企业微信扫码确认后，服务器会等待客户编码输入框出现，自动填入编码并点击确认进入新零售。"),
                         h(
                           Space,
                           { wrap: true },
-                          h(Button, { type: "primary", loading, onClick: createWeComBrowserSession }, "生成并保存服务器扫码登录"),
-                          h(Button, { loading, onClick: createWeComBrowserProfileSession }, "检测服务器已登录态"),
-                          h(Button, { loading, onClick: createWeComBrowserSession }, "一次性扫码"),
+                          h(Button, { type: "primary", loading, onClick: createWeComBrowserSession }, "生成服务器扫码二维码"),
                           h(Button, { disabled: !weComBrowserSession?.id, onClick: refreshWeComBrowserSession }, "刷新扫码状态"),
-                          h(Button, { disabled: !weComBrowserSession?.id, onClick: fillWeComBrowserMerchantCode }, "填入访问用户并登录"),
-                          h(Button, { type: "primary", loading, disabled: !weComBrowserSession?.merchantReady && !weComBrowserSession?.exportReady && !weComHandoff?.captured, onClick: generateFromWeComHandoff }, weComHandoff?.captured ? "用已捕获授权生成报告" : "用服务器登录态生成报告"),
+                          h(Button, { disabled: !weComBrowserSession?.id || !weComBrowserSession?.merchantCodeFillAvailable, onClick: fillWeComBrowserMerchantCode }, "重新提交客户编码"),
+                          h(Button, { type: "primary", loading, disabled: !weComBrowserSession?.merchantReady && !weComBrowserSession?.exportReady, onClick: generateFromWeComHandoff }, "用服务器登录态生成报告"),
+                          h(Button, { loading, onClick: createWeComBrowserProfileSession }, "检测服务器已登录态"),
                           h(Button, {
                             onClick: () => {
                               const merCode = String(sourceForm.getFieldValue("merCode") || "").trim();
-                              if (!merCode) {
-                                message.warning("请先填写商户编码");
+                              if (!/^\d{6}$/.test(merCode)) {
+                                message.warning("访问用户编码请输入6位数字");
                                 return;
                               }
-                              copyText(merCode).then(() => message.success("商户编码已复制"));
+                              copyText(merCode).then(() => message.success("访问用户编码已复制"));
                             },
-                          }, "复制商户编码"),
+                          }, "复制访问用户编码"),
                         ),
                         weComBrowserSession
                           ? h(
@@ -3054,7 +3104,7 @@
                                       ? "服务器浏览器已通过业务接口探测，可以使用当前登录态直接导出数据并生成复盘报告。"
                                     : weComBrowserSession.merchantReady
                                       ? (weComBrowserSession.exportProbeError ? `已进入新零售，正在等待接口可用：${weComBrowserSession.exportProbeError}` : "服务器浏览器已经进入新零售管理平台，正在验证导出接口。")
-                                    : weComBrowserSession.lastError || "请使用企业微信扫描上方二维码；扫码确认后如果进入新零售管理平台，服务器会自动尝试获取授权并填入客户编码。",
+                                    : weComBrowserSession.lastError || "请使用企业微信扫描上方二维码；扫码确认后服务器会等待“选择访问用户”页面出现，并自动填写6位访问用户编码。",
                                 },
                               ),
                               h(
@@ -3146,8 +3196,8 @@
                         { ghost: true, style: { marginTop: 12 } },
                         h(
                           Collapse.Panel,
-                          { key: "fallback", header: "备用方式：手动授权交接" },
-                          h(Paragraph, { type: "secondary" }, "仅在服务器扫码无法捕获时使用。可以打开企微扫码页，或粘贴新零售接口请求中的 Authorization token 生成报告。"),
+                          { key: "fallback", header: "调试备用：手动token授权" },
+                          h(Paragraph, { type: "secondary" }, "仅供技术排查使用。正式取数请使用上方“服务器扫码登录态”，避免 token 与访问用户编码不匹配导致数据为0。"),
                           h(Form, { form: sourceForm, layout: "vertical" },
                             h(Form.Item, { label: "新零售管理平台授权token", name: "token" }, h(Input.TextArea, { rows: 3, placeholder: "粘贴登录后接口请求中的 Authorization token；可带 Bearer 前缀，系统会自动清理。" })),
                           ),
@@ -3450,7 +3500,7 @@
         );
       }
 
-      function HistoryPage({ auth, onLogin, onRegister }) {
+      function HistoryPage({ auth, onLogin, onRegister, onOpenAiReview }) {
         if (!auth?.user) {
           return h(GateCard, { title: "登录后查看历史复盘报告", text: "每次AI复盘生成后都会保存到历史报告，方便再次打开分享页、下载SVG或二维码。", onLogin, onRegister });
         }
@@ -3470,27 +3520,35 @@
         React.useEffect(() => {
           loadReports();
         }, [loadReports]);
+        React.useEffect(() => {
+          if (!reports.some((row) => row.status === "running")) return undefined;
+          const timer = window.setInterval(loadReports, 8000);
+          return () => window.clearInterval(timer);
+        }, [reports, loadReports]);
 
         const columns = [
-          { title: "报告标题", dataIndex: "reportTitle", render: (text, row) => {
+          { title: "\u62a5\u544a\u6807\u9898", dataIndex: "reportTitle", render: (text, row) => {
             const item = normalizeReportArtifact(row);
-            return h("a", { href: item.shareUrl, target: "_blank", rel: "noreferrer" }, text);
+            const titleNode = row.status === "completed" && item.shareUrl
+              ? h("a", { href: item.shareUrl, target: "_blank", rel: "noreferrer" }, text)
+              : h(Text, null, text || "\u590d\u76d8\u62a5\u544a\u4efb\u52a1");
+            return h(Space, { direction: "vertical", size: 4 }, titleNode, row.errorMessage ? h(Text, { type: "danger" }, row.errorMessage) : null);
           } },
-          { title: "来源", dataIndex: "sourceName", width: 140 },
-          { title: "生成时间", dataIndex: "createdAt", width: 190, render: (value) => value ? dayjs(value).format("YYYY-MM-DD HH:mm") : "" },
+          { title: "\u72b6\u6001", dataIndex: "status", width: 100, render: (status) => h(ReportStatusTag, { status }) },
+          { title: "\u6765\u6e90", dataIndex: "sourceName", width: 140 },
+          { title: "\u751f\u6210\u65f6\u95f4", dataIndex: "createdAt", width: 190, render: (value) => value ? dayjs(value).format("YYYY-MM-DD HH:mm") : "" },
           {
-            title: "操作",
+            title: "\u64cd\u4f5c",
             width: 360,
             render: (_, row) => {
               return h(
                 Space,
                 { wrap: true },
-                h(ReportActionButtons, { row }),
+                h(ReportActionButtons, { row, onRefresh: loadReports, onRetryOpen: () => onOpenAiReview?.() }),
               );
             },
           },
         ];
-
         const mobileReports = h(
           "div",
           { className: "mobile-only mobile-card-list" },
@@ -3502,20 +3560,22 @@
               h(
                 "div",
                 { className: "mobile-card-head" },
-                h("a", { href: item.shareUrl, target: "_blank", rel: "noreferrer", className: "mobile-card-title" }, row.reportTitle || "四季蝉AI复盘报告"),
-                h(Tag, { color: row.sourceType === "login" ? "blue" : "gold" }, row.sourceName || row.sourceType || "复盘"),
+                row.status === "completed" && item.shareUrl
+                  ? h("a", { href: item.shareUrl, target: "_blank", rel: "noreferrer", className: "mobile-card-title" }, row.reportTitle || "???AI????")
+                  : h("div", { className: "mobile-card-title" }, row.reportTitle || "??????"),
+                h(Space, { wrap: true, size: [6, 6] }, h(ReportStatusTag, { status: row.status }), h(Tag, { color: row.sourceType === "login" ? "blue" : "gold" }, row.sourceName || row.sourceType || "??")),
               ),
               h(
                 "div",
                 { className: "mobile-meta-grid" },
-                h(MobileMetaItem, { label: "生成时间" }, row.createdAt ? dayjs(row.createdAt).format("YYYY-MM-DD HH:mm") : "暂无"),
-                h(MobileMetaItem, { label: "来源" }, row.sourceName || "暂无"),
+                h(MobileMetaItem, { label: "????" }, row.createdAt ? dayjs(row.createdAt).format("YYYY-MM-DD HH:mm") : "??"),
+                h(MobileMetaItem, { label: "??" }, row.sourceName || "??"),
+                row.errorMessage ? h(MobileMetaItem, { label: "????" }, h(Text, { type: "danger" }, row.errorMessage)) : null,
               ),
-              h(ReportActionButtons, { row, compact: true }),
+              h(ReportActionButtons, { row, compact: true, onRefresh: loadReports, onRetryOpen: () => onOpenAiReview?.() }),
             );
           }),
         );
-
         return h(
           "div",
           { className: "history-shell" },
