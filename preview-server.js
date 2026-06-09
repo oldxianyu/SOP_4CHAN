@@ -4399,8 +4399,18 @@ async function createWeComBrowserSession(user, body = {}) {
       logWeComSessionState(session, `mer-code-${filled}`);
     }
   };
+  const noteMerchantReady = () => {
+    const ready = Boolean(session.page && !session.page.isClosed() && isMerchantRuntimeUrl(session.page.url()));
+    if (ready && !session.merchantReadyAt) session.merchantReadyAt = Date.now();
+    if (!ready) session.merchantReadyAt = 0;
+    return ready;
+  };
+  const merchantStableEnough = (delayMs = 6000) => {
+    if (!noteMerchantReady()) return false;
+    return Boolean(session.merchantReadyAt && Date.now() - session.merchantReadyAt >= delayMs);
+  };
   const triggerMerchantProbe = async () => {
-    if (!session.page || session.page.isClosed() || !isMerchantRuntimeUrl(session.page.url())) return;
+    if (!session.page || session.page.isClosed() || !merchantStableEnough()) return;
     const now = Date.now();
     if (session.lastProbeAt && now - session.lastProbeAt < 8000) return;
     session.lastProbeAt = now;
@@ -4422,7 +4432,7 @@ async function createWeComBrowserSession(user, body = {}) {
     session.updatedAt = new Date().toISOString();
   };
   const probeExportReady = async () => {
-    if (!session.page || session.page.isClosed() || !isMerchantRuntimeUrl(session.page.url()) || session.exportReady) return;
+    if (!session.page || session.page.isClosed() || !merchantStableEnough() || session.exportReady) return;
     const now = Date.now();
     if (session.lastExportProbeAt && now - session.lastExportProbeAt < 10000) return;
     session.lastExportProbeAt = now;
@@ -4546,6 +4556,7 @@ async function createWeComBrowserSession(user, body = {}) {
           }).catch(() => null);
           session.updatedAt = new Date().toISOString();
           logWeComSessionState(session, "navigate");
+          noteMerchantReady();
           scanMerchantPageStorage().catch(() => null);
           scanMerchantCookies().catch(() => null);
           tryFillMerchantCode().catch(() => null);
@@ -4671,6 +4682,7 @@ async function createWeComBrowserSession(user, body = {}) {
         }).catch(() => null);
         session.updatedAt = new Date().toISOString();
         logWeComSessionState(session, "navigate");
+        noteMerchantReady();
         scanMerchantPageStorage().catch(() => null);
         scanMerchantCookies().catch(() => null);
         tryFillMerchantCode().catch(() => null);
@@ -4712,6 +4724,7 @@ async function createWeComBrowserSession(user, body = {}) {
           session.pageTitle = await session.page.title().catch(() => session.pageTitle || "");
           await refreshOpenPages();
           await refreshScanStage();
+          noteMerchantReady();
           if (session.scanStage === "qr_expired") await refreshWeComQrImage("expired");
           session.updatedAt = new Date().toISOString();
           await scanMerchantPageStorage();
