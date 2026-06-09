@@ -4202,6 +4202,18 @@ function isMerchantHostUrl(url) {
   }
 }
 
+function canProbeMerchantBusiness(url) {
+  try {
+    const parsed = new URL(String(url || ""), sijichanApiOrigin);
+    if (parsed.hostname !== "merchants.hydee.cn") return false;
+    if (/\/app-login/i.test(parsed.pathname)) return false;
+    if (/\/app-jump\/super-admin-login/i.test(parsed.pathname)) return false;
+    return parsed.pathname === "/" || isMerchantRuntimeUrl(parsed.href);
+  } catch {
+    return false;
+  }
+}
+
 function isWeComSsoJumpUrl(url) {
   try {
     const parsed = new URL(String(url || ""), sijichanApiOrigin);
@@ -4513,7 +4525,7 @@ async function createWeComBrowserSession(user, body = {}) {
     }
   };
   const noteMerchantReady = () => {
-    const ready = Boolean(session.page && !session.page.isClosed() && isMerchantRuntimeUrl(session.page.url()));
+    const ready = Boolean(session.page && !session.page.isClosed() && canProbeMerchantBusiness(session.page.url()));
     if (ready && !session.merchantReadyAt) session.merchantReadyAt = Date.now();
     if (!ready) session.merchantReadyAt = 0;
     return ready;
@@ -4746,7 +4758,8 @@ async function createWeComBrowserSession(user, body = {}) {
           session.updatedAt = new Date().toISOString();
           logWeComSessionState(session, "navigate");
           tryExchangeWeComCodeFromUrl(session.currentUrl).catch(() => null);
-          if (noteMerchantReady()) triggerWeComBrowserAutoReport(session, "merchant-ready-navigate");
+          noteMerchantReady();
+          if (isMerchantRuntimeUrl(session.currentUrl)) triggerWeComBrowserAutoReport(session, "merchant-ready-navigate");
           scanMerchantPageStorage().catch(() => null);
           scanMerchantCookies().catch(() => null);
           tryFillMerchantCode().catch(() => null);
@@ -4888,7 +4901,8 @@ async function createWeComBrowserSession(user, body = {}) {
         session.updatedAt = new Date().toISOString();
         logWeComSessionState(session, "navigate");
         tryExchangeWeComCodeFromUrl(session.currentUrl).catch(() => null);
-        if (noteMerchantReady()) triggerWeComBrowserAutoReport(session, "merchant-ready-navigate");
+        noteMerchantReady();
+        if (isMerchantRuntimeUrl(session.currentUrl)) triggerWeComBrowserAutoReport(session, "merchant-ready-navigate");
         scanMerchantPageStorage().catch(() => null);
         scanMerchantCookies().catch(() => null);
         tryFillMerchantCode().catch(() => null);
@@ -4902,8 +4916,9 @@ async function createWeComBrowserSession(user, body = {}) {
     session.pageTitle = await page.title().catch(() => "");
     await refreshOpenPages().catch(() => null);
     await refreshScanStage().catch(() => null);
-    if (session.profileReuse && isMerchantRuntimeUrl(page.url())) {
-      if (noteMerchantReady()) triggerWeComBrowserAutoReport(session, "profile-reuse-merchant-ready");
+    if (session.profileReuse && canProbeMerchantBusiness(page.url())) {
+      noteMerchantReady();
+      if (isMerchantRuntimeUrl(page.url())) triggerWeComBrowserAutoReport(session, "profile-reuse-merchant-ready");
       await scanMerchantPageStorage().catch(() => null);
       await scanMerchantCookies().catch(() => null);
       await tryFillMerchantCode().catch(() => null);
@@ -4945,7 +4960,8 @@ async function createWeComBrowserSession(user, body = {}) {
           session.pageTitle = await session.page.title().catch(() => session.pageTitle || "");
           await refreshOpenPages();
           await refreshScanStage();
-          if (noteMerchantReady()) triggerWeComBrowserAutoReport(session, "merchant-ready-poll");
+          noteMerchantReady();
+          if (isMerchantRuntimeUrl(session.currentUrl)) triggerWeComBrowserAutoReport(session, "merchant-ready-poll");
           if (session.scanStage === "qr_expired") await refreshWeComQrImage("expired");
           session.updatedAt = new Date().toISOString();
           await scanMerchantPageStorage();
