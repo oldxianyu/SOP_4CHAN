@@ -4079,6 +4079,13 @@ async function closeWeComBrowserSession(session, status = "") {
   }
   session.context = null;
   session.browser = null;
+  if (session.id) activeWeComBrowserSessions.delete(session.id);
+}
+
+async function closeActiveWeComBrowserSessionsForUser(userId, keepSessionId = "") {
+  const targets = Array.from(activeWeComBrowserSessions.values())
+    .filter((session) => session.userId === userId && session.id !== keepSessionId);
+  await Promise.allSettled(targets.map((session) => closeWeComBrowserSession(session, "closed")));
 }
 
 async function dataUrlFromRemoteImage(url) {
@@ -4115,6 +4122,7 @@ async function createWeComBrowserSession(user, body = {}) {
   } catch (error) {
     throw new Error("服务器未安装 playwright-core，暂不能使用服务器扫码模式。");
   }
+  await closeActiveWeComBrowserSessionsForUser(user.id);
   const handoff = await createSijichanTokenHandoff(user, body);
   const baseUrl = publicReportBaseUrl.replace(/\/+$/, "");
   const merchantRedirect = `${sijichanApiOrigin}/app-jump/super-admin-login`;
@@ -4159,12 +4167,13 @@ async function createWeComBrowserSession(user, body = {}) {
   };
   const refreshScanStage = async () => {
     if (!session.page || session.page.isClosed()) return;
-    if (/merchants\.hydee\.cn\/app-login/i.test(session.page.url())) {
+    const pageUrl = session.page.url();
+    if (/merchants\.hydee\.cn\/app-login/i.test(pageUrl)) {
       session.scanStage = "login_expired";
       session.scanHint = "服务器登录态已失效，请重新企微扫码";
       return;
     }
-    if (isMerchantRuntimeUrl(session.page.url())) {
+    if (isMerchantRuntimeUrl(pageUrl)) {
       session.scanStage = "merchant";
       session.scanHint = "已进入新零售管理平台";
       return;
