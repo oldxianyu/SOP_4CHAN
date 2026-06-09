@@ -4187,8 +4187,7 @@ function isMerchantRuntimeUrl(url) {
     if (/\/app-login/i.test(parsed.pathname)) return false;
     if (/\/app-jump\/super-admin-login/i.test(parsed.pathname)) return false;
     const routeText = `${parsed.pathname}${parsed.hash}${parsed.search}`;
-    return parsed.pathname === "/"
-      || /businesses-gateway|app-jump|super-admin|merchant|mer-manager|report|activity|industryOrder|imActivityReward|orderShareMoment/i.test(routeText);
+    return /businesses-gateway|super-admin|merchant|mer-manager|report|activity|industryOrder|imActivityReward|orderShareMoment/i.test(routeText);
   } catch {
     return false;
   }
@@ -4232,6 +4231,7 @@ async function createWeComBrowserSession(user, body = {}) {
     browser: null,
     context: null,
     page: null,
+    profileReuse: Boolean(body.profileReuse),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     expiresAt: handoff.expiresAt,
@@ -4594,6 +4594,12 @@ async function createWeComBrowserSession(user, body = {}) {
       logWeComSessionState(session, "export-probe-error");
     }
   };
+  session.prepareBrowserExport = async () => {
+    if (!session.page || session.page.isClosed()) return;
+    await tryFillMerchantCode().catch(() => null);
+    await triggerMerchantProbe().catch(() => null);
+    await probeExportReady().catch(() => null);
+  };
   const tryExchangeWeComCodeFromUrl = async (pageUrl) => {
     if (session.weComCodeExchangeTried || session.status === "captured") return;
     let parsed;
@@ -4658,7 +4664,7 @@ async function createWeComBrowserSession(user, body = {}) {
     session.context = context;
     const browser = context.browser();
     session.browser = browser;
-    await clearExpiredMerchantState(context);
+    if (!session.profileReuse) await clearExpiredMerchantState(context);
     browser?.on("disconnected", () => {
       if (session.status !== "captured" && session.status !== "expired" && session.status !== "error") {
         session.status = "error";
@@ -4879,14 +4885,29 @@ async function createWeComBrowserSession(user, body = {}) {
         probeExportReady().catch(() => null);
       }
     });
-    await page.goto(merchantWecomSsoUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+    const initialUrl = session.profileReuse ? `${sijichanApiOrigin}/` : merchantWecomSsoUrl;
+    await page.goto(initialUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
     session.currentUrl = page.url();
     session.pageTitle = await page.title().catch(() => "");
     await refreshOpenPages().catch(() => null);
     await refreshScanStage().catch(() => null);
+    if (session.profileReuse && isMerchantRuntimeUrl(page.url())) {
+      if (noteMerchantReady()) triggerWeComBrowserAutoReport(session, "profile-reuse-merchant-ready");
+      await scanMerchantPageStorage().catch(() => null);
+      await scanMerchantCookies().catch(() => null);
+      await tryFillMerchantCode().catch(() => null);
+      await triggerMerchantProbe().catch(() => null);
+      await probeExportReady().catch(() => null);
+    } else if (session.profileReuse) {
+      await page.goto(merchantWecomSsoUrl, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => null);
+      session.currentUrl = page.url();
+      session.pageTitle = await page.title().catch(() => "");
+      await refreshOpenPages().catch(() => null);
+      await refreshScanStage().catch(() => null);
+    }
     if (page.isClosed()) throw new Error("服务器浏览器页面已关闭，无法生成企微二维码。");
-    const qrLoaded = await refreshWeComQrImage("initial");
-    if (!qrLoaded) session.qrImage = `data:image/png;base64,${(await page.screenshot({ fullPage: false })).toString("base64")}`;
+    const qrLoaded = isMerchantRuntimeUrl(page.url()) ? false : await refreshWeComQrImage("initial");
+    if (!qrLoaded && !isMerchantRuntimeUrl(page.url())) session.qrImage = `data:image/png;base64,${(await page.screenshot({ fullPage: false })).toString("base64")}`;
     page.waitForTimeout(1000)
       .then(async () => {
         if (!page.isClosed() && session.status === "waiting_scan") {
@@ -6517,11 +6538,7 @@ async function triggerWeComBrowserAutoReport(session, reason = "") {
     try {
       const user = await getUserById(session.userId);
       if (!user) throw new Error("企微扫码用户不存在，无法自动生成报告。");
-      if (session.page && !session.page.isClosed()) {
-        await tryFillMerchantCode().catch(() => null);
-        await triggerMerchantProbe().catch(() => null);
-        await probeExportReady().catch(() => null);
-      }
+      if (typeof session.prepareBrowserExport === "function") await session.prepareBrowserExport();
       const result = await buildWeComBrowserSessionReportForUser(user, session, {
         merCode: session.handoff?.merCode,
         merName: session.handoff?.merName,
