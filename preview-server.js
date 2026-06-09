@@ -4458,7 +4458,7 @@ async function createWeComBrowserSession(user, body = {}) {
     for (const cookie of cookies) {
       const key = cookie?.name || "";
       const value = cookie?.value || "";
-      if (/token|authorization|access|jwt/i.test(key) || /Bearer\s+/i.test(value)) {
+      if (/token|authorization|access|jwt|_?pati/i.test(key) || /Bearer\s+/i.test(value)) {
         await maybeCapture(value, `server-browser-cookie:${key}`, session.page.url());
       }
     }
