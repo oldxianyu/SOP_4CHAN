@@ -4492,6 +4492,52 @@ async function createWeComBrowserSession(user, body = {}) {
       logWeComSessionState(session, "export-probe-error");
     }
   };
+  const tryExchangeWeComCodeFromUrl = async (pageUrl) => {
+    if (session.weComCodeExchangeTried || session.status === "captured") return;
+    let parsed;
+    try {
+      parsed = new URL(String(pageUrl || ""));
+    } catch {
+      return;
+    }
+    const code = parsed.searchParams.get("code") || "";
+    const state = parsed.searchParams.get("state") || "";
+    if (!code) return;
+    session.weComCodeExchangeTried = true;
+    session.updatedAt = new Date().toISOString();
+    try {
+      const exchanged = await exchangeWeComCodeForSijichanToken({ code, handoffId: handoff.id, state });
+      if (exchanged.token) {
+        const capturedHandoff = await markSijichanHandoffCapturedById(handoff.id, user.id, exchanged.token, {
+          from: "server-browser-wecom-code",
+          href: pageUrl,
+        });
+        session.status = "captured";
+        session.lastError = "";
+        session.updatedAt = new Date().toISOString();
+        await upsertSijichanTokenAuthorization(user.id, {
+          token: exchanged.token,
+          merCode: capturedHandoff.merCode || handoff.merCode,
+          merName: capturedHandoff.merName || handoff.merName,
+          username: `wecom_${capturedHandoff.merCode || handoff.merCode || handoff.id}`,
+        }, { requestInfo: { merCode: capturedHandoff.merCode || handoff.merCode, merName: capturedHandoff.merName || handoff.merName } }).catch((error) => {
+          console.warn(`[wecom-browser] code token authorization persist skipped: ${error.message}`);
+        });
+        triggerWeComTokenAutoReport(user.id, capturedHandoff, exchanged.token, "server-browser-code");
+        triggerWeComBrowserAutoReport(session, "server-browser-code");
+        logWeComSessionState(session, "code-token-captured");
+      } else {
+        const message = (exchanged.diagnostics || []).join("；") || "企微code未换取到业务token";
+        session.lastError = message;
+        await markSijichanHandoffError(state || handoff.handoffToken, message);
+        logWeComSessionState(session, "code-token-empty");
+      }
+    } catch (error) {
+      session.lastError = error.message || "企微code换取业务token失败";
+      await markSijichanHandoffError(state || handoff.handoffToken, session.lastError);
+      logWeComSessionState(session, "code-token-error");
+    }
+  };
   try {
     session.profileDir = weComBrowserProfileDir(user.id, body.profileReuse ? "" : session.id);
     const context = await chromium.launchPersistentContext(session.profileDir, {
@@ -4529,6 +4575,7 @@ async function createWeComBrowserSession(user, body = {}) {
       });
       nextPage.on("request", (request) => {
         session.lastRequestUrl = request.url();
+        tryExchangeWeComCodeFromUrl(request.url()).catch(() => null);
         const headers = request.headers();
         maybeCapture(headers.authorization || headers.Authorization, "server-browser-request-header", request.url());
         maybeCapture(request.url(), "server-browser-request-url", request.url());
@@ -4537,6 +4584,7 @@ async function createWeComBrowserSession(user, body = {}) {
       });
       nextPage.on("response", async (response) => {
         session.lastRequestUrl = response.url();
+        tryExchangeWeComCodeFromUrl(response.url()).catch(() => null);
         const headers = response.headers();
         maybeCapture(headers.authorization || headers.Authorization, "server-browser-response-header", response.url());
         const contentType = headers["content-type"] || "";
@@ -4556,6 +4604,7 @@ async function createWeComBrowserSession(user, body = {}) {
           }).catch(() => null);
           session.updatedAt = new Date().toISOString();
           logWeComSessionState(session, "navigate");
+          tryExchangeWeComCodeFromUrl(session.currentUrl).catch(() => null);
           noteMerchantReady();
           scanMerchantPageStorage().catch(() => null);
           scanMerchantCookies().catch(() => null);
@@ -4655,6 +4704,7 @@ async function createWeComBrowserSession(user, body = {}) {
     });
     page.on("request", (request) => {
       session.lastRequestUrl = request.url();
+      tryExchangeWeComCodeFromUrl(request.url()).catch(() => null);
       const headers = request.headers();
       maybeCapture(headers.authorization || headers.Authorization, "server-browser-request-header", request.url());
       maybeCapture(request.url(), "server-browser-request-url", request.url());
@@ -4663,6 +4713,7 @@ async function createWeComBrowserSession(user, body = {}) {
     });
     page.on("response", async (response) => {
       session.lastRequestUrl = response.url();
+      tryExchangeWeComCodeFromUrl(response.url()).catch(() => null);
       const headers = response.headers();
       maybeCapture(headers.authorization || headers.Authorization, "server-browser-response-header", response.url());
       const contentType = headers["content-type"] || "";
@@ -4682,6 +4733,7 @@ async function createWeComBrowserSession(user, body = {}) {
         }).catch(() => null);
         session.updatedAt = new Date().toISOString();
         logWeComSessionState(session, "navigate");
+        tryExchangeWeComCodeFromUrl(session.currentUrl).catch(() => null);
         noteMerchantReady();
         scanMerchantPageStorage().catch(() => null);
         scanMerchantCookies().catch(() => null);
