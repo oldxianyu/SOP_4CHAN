@@ -1622,6 +1622,14 @@ async function captureSijichanTokenHandoff(handoffToken, token, details = {}) {
   if (!payload?.id || !payload?.userId) throw new Error("企微授权交接码无效或已过期。");
   const normalizedToken = assertSijichanTokenFormat(token);
   if (!(await isDbAvailable())) throw new Error("数据库未连接，无法保存企微授权token。");
+  const existing = await queryDb(
+    "select mer_code from sijichan_token_handoffs where id=$1 and user_id=$2 limit 1",
+    [payload.id, payload.userId],
+  ).catch(() => ({ rows: [] }));
+  const validation = await validateSijichanTokenCandidate(normalizedToken, existing.rows[0]?.mer_code || "");
+  if (!validation.ok) {
+    throw new Error(`授权token验证失败：HTTP ${validation.status || "-"}${validation.code ? ` / ${validation.code}` : ""}${validation.message ? ` / ${validation.message}` : ""}`);
+  }
   const tokenExpiresAt = details.expiresAt ? new Date(details.expiresAt) : null;
   const result = await queryDb(
     `update sijichan_token_handoffs
@@ -4337,6 +4345,17 @@ async function createWeComBrowserSession(user, body = {}) {
     const token = normalizeSijichanToken(match ? (match[1] || match[2] || "") : raw);
     if (!token || token.length < 20 || !/^[A-Za-z0-9._\-]+$/.test(token)) return;
     try {
+      const validation = await validateSijichanTokenCandidate(token, handoff.merCode);
+      if (!validation.ok) {
+        const message = `候选授权不可用：HTTP ${validation.status || "-"}${validation.code ? ` / ${validation.code}` : ""}${validation.message ? ` / ${validation.message}` : ""}`;
+        if (allowSsoJump || isWeComSsoJumpUrl(runtimeUrl)) {
+          addSsoDiagnostic({ from, path: "/app-jump/super-admin-login", tokenFound: false, message });
+        }
+        session.lastError = message;
+        session.updatedAt = new Date().toISOString();
+        logWeComSessionState(session, `candidate-token-rejected:${from}`);
+        return;
+      }
       const capturedHandoff = await markSijichanHandoffCapturedById(handoff.id, user.id, token, { from, href: runtimeUrl });
       if (!capturedHandoff.merCode) {
         const recent = await findRecentSijichanMerInfoForUser(user.id);
@@ -4385,26 +4404,28 @@ async function createWeComBrowserSession(user, body = {}) {
       ...Object.entries(headers).map(([key, value]) => `${key}: ${value}`),
       ...setCookies.map((value) => `set-cookie: ${value}`),
     ].join("\n");
+    const headerCandidateToken = extractSijichanTokenFromText(`${location}\n${headerText}`);
     addSsoDiagnostic({
       from,
       status,
       path: parsed ? parsed.pathname : "/app-jump/super-admin-login",
       location: location ? location.slice(0, 240) : "",
       codeSeen: Boolean(parsed?.searchParams?.get("code")),
-      tokenFound: Boolean(extractSijichanTokenFromText(`${location}\n${headerText}`)),
-      message: "检测到企微 SSO 跳转响应",
+      tokenFound: Boolean(headerCandidateToken),
+      message: headerCandidateToken ? "检测到企微 SSO 跳转响应，发现候选授权，正在验证" : "检测到企微 SSO 跳转响应",
     });
     await maybeCapture(`${location}\n${headerText}`, `server-browser-sso-${from}-headers`, url, { allowSsoJump: true });
     if (/json|text|javascript|html/i.test(contentType)) {
       const text = await response.text().catch(() => "");
       if (text) {
+        const bodyCandidateToken = extractSijichanTokenFromText(text);
         addSsoDiagnostic({
           from: `${from}-body`,
           status,
           path: parsed ? parsed.pathname : "/app-jump/super-admin-login",
           codeSeen: Boolean(parsed?.searchParams?.get("code")),
-          tokenFound: Boolean(extractSijichanTokenFromText(text)),
-          message: text.slice(0, 180).replace(/\s+/g, " "),
+          tokenFound: Boolean(bodyCandidateToken),
+          message: `${bodyCandidateToken ? "发现候选授权，正在验证；" : ""}${text.slice(0, 180).replace(/\s+/g, " ")}`,
         });
         await maybeCapture(text, `server-browser-sso-${from}-body`, url, { allowSsoJump: true });
       }
@@ -5020,6 +5041,36 @@ async function sijichanPost(endpoint, body, token, merCode) {
     request: body || {},
     response: json,
     fetchedAt: new Date().toISOString(),
+  };
+}
+
+async function validateSijichanTokenCandidate(token, merCode = "") {
+  const normalizedToken = assertSijichanTokenFormat(token);
+  let response;
+  try {
+    response = await fetch(`${sijichanManagerBase}report/activityReward/queryTopStatisticData`, {
+      method: "POST",
+      headers: sijichanHeaders(normalizedToken, merCode),
+      body: JSON.stringify(merCode ? { merCode } : {}),
+    });
+  } catch (error) {
+    return { ok: false, token: normalizedToken, status: 0, code: "", message: `验证请求失败：${networkErrorMessage(error)}` };
+  }
+  const text = await response.text().catch(() => "");
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = { raw: text };
+  }
+  const code = String(json?.code || "");
+  const ok = response.ok && (!code || code === "10000");
+  return {
+    ok,
+    token: normalizedToken,
+    status: response.status,
+    code,
+    message: json?.msg || json?.message || (ok ? "token验证通过" : text.slice(0, 180)),
   };
 }
 
@@ -6334,6 +6385,7 @@ async function handleCaptureWeComToken(req, res) {
     const handoff = await captureSijichanTokenHandoff(body.handoffToken || body.state || "", body.token || body.authorization || "", body);
     sendJson(res, 200, { ok: true, handoff }, weComCaptureCorsHeaders(req));
   } catch (error) {
+    await markSijichanHandoffError(body.handoffToken || body.state || "", error.message || "企微授权token交接失败。");
     sendJson(res, 400, { error: error.message || "企微授权token交接失败。" }, weComCaptureCorsHeaders(req));
   }
 }
