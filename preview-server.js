@@ -48,6 +48,7 @@ let dbReady = false;
 let dbChecked = false;
 const activeReviewJobs = new Set();
 const activeWeComBrowserSessions = new Map();
+const activeWeComAutoReports = new Set();
 const workbookDetailRowLimit = Number(process.env.WORKBOOK_DETAIL_ROW_LIMIT || 5000);
 const disableLocalDataFallback = process.env.DISABLE_LOCAL_DATA_FALLBACK === "true";
 
@@ -4015,6 +4016,7 @@ function getWeComBrowserSessionPublic(session) {
     exportProbeAt: session.exportProbeAt || "",
     exportProbeError: session.exportProbeError || "",
     exportProbeDetails: Array.isArray(session.exportProbeDetails) ? session.exportProbeDetails.slice(0, 8) : [],
+    autoReport: session.autoReport || null,
     merCodeFilled: Boolean(session.merCodeFilled),
     merCodeSubmitTried: Boolean(session.merCodeSubmitTried),
     scanStage: session.scanStage || "",
@@ -4283,6 +4285,7 @@ async function createWeComBrowserSession(user, body = {}) {
       session.lastError = "";
       session.updatedAt = new Date().toISOString();
       logWeComSessionState(session, `captured:${from}`);
+      triggerWeComBrowserAutoReport(session, `captured:${from}`);
     } catch (error) {
       session.lastError = error.message || "服务器扫码 token 保存失败。";
       session.updatedAt = new Date().toISOString();
@@ -4426,6 +4429,7 @@ async function createWeComBrowserSession(user, body = {}) {
       if (success) {
         session.exportReady = true;
         session.exportProbeError = "";
+        triggerWeComBrowserAutoReport(session, `export-ready:${success.label || ""}`);
       } else {
         const firstError = results.find((item) => item.msg || item.code || item.status);
         session.exportProbeError = firstError ? `${firstError.label}：${firstError.msg || firstError.code || `HTTP ${firstError.status}`}` : "业务接口探测未返回有效结果";
@@ -6032,6 +6036,8 @@ async function handleGetWeComBrowserSession(req, res, id) {
     session.updatedAt = new Date().toISOString();
     logWeComSessionState(session, "handoff-captured");
   }
+  if (session.status === "captured") triggerWeComBrowserAutoReport(session, "handoff-captured");
+  if (session.exportReady) triggerWeComBrowserAutoReport(session, "export-ready-poll");
   logWeComSessionState(session, "poll");
   sendJson(res, 200, { ok: true, session: getWeComBrowserSessionPublic(session), handoff });
 }
@@ -6138,11 +6144,12 @@ async function handleWeComHandoffReviewReport(req, res) {
   await generateWeComTokenReportForUser(user, res, { token: handoff.token, merCode: body.merCode || handoff.merCode, merName: body.merName || handoff.merName });
 }
 
-async function generateWeComBrowserSessionReportForUser(user, res, session, body = {}) {
+async function buildWeComBrowserSessionReportForUser(user, session, body = {}) {
   const config = await loadAiConfigForUser(user);
   if (!config.apiKey || !config.model) {
-    sendJson(res, 400, { error: "AI服务未配置，请在AI配置页面保存自己的API Key，或联系管理员hydee配置兜底API。" });
-    return;
+    const error = new Error("AI服务未配置，请在AI配置页面保存自己的API Key，或联系管理员hydee配置兜底API。");
+    error.statusCode = 400;
+    throw error;
   }
   const jobKey = `wecom-browser:${user.id}`;
   const startedAt = beginReviewJob(jobKey);
@@ -6158,22 +6165,76 @@ async function generateWeComBrowserSessionReportForUser(user, res, session, body
     const summary = summarizeSijichanRaw(raw);
     const files = summary.datasetFiles || [];
     if (!files.some((file) => file.rowCount > 0)) {
-      sendJson(res, 422, { error: "服务器浏览器已登录新零售，但当前账号/客户在当前口径无可复盘明细数据。", summary: summaryForResponse(summary) });
       finishReviewJob(jobKey, startedAt, "empty");
-      return;
+      const error = new Error("服务器浏览器已登录新零售，但当前账号/客户在当前口径无可复盘明细数据。");
+      error.statusCode = 422;
+      error.summary = summaryForResponse(summary);
+      throw error;
     }
     datasetId = await saveDatasetRecord(user.id, "wecom_browser", summary, summary.source || "企微扫码服务器登录");
     const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary, user);
     const dbReportId = await saveReviewReportRecord(user.id, "wecom_browser", "企微扫码服务器登录", summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
     await linkDatasetToReviewReport(datasetId, dbReportId, "completed");
     finishReviewJob(jobKey, startedAt, reportId);
-    sendJson(res, 200, { ok: true, id: dbReportId, summary: summaryForResponse(summary), report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
+    return { ok: true, id: dbReportId, summary: summaryForResponse(summary), report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl };
   } catch (error) {
     activeReviewJobs.delete(jobKey);
     await linkDatasetToReviewReport(datasetId, null, "failed", error.message);
     console.error(`[review] failed ${jobKey}:`, error);
     throw error;
   }
+}
+
+async function generateWeComBrowserSessionReportForUser(user, res, session, body = {}) {
+  try {
+    sendJson(res, 200, await buildWeComBrowserSessionReportForUser(user, session, body));
+  } catch (error) {
+    sendJson(res, error.statusCode || 500, { error: error.message || "企微授权数据导入失败。", summary: error.summary });
+  }
+}
+
+async function triggerWeComBrowserAutoReport(session, reason = "") {
+  if (!session || !session.userId || !session.id) return;
+  if (session.autoReport?.status === "running" || session.autoReport?.status === "completed") return;
+  if (activeWeComAutoReports.has(session.id)) return;
+  if (!session.exportReady && session.status !== "captured") return;
+  activeWeComAutoReports.add(session.id);
+  session.autoReport = { status: "running", reason, startedAt: new Date().toISOString() };
+  session.updatedAt = session.autoReport.startedAt;
+  setImmediate(async () => {
+    try {
+      const user = await getUserById(session.userId);
+      if (!user) throw new Error("企微扫码用户不存在，无法自动生成报告。");
+      const result = await buildWeComBrowserSessionReportForUser(user, session, {
+        merCode: session.handoff?.merCode,
+        merName: session.handoff?.merName,
+      });
+      session.autoReport = {
+        status: "completed",
+        reason,
+        completedAt: new Date().toISOString(),
+        id: result.id,
+        reportId: result.reportId,
+        shareUrl: result.shareUrl,
+        svgUrl: result.svgUrl,
+        qrSvgUrl: result.qrSvgUrl,
+        excelUrl: result.excelUrl,
+      };
+      session.updatedAt = session.autoReport.completedAt;
+      console.log(`[wecom-browser] auto-report ${session.id} ${result.reportId}`);
+    } catch (error) {
+      session.autoReport = {
+        status: "failed",
+        reason,
+        failedAt: new Date().toISOString(),
+        error: error.message || "企微扫码自动生成报告失败。",
+      };
+      session.updatedAt = session.autoReport.failedAt;
+      console.error(`[wecom-browser] auto-report failed ${session.id}:`, error);
+    } finally {
+      activeWeComAutoReports.delete(session.id);
+    }
+  });
 }
 
 async function handleWeComBrowserSessionReviewReport(req, res) {

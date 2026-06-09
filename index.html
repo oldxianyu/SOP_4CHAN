@@ -3057,6 +3057,15 @@
                                 weComBrowserSession.pageTitle ? h(Text, { type: "secondary" }, `页面标题：${weComBrowserSession.pageTitle}`) : null,
                                 weComBrowserSession.currentUrl ? h(Text, { type: "secondary", style: { display: "block", wordBreak: "break-all" } }, `主页面：${weComBrowserSession.currentUrl}`) : null,
                                 weComBrowserSession.lastRequestUrl ? h(Text, { type: "secondary", style: { display: "block", wordBreak: "break-all" } }, `最近请求：${weComBrowserSession.lastRequestUrl}`) : null,
+                                weComBrowserSession.autoReport
+                                  ? h(
+                                      "div",
+                                      { style: { marginTop: 8 } },
+                                      h(Text, { type: weComBrowserSession.autoReport.status === "failed" ? "danger" : weComBrowserSession.autoReport.status === "completed" ? "success" : "secondary", strong: true }, `自动生成报告：${weComBrowserSession.autoReport.status === "running" ? "生成中" : weComBrowserSession.autoReport.status === "completed" ? "已完成" : weComBrowserSession.autoReport.status === "failed" ? "失败" : "等待"}`),
+                                      weComBrowserSession.autoReport.error ? h(Text, { type: "danger", style: { display: "block" } }, weComBrowserSession.autoReport.error) : null,
+                                      weComBrowserSession.autoReport.shareUrl ? h("a", { href: normalizeReportArtifact(weComBrowserSession.autoReport.shareUrl), target: "_blank", rel: "noreferrer", style: { display: "block", wordBreak: "break-all" } }, "打开自动生成的分享报告") : null,
+                                    )
+                                  : null,
                                 Array.isArray(weComBrowserSession.exportProbeDetails) && weComBrowserSession.exportProbeDetails.length
                                   ? h(
                                       "div",
