@@ -4699,7 +4699,7 @@ async function createWeComBrowserSession(user, body = {}) {
           session.updatedAt = new Date().toISOString();
           logWeComSessionState(session, "navigate");
           tryExchangeWeComCodeFromUrl(session.currentUrl).catch(() => null);
-          noteMerchantReady();
+          if (noteMerchantReady()) triggerWeComBrowserAutoReport(session, "merchant-ready-navigate");
           scanMerchantPageStorage().catch(() => null);
           scanMerchantCookies().catch(() => null);
           tryFillMerchantCode().catch(() => null);
@@ -4841,7 +4841,7 @@ async function createWeComBrowserSession(user, body = {}) {
         session.updatedAt = new Date().toISOString();
         logWeComSessionState(session, "navigate");
         tryExchangeWeComCodeFromUrl(session.currentUrl).catch(() => null);
-        noteMerchantReady();
+        if (noteMerchantReady()) triggerWeComBrowserAutoReport(session, "merchant-ready-navigate");
         scanMerchantPageStorage().catch(() => null);
         scanMerchantCookies().catch(() => null);
         tryFillMerchantCode().catch(() => null);
@@ -4883,7 +4883,7 @@ async function createWeComBrowserSession(user, body = {}) {
           session.pageTitle = await session.page.title().catch(() => session.pageTitle || "");
           await refreshOpenPages();
           await refreshScanStage();
-          noteMerchantReady();
+          if (noteMerchantReady()) triggerWeComBrowserAutoReport(session, "merchant-ready-poll");
           if (session.scanStage === "qr_expired") await refreshWeComQrImage("expired");
           session.updatedAt = new Date().toISOString();
           await scanMerchantPageStorage();
@@ -6287,6 +6287,7 @@ async function handleGetWeComBrowserSession(req, res, id) {
   }
   if (session.status === "captured") triggerWeComBrowserAutoReport(session, "handoff-captured");
   if (session.exportReady) triggerWeComBrowserAutoReport(session, "export-ready-poll");
+  if (session.page && !session.page.isClosed() && isMerchantRuntimeUrl(session.page.url())) triggerWeComBrowserAutoReport(session, "merchant-ready-poll");
   logWeComSessionState(session, "poll");
   sendJson(res, 200, { ok: true, session: getWeComBrowserSessionPublic(session), handoff });
 }
@@ -6446,7 +6447,8 @@ async function triggerWeComBrowserAutoReport(session, reason = "") {
   if (!session || !session.userId || !session.id) return;
   if (session.autoReport?.status === "running" || session.autoReport?.status === "completed") return;
   if (activeWeComAutoReports.has(session.id)) return;
-  if (!session.exportReady && session.status !== "captured") return;
+  const canUseBrowserSession = Boolean(session.page && !session.page.isClosed() && isMerchantRuntimeUrl(session.page.url()));
+  if (!session.exportReady && session.status !== "captured" && !canUseBrowserSession) return;
   activeWeComAutoReports.add(session.id);
   session.autoReport = { status: "running", reason, startedAt: new Date().toISOString() };
   session.updatedAt = session.autoReport.startedAt;
@@ -6454,6 +6456,11 @@ async function triggerWeComBrowserAutoReport(session, reason = "") {
     try {
       const user = await getUserById(session.userId);
       if (!user) throw new Error("企微扫码用户不存在，无法自动生成报告。");
+      if (session.page && !session.page.isClosed()) {
+        await tryFillMerchantCode().catch(() => null);
+        await triggerMerchantProbe().catch(() => null);
+        await probeExportReady().catch(() => null);
+      }
       const result = await buildWeComBrowserSessionReportForUser(user, session, {
         merCode: session.handoff?.merCode,
         merName: session.handoff?.merName,

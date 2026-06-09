@@ -2737,8 +2737,8 @@
             if (!options.auto) message.warning("请先创建服务器扫码会话");
             return;
           }
-          if (!activeHandoff?.captured && !activeSession?.exportReady) {
-            if (!options.auto) message.warning("服务器尚未确认新零售导出能力，请扫码登录后稍等片刻");
+          if (!activeHandoff?.captured && !activeSession?.exportReady && !activeSession?.merchantReady) {
+            if (!options.auto) message.warning("服务器尚未进入新零售管理平台，请扫码登录后稍等片刻");
             return;
           }
           const values = sourceForm.getFieldsValue();
@@ -2995,7 +2995,7 @@
                           h(Button, { type: "primary", loading, onClick: createWeComBrowserSession }, "生成企微扫码二维码"),
                           h(Button, { loading, onClick: createWeComBrowserProfileSession }, "检测服务器已登录态"),
                           h(Button, { disabled: !weComBrowserSession?.id, onClick: refreshWeComBrowserSession }, "刷新扫码状态"),
-                          h(Button, { type: "primary", loading, disabled: !weComBrowserSession?.exportReady && !weComHandoff?.captured, onClick: generateFromWeComHandoff }, weComHandoff?.captured ? "用已捕获授权生成报告" : "用服务器登录态生成报告"),
+                          h(Button, { type: "primary", loading, disabled: !weComBrowserSession?.merchantReady && !weComBrowserSession?.exportReady && !weComHandoff?.captured, onClick: generateFromWeComHandoff }, weComHandoff?.captured ? "用已捕获授权生成报告" : "用服务器登录态生成报告"),
                           h(Button, {
                             onClick: () => {
                               const merCode = String(sourceForm.getFieldValue("merCode") || "").trim();
