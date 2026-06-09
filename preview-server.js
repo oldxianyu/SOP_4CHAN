@@ -1622,6 +1622,8 @@ async function captureSijichanTokenHandoff(handoffToken, token, details = {}) {
     [payload.id, payload.userId, encryptSecret(normalizedToken), tokenExpiresAt && !Number.isNaN(tokenExpiresAt.getTime()) ? tokenExpiresAt.toISOString() : null],
   );
   if (!result.rows[0]) throw new Error("企微授权交接会话不存在或已过期。");
+  const handoff = normalizeSijichanTokenHandoff(result.rows[0], true);
+  triggerWeComTokenAutoReport(payload.userId, handoff, normalizedToken, details.from || "handoff-capture");
   return normalizeSijichanTokenHandoff(result.rows[0]);
 }
 
@@ -4272,7 +4274,7 @@ async function createWeComBrowserSession(user, body = {}) {
     const token = normalizeSijichanToken((String(raw || "").match(tokenPattern) || [])[1] || (String(raw || "").match(tokenPattern) || [])[2] || raw);
     if (!token || token.length < 20 || !/^[A-Za-z0-9._\-]+$/.test(token)) return;
     try {
-      await markSijichanHandoffCapturedById(handoff.id, user.id, token, { from, href: runtimeUrl });
+      const capturedHandoff = await markSijichanHandoffCapturedById(handoff.id, user.id, token, { from, href: runtimeUrl });
       await upsertSijichanTokenAuthorization(user.id, {
         token,
         merCode: handoff.merCode,
@@ -4285,6 +4287,7 @@ async function createWeComBrowserSession(user, body = {}) {
       session.lastError = "";
       session.updatedAt = new Date().toISOString();
       logWeComSessionState(session, `captured:${from}`);
+      triggerWeComTokenAutoReport(user.id, capturedHandoff, token, `server-browser:${from}`);
       triggerWeComBrowserAutoReport(session, `captured:${from}`);
     } catch (error) {
       session.lastError = error.message || "服务器扫码 token 保存失败。";
@@ -5948,12 +5951,13 @@ async function handleWeComTokenReviewReport(req, res) {
   return await generateWeComTokenReportForUser(user, res, { ...body, token });
 }
 
-async function generateWeComTokenReportForUser(user, res, body) {
+async function buildWeComTokenReportForUser(user, body) {
   const token = assertSijichanTokenFormat(body.token || body.authorization || "");
   const config = await loadAiConfigForUser(user);
   if (!config.apiKey || !config.model) {
-    sendJson(res, 400, { error: "AI服务未配置，请在AI配置页面保存自己的API Key，或联系管理员hydee配置兜底API。" });
-    return;
+    const error = new Error("AI服务未配置，请在AI配置页面保存自己的API Key，或联系管理员hydee配置兜底API。");
+    error.statusCode = 400;
+    throw error;
   }
   const jobKey = `wecom:${user.id}`;
   const startedAt = beginReviewJob(jobKey);
@@ -5963,9 +5967,11 @@ async function generateWeComTokenReportForUser(user, res, body) {
     const summary = await runSijichanTokenExport({ ...body, token });
     const files = summary.datasetFiles || [];
     if (!files.some((file) => file.rowCount > 0)) {
-      sendJson(res, 422, { error: "授权token可访问接口，但当前账号/客户在当前口径无可复盘明细数据。", summary: summaryForResponse(summary) });
       finishReviewJob(jobKey, startedAt, "empty");
-      return;
+      const error = new Error("授权token可访问接口，但当前账号/客户在当前口径无可复盘明细数据。");
+      error.statusCode = 422;
+      error.summary = summaryForResponse(summary);
+      throw error;
     }
     datasetId = await saveDatasetRecord(user.id, "wecom_token", summary, summary.source || "企微扫码授权");
     const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary, user);
@@ -5975,13 +5981,47 @@ async function generateWeComTokenReportForUser(user, res, body) {
     });
     await linkDatasetToReviewReport(datasetId, dbReportId, "completed");
     finishReviewJob(jobKey, startedAt, reportId);
-    sendJson(res, 200, { ok: true, id: dbReportId, summary: summaryForResponse(summary), report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
+    return { ok: true, id: dbReportId, summary: summaryForResponse(summary), report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl };
   } catch (error) {
     activeReviewJobs.delete(jobKey);
     await linkDatasetToReviewReport(datasetId, null, "failed", error.message);
     console.error(`[review] failed ${jobKey}:`, error);
     throw error;
   }
+}
+
+async function generateWeComTokenReportForUser(user, res, body) {
+  try {
+    sendJson(res, 200, await buildWeComTokenReportForUser(user, body));
+  } catch (error) {
+    sendJson(res, error.statusCode || 500, { error: error.message || "企微授权数据导入失败。", summary: error.summary });
+  }
+}
+
+async function triggerWeComTokenAutoReport(userId, handoff, token, reason = "") {
+  if (!userId || !handoff?.id || !token) return;
+  const autoKey = `token:${handoff.id}`;
+  if (activeWeComAutoReports.has(autoKey)) return;
+  activeWeComAutoReports.add(autoKey);
+  setImmediate(async () => {
+    try {
+      const user = await getUserById(userId);
+      if (!user) throw new Error("企微扫码用户不存在，无法自动生成token报告。");
+      const result = await buildWeComTokenReportForUser(user, {
+        token,
+        merCode: handoff.merCode,
+        merName: handoff.merName,
+        username: `wecom_${handoff.merCode || handoff.id}`,
+      });
+      await queryDb("update sijichan_token_handoffs set used_at=now(), status='used', updated_at=now() where id=$1", [handoff.id]).catch(() => null);
+      console.log(`[wecom-token] auto-report ${handoff.id} ${reason} ${result.reportId}`);
+    } catch (error) {
+      await queryDb("update sijichan_token_handoffs set last_error=$2, updated_at=now() where id=$1", [handoff.id, String(error.message || "企微token自动生成报告失败。").slice(0, 1000)]).catch(() => null);
+      console.error(`[wecom-token] auto-report failed ${handoff.id}:`, error);
+    } finally {
+      activeWeComAutoReports.delete(autoKey);
+    }
+  });
 }
 
 async function handleCreateWeComHandoff(req, res) {
