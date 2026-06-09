@@ -4088,6 +4088,40 @@ async function closeActiveWeComBrowserSessionsForUser(userId, keepSessionId = ""
   await Promise.allSettled(targets.map((session) => closeWeComBrowserSession(session, "closed")));
 }
 
+async function clearExpiredMerchantState(context) {
+  if (!context) return;
+  await context.clearCookies().catch(() => null);
+  const cleanupPage = await context.newPage().catch(() => null);
+  if (!cleanupPage) return;
+  try {
+    await cleanupPage.goto(`${sijichanApiOrigin}/`, { waitUntil: "domcontentloaded", timeout: 12000 }).catch(() => null);
+    await cleanupPage.evaluate(() => {
+      try { localStorage.clear(); } catch {}
+      try { sessionStorage.clear(); } catch {}
+      try {
+        if (window.indexedDB?.databases) {
+          window.indexedDB.databases().then((items) => {
+            (items || []).forEach((item) => item?.name && window.indexedDB.deleteDatabase(item.name));
+          }).catch(() => null);
+        }
+      } catch {}
+      try {
+        if (window.caches?.keys) {
+          window.caches.keys().then((keys) => keys.forEach((key) => window.caches.delete(key))).catch(() => null);
+        }
+      } catch {}
+      try {
+        document.cookie.split(";").forEach((item) => {
+          const name = item.split("=")[0]?.trim();
+          if (name) document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+        });
+      } catch {}
+    }).catch(() => null);
+  } finally {
+    await cleanupPage.close().catch(() => null);
+  }
+}
+
 async function dataUrlFromRemoteImage(url) {
   if (!url) return "";
   const response = await fetch(url, {
@@ -4390,6 +4424,7 @@ async function createWeComBrowserSession(user, body = {}) {
     session.context = context;
     const browser = context.browser();
     session.browser = browser;
+    await clearExpiredMerchantState(context);
     browser?.on("disconnected", () => {
       if (session.status !== "captured" && session.status !== "expired" && session.status !== "error") {
         session.status = "error";
