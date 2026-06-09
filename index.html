@@ -3019,7 +3019,7 @@
                         h(
                           Space,
                           { wrap: true },
-                          h(Button, { type: "primary", loading, onClick: createWeComBrowserProfileSession }, "生成并保存服务器扫码登录"),
+                          h(Button, { type: "primary", loading, onClick: createWeComBrowserSession }, "生成并保存服务器扫码登录"),
                           h(Button, { loading, onClick: createWeComBrowserProfileSession }, "检测服务器已登录态"),
                           h(Button, { loading, onClick: createWeComBrowserSession }, "一次性扫码"),
                           h(Button, { disabled: !weComBrowserSession?.id, onClick: refreshWeComBrowserSession }, "刷新扫码状态"),

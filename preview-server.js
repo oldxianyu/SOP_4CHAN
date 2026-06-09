@@ -4803,6 +4803,7 @@ async function createWeComBrowserSession(user, body = {}) {
     });
     const attachMerchantPage = (nextPage) => {
       if (!nextPage || nextPage === session.page || nextPage.isClosed()) return;
+      if (/merchants\.hydee\.cn\/app-login/i.test(nextPage.url())) return;
       session.page = nextPage;
       session.currentUrl = nextPage.url();
       nextPage.title().then((title) => {
@@ -4876,10 +4877,10 @@ async function createWeComBrowserSession(user, body = {}) {
     };
     context.on("page", (nextPage) => {
       nextPage.waitForLoadState("domcontentloaded", { timeout: 15000 }).catch(() => null).finally(() => {
-        if (isMerchantRuntimeUrl(nextPage.url())) attachMerchantPage(nextPage);
+        if (canAttemptMerchantCodeFill(nextPage.url())) attachMerchantPage(nextPage);
       });
       nextPage.on("framenavigated", () => {
-        if (isMerchantRuntimeUrl(nextPage.url())) attachMerchantPage(nextPage);
+        if (canAttemptMerchantCodeFill(nextPage.url())) attachMerchantPage(nextPage);
       });
     });
     await context.exposeBinding("sop4chanCaptureToken", async (source, payload = {}) => {
@@ -5038,11 +5039,27 @@ async function createWeComBrowserSession(user, body = {}) {
       await refreshScanStage().catch(() => null);
     }
     if (page.isClosed()) throw new Error("服务器浏览器页面已关闭，无法生成企微二维码。");
-    const qrLoaded = isMerchantRuntimeUrl(page.url()) ? false : await refreshWeComQrImage("initial");
+    const qrLoaded = !isMerchantRuntimeUrl(page.url()) && /login\.work\.weixin\.qq\.com\/wwlogin\/sso\/login/i.test(page.url())
+      ? await (async () => {
+          const qrImageUrl = await page.evaluate(() => {
+            const image = document.querySelector(".wwLogin_qrcode_img") || [...document.images].find((img) => /qrcode/i.test(img.src || ""));
+            return image ? image.src : "";
+          }).catch(() => "");
+          if (!qrImageUrl) return false;
+          session.qrImage = await dataUrlFromRemoteImage(qrImageUrl);
+          session.currentUrl = page.url();
+          session.pageTitle = await page.title().catch(() => session.pageTitle || "");
+          await refreshOpenPages().catch(() => null);
+          await refreshScanStage().catch(() => null);
+          session.updatedAt = new Date().toISOString();
+          logWeComSessionState(session, "qr-image");
+          return true;
+        })()
+      : isMerchantRuntimeUrl(page.url()) ? false : await refreshWeComQrImage("initial");
     if (!qrLoaded && !isMerchantRuntimeUrl(page.url())) session.qrImage = `data:image/png;base64,${(await page.screenshot({ fullPage: false })).toString("base64")}`;
     page.waitForTimeout(1000)
       .then(async () => {
-        if (!page.isClosed() && session.status === "waiting_scan") {
+        if (!page.isClosed() && session.status === "waiting_scan" && /login\.work\.weixin\.qq\.com\/wwlogin\/sso\/login/i.test(page.url())) {
           const nextQrImageUrl = await page.evaluate(() => {
             const image = document.querySelector(".wwLogin_qrcode_img") || [...document.images].find((img) => /qrcode/i.test(img.src || ""));
             return image ? image.src : "";
