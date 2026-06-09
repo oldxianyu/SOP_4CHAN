@@ -2651,6 +2651,32 @@
           }
         };
 
+        const fillWeComBrowserMerchantCode = async () => {
+          if (!weComBrowserSession?.id) {
+            message.warning("请先生成企微扫码二维码");
+            return;
+          }
+          const values = sourceForm.getFieldsValue();
+          const merCode = String(values.merCode || "").trim();
+          if (!merCode) {
+            message.warning("请先填写商户编码");
+            return;
+          }
+          try {
+            const response = await fetch(`/api/wecom-browser-session/${encodeURIComponent(weComBrowserSession.id)}/merchant-code`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(values),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error || "商户编码填入失败");
+            setWeComBrowserSession(data.session);
+            message.success("商户编码已填入服务器页面，请等待新零售登录完成");
+          } catch (err) {
+            message.error(err.message || "商户编码填入失败");
+          }
+        };
+
         const createWeComHandoff = async () => {
           const values = sourceForm.getFieldsValue();
           try {
@@ -2981,7 +3007,7 @@
                         h(
                           Row,
                           { gutter: [12, 0] },
-                          h(Col, { xs: 24, md: 12 }, h(Form.Item, { label: "客户编码（选填）", name: "merCode" }, h(Input, { placeholder: "填写后会尝试自动带入新零售平台" }))),
+                          h(Col, { xs: 24, md: 12 }, h(Form.Item, { label: "访问用户编码（5位客户编码）", name: "merCode" }, h(Input, { placeholder: "企微扫码后传到选择访问用户界面" }))),
                           h(Col, { xs: 24, md: 12 }, h(Form.Item, { label: "客户名称（选填）", name: "merName" }, h(Input, { placeholder: "用于报告标题和历史记录标记" }))),
                         ),
                       ),
@@ -2997,17 +3023,18 @@
                           h(Button, { loading, onClick: createWeComBrowserProfileSession }, "检测服务器已登录态"),
                           h(Button, { loading, onClick: createWeComBrowserSession }, "一次性扫码"),
                           h(Button, { disabled: !weComBrowserSession?.id, onClick: refreshWeComBrowserSession }, "刷新扫码状态"),
+                          h(Button, { disabled: !weComBrowserSession?.id, onClick: fillWeComBrowserMerchantCode }, "填入访问用户并登录"),
                           h(Button, { type: "primary", loading, disabled: !weComBrowserSession?.merchantReady && !weComBrowserSession?.exportReady && !weComHandoff?.captured, onClick: generateFromWeComHandoff }, weComHandoff?.captured ? "用已捕获授权生成报告" : "用服务器登录态生成报告"),
                           h(Button, {
                             onClick: () => {
                               const merCode = String(sourceForm.getFieldValue("merCode") || "").trim();
                               if (!merCode) {
-                                message.warning("请先填写客户编码");
+                                message.warning("请先填写商户编码");
                                 return;
                               }
-                              copyText(merCode).then(() => message.success("客户编码已复制"));
+                              copyText(merCode).then(() => message.success("商户编码已复制"));
                             },
-                          }, "复制客户编码"),
+                          }, "复制商户编码"),
                         ),
                         weComBrowserSession
                           ? h(

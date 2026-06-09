@@ -4055,6 +4055,7 @@ function getWeComBrowserSessionPublic(session) {
     autoReport: session.autoReport || null,
     merCodeFilled: Boolean(session.merCodeFilled),
     merCodeSubmitTried: Boolean(session.merCodeSubmitTried),
+    merchantCodeFillAvailable: Boolean(session.merchantCodeFillAvailable),
     scanStage: session.scanStage || "",
     scanHint: session.scanHint || "",
     pageTextHint: session.pageTextHint || "",
@@ -4234,6 +4235,78 @@ function isWeComSsoJumpUrl(url) {
   }
 }
 
+async function detectMerchantCodeInputInPage(page) {
+  if (!page || page.isClosed()) return false;
+  return page.evaluate(() => {
+    const isVisible = (node) => {
+      const rect = node.getBoundingClientRect();
+      const style = getComputedStyle(node);
+      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+    };
+    const dialog = [...document.querySelectorAll(".h-modal, .ant-modal, .el-dialog, .modal, [role='dialog'], body")]
+      .find((node) => isVisible(node) && /选择适用用户|商户编码|客户编码|适用用户/i.test(node.textContent || ""));
+    if (dialog && [...dialog.querySelectorAll("input, textarea")].some(isVisible)) return true;
+    const candidates = Array.from(document.querySelectorAll("input, textarea"));
+    return candidates.some((input) => {
+      const text = [
+        input.name,
+        input.id,
+        input.placeholder,
+        input.getAttribute("aria-label"),
+        input.closest("label")?.textContent,
+        input.parentElement?.textContent,
+        input.closest(".h-form-item, .ant-form-item, .h-modal, .ant-modal, .el-dialog, .modal")?.textContent,
+      ].filter(Boolean).join(" ");
+      return /客户编码|客户代码|商户编码|适用用户|门店编码|merCode|merchantCode|customerCode/i.test(text);
+    });
+  }).catch(() => false);
+}
+
+async function fillMerchantCodeInPage(page, merCode) {
+  if (!page || page.isClosed()) return false;
+  const code = String(merCode || "").trim();
+  if (!code) return false;
+  return page.evaluate((nextMerCode) => {
+    const isVisible = (node) => {
+      const rect = node.getBoundingClientRect();
+      const style = getComputedStyle(node);
+      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+    };
+    const dialog = [...document.querySelectorAll(".h-modal, .ant-modal, .el-dialog, .modal, [role='dialog'], body")]
+      .find((node) => isVisible(node) && /选择适用用户|商户编码|客户编码|适用用户/i.test(node.textContent || ""));
+    const dialogInput = dialog ? [...dialog.querySelectorAll("input, textarea")].find(isVisible) : null;
+    const candidates = Array.from(document.querySelectorAll("input, textarea"));
+    const target = dialogInput || candidates.find((input) => {
+      const text = [
+        input.name,
+        input.id,
+        input.placeholder,
+        input.getAttribute("aria-label"),
+        input.closest("label")?.textContent,
+        input.parentElement?.textContent,
+        input.closest(".h-form-item, .ant-form-item, .h-modal, .ant-modal, .el-dialog, .modal")?.textContent,
+      ].filter(Boolean).join(" ");
+      return /客户编码|客户代码|商户编码|适用用户|门店编码|merCode|merchantCode|customerCode/i.test(text);
+    });
+    if (!target) return false;
+    target.focus();
+    target.value = nextMerCode;
+    target.dispatchEvent(new Event("input", { bubbles: true }));
+    target.dispatchEvent(new Event("change", { bubbles: true }));
+    ["keydown", "keypress", "keyup"].forEach((type) => {
+      target.dispatchEvent(new KeyboardEvent(type, { key: "Enter", code: "Enter", bubbles: true }));
+    });
+    const buttonScope = dialog || document;
+    const buttons = Array.from(buttonScope.querySelectorAll("button, [role='button'], .ant-btn, .h-button, .el-button"));
+    const action = buttons.find((button) => /确认|确定|登录|进入|查询|切换|提交|搜索|下一步|授权/i.test(button.textContent || button.getAttribute("aria-label") || ""));
+    if (action) {
+      action.click();
+      return "filled-clicked";
+    }
+    return "filled";
+  }, code).catch(() => false);
+}
+
 async function createWeComBrowserSession(user, body = {}) {
   let chromium;
   try {
@@ -4265,6 +4338,7 @@ async function createWeComBrowserSession(user, body = {}) {
     context: null,
     page: null,
     profileReuse,
+    merchantCodeFillAvailable: false,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     expiresAt: handoff.expiresAt,
@@ -4548,44 +4622,13 @@ async function createWeComBrowserSession(user, body = {}) {
       }
     }
   };
-  const tryFillMerchantCode = async () => {
-    if (!handoff.merCode || !session.page || session.page.isClosed() || !canAttemptMerchantCodeFill(session.page.url()) || session.merCodeFilled) return;
-    const filled = await session.page.evaluate((merCode) => {
-      const candidates = Array.from(document.querySelectorAll("input, textarea"));
-      const target = candidates.find((input) => {
-        const text = [
-          input.name,
-          input.id,
-          input.placeholder,
-          input.getAttribute("aria-label"),
-          input.closest("label")?.textContent,
-          input.parentElement?.textContent,
-          input.closest(".h-form-item, .ant-form-item, .h-modal, .ant-modal, .el-dialog, .modal")?.textContent,
-        ].filter(Boolean).join(" ");
-        return /客户编码|客户代码|商户编码|适用用户|门店编码|merCode|merchantCode|customerCode/i.test(text);
-      });
-      if (!target) return false;
-      target.focus();
-      target.value = merCode;
-      target.dispatchEvent(new Event("input", { bubbles: true }));
-      target.dispatchEvent(new Event("change", { bubbles: true }));
-      ["keydown", "keypress", "keyup"].forEach((type) => {
-        target.dispatchEvent(new KeyboardEvent(type, { key: "Enter", code: "Enter", bubbles: true }));
-      });
-      const buttons = Array.from(document.querySelectorAll("button, [role='button'], .ant-btn, .h-button, .el-button"));
-      const action = buttons.find((button) => /确认|确定|登录|进入|查询|切换|提交|搜索|下一步|授权/i.test(button.textContent || button.getAttribute("aria-label") || ""));
-      if (action) {
-        action.click();
-        return "filled-clicked";
-      }
-      return "filled";
-    }, handoff.merCode).catch(() => false);
-    if (filled) {
-      session.merCodeFilled = true;
-      session.merCodeSubmitTried = filled === "filled-clicked";
-      session.updatedAt = new Date().toISOString();
-      logWeComSessionState(session, `mer-code-${filled}`);
+  const updateMerchantCodeFillAvailability = async () => {
+    if (!session.page || session.page.isClosed() || !canAttemptMerchantCodeFill(session.page.url())) {
+      session.merchantCodeFillAvailable = false;
+      return false;
     }
+    session.merchantCodeFillAvailable = await detectMerchantCodeInputInPage(session.page);
+    return session.merchantCodeFillAvailable;
   };
   const noteMerchantReady = () => {
     const ready = Boolean(session.page && !session.page.isClosed() && canProbeMerchantBusiness(session.page.url()));
@@ -4682,7 +4725,7 @@ async function createWeComBrowserSession(user, body = {}) {
   };
   session.prepareBrowserExport = async () => {
     if (!session.page || session.page.isClosed()) return;
-    await tryFillMerchantCode().catch(() => null);
+    await updateMerchantCodeFillAvailability().catch(() => null);
     await triggerMerchantProbe().catch(() => null);
     await probeExportReady().catch(() => null);
   };
@@ -4825,7 +4868,7 @@ async function createWeComBrowserSession(user, body = {}) {
           if (isMerchantRuntimeUrl(session.currentUrl)) triggerWeComBrowserAutoReport(session, "merchant-ready-navigate");
           scanMerchantPageStorage().catch(() => null);
           scanMerchantCookies().catch(() => null);
-          tryFillMerchantCode().catch(() => null);
+          updateMerchantCodeFillAvailability().catch(() => null);
           triggerMerchantProbe().catch(() => null);
           probeExportReady().catch(() => null);
         }
@@ -4968,7 +5011,7 @@ async function createWeComBrowserSession(user, body = {}) {
         if (isMerchantRuntimeUrl(session.currentUrl)) triggerWeComBrowserAutoReport(session, "merchant-ready-navigate");
         scanMerchantPageStorage().catch(() => null);
         scanMerchantCookies().catch(() => null);
-        tryFillMerchantCode().catch(() => null);
+        updateMerchantCodeFillAvailability().catch(() => null);
         triggerMerchantProbe().catch(() => null);
         probeExportReady().catch(() => null);
       }
@@ -4984,7 +5027,7 @@ async function createWeComBrowserSession(user, body = {}) {
       if (isMerchantRuntimeUrl(page.url())) triggerWeComBrowserAutoReport(session, "profile-reuse-merchant-ready");
       await scanMerchantPageStorage().catch(() => null);
       await scanMerchantCookies().catch(() => null);
-      await tryFillMerchantCode().catch(() => null);
+      await updateMerchantCodeFillAvailability().catch(() => null);
       await triggerMerchantProbe().catch(() => null);
       await probeExportReady().catch(() => null);
     } else if (session.profileReuse) {
@@ -5029,7 +5072,7 @@ async function createWeComBrowserSession(user, body = {}) {
           session.updatedAt = new Date().toISOString();
           await scanMerchantPageStorage();
           await scanMerchantCookies();
-          await tryFillMerchantCode();
+          await updateMerchantCodeFillAvailability();
           await triggerMerchantProbe();
           await probeExportReady();
         }
@@ -6466,6 +6509,50 @@ async function handleGetWeComBrowserSession(req, res, id) {
   sendJson(res, 200, { ok: true, session: getWeComBrowserSessionPublic(session), handoff });
 }
 
+async function handleFillWeComBrowserMerchantCode(req, res, id) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const session = activeWeComBrowserSessions.get(id);
+  if (!session || (user.role !== "admin" && session.userId !== user.id)) {
+    sendJson(res, 404, { error: "服务器扫码会话不存在或已过期。" });
+    return;
+  }
+  if (!session.page || session.page.isClosed()) {
+    sendJson(res, 409, { error: "服务器浏览器页面已关闭，请重新生成企微二维码。" });
+    return;
+  }
+  const body = await readJsonBody(req, 1024 * 64).catch(() => ({}));
+  const merCode = String(body.merCode || "").trim();
+  const merName = String(body.merName || "").trim();
+  if (!merCode) {
+    sendJson(res, 400, { error: "请先填写客户编码。" });
+    return;
+  }
+  if (!canAttemptMerchantCodeFill(session.page.url())) {
+    sendJson(res, 409, { error: "服务器浏览器尚未进入客户编码选择页，请先完成企微扫码确认。" });
+    return;
+  }
+  const filled = await fillMerchantCodeInPage(session.page, merCode);
+  if (!filled) {
+    session.merchantCodeFillAvailable = await detectMerchantCodeInputInPage(session.page);
+    session.updatedAt = new Date().toISOString();
+    sendJson(res, 409, { error: "当前服务器页面没有识别到客户编码输入框，请查看服务器页面截图确认扫码状态。", session: getWeComBrowserSessionPublic(session) });
+    return;
+  }
+  session.handoff.merCode = merCode;
+  session.handoff.merName = merName || session.handoff.merName || "";
+  session.merCodeFilled = true;
+  session.merCodeSubmitTried = filled === "filled-clicked";
+  session.merchantCodeFillAvailable = false;
+  session.updatedAt = new Date().toISOString();
+  await session.page.waitForTimeout(1200).catch(() => null);
+  session.currentUrl = session.page.url();
+  session.pageTitle = await session.page.title().catch(() => session.pageTitle || "");
+  await session.prepareBrowserExport?.().catch(() => null);
+  logWeComSessionState(session, `manual-mer-code-${filled}`);
+  sendJson(res, 200, { ok: true, filled, session: getWeComBrowserSessionPublic(session) });
+}
+
 async function handleGetWeComBrowserSessionScreenshot(req, res, id) {
   const user = await requireUser(req, res);
   if (!user) return;
@@ -6933,6 +7020,8 @@ function createServer() {
       if (handoffMatch && req.method === "GET") return await handleGetWeComHandoff(req, res, decodeURIComponent(handoffMatch[1]));
       const browserSessionScreenshotMatch = url.pathname.match(/^\/api\/wecom-browser-session\/([^/]+)\/screenshot$/);
       if (browserSessionScreenshotMatch && req.method === "GET") return await handleGetWeComBrowserSessionScreenshot(req, res, decodeURIComponent(browserSessionScreenshotMatch[1]));
+      const browserSessionFillCodeMatch = url.pathname.match(/^\/api\/wecom-browser-session\/([^/]+)\/merchant-code$/);
+      if (browserSessionFillCodeMatch && req.method === "POST") return await handleFillWeComBrowserMerchantCode(req, res, decodeURIComponent(browserSessionFillCodeMatch[1]));
       const browserSessionMatch = url.pathname.match(/^\/api\/wecom-browser-session\/([^/]+)$/);
       if (browserSessionMatch && req.method === "GET") return await handleGetWeComBrowserSession(req, res, decodeURIComponent(browserSessionMatch[1]));
       const reportMatch = url.pathname.match(/^\/api\/review-reports\/([^/]+)$/);
