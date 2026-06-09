@@ -672,6 +672,28 @@
         box-shadow: 0 14px 28px rgba(42, 75, 255, 0.18);
       }
 
+      .auth-secondary-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .auth-guest-row {
+        display: flex;
+        justify-content: center;
+        margin-top: 14px;
+      }
+
+      .auth-guest-button {
+        min-width: 132px;
+        height: 42px;
+        padding-inline: 22px;
+        border-radius: 999px;
+        font-size: 16px;
+        font-weight: 700;
+      }
+
       @media (max-width: 960px) {
         .auth-shell {
           grid-template-columns: 1fr;
@@ -2223,7 +2245,7 @@
         );
       }
 
-      function AuthPage({ mode, onModeChange, onAuthed }) {
+      function AuthPage({ mode, onModeChange, onAuthed, onGuestBrowse }) {
         const [form] = Form.useForm();
         const [loading, setLoading] = React.useState(false);
         const [focusType, setFocusType] = React.useState("");
@@ -2272,7 +2294,7 @@
               "div",
               { className: "auth-scene-copy" },
               h("div", { className: "auth-brand" }, h("img", { src: "assets/四季蝉.png", alt: "四季蝉logo" }), h("span", null, "海典四季蝉")),
-              h(Title, { level: 2 }, isRegister ? "欢迎加入重点品动销门户" : "欢迎回到四季蝉客户门户"),
+              h(Title, { level: 2 }, isRegister ? "欢迎加入海典四季蝉" : "欢迎回到海典四季蝉"),
               h(Paragraph, null, isRegister ? "注册后即可保存客户复盘记录，让每一次动销分析都能沉淀下来。" : "登录后数据分析复盘、生成AI复盘报告，并继续查看历史分享材料。"),
             ),
             h(
@@ -2290,7 +2312,7 @@
               Card,
               { bordered: false, className: "auth-card" },
               h(Tag, { color: "blue", className: "hero-platform-tag" }, isRegister ? "开放注册" : "用户登录"),
-              h(Title, { level: 2, className: "june-title" }, isRegister ? "注册四季蝉客户门户账号" : "登录四季蝉客户门户"),
+              h(Title, { level: 2, className: "june-title" }, isRegister ? "注册海典四季蝉账号" : "登录海典四季蝉"),
               h(Paragraph, null, isRegister ? "注册后可直接上传客户数据、生成AI复盘报告并查看历史记录。" : "登录后可使用AI复盘报告、历史报告和客户资料能力。"),
               h(
                 Form,
@@ -2305,12 +2327,23 @@
                     )
                   : h(Form.Item, { label: "手机号或邮箱", name: "login", rules: [{ required: true, message: "请输入手机号或邮箱" }] }, h(Input, { placeholder: "手机号或邮箱", onFocus: () => setFocusType("text"), onBlur: () => setFocusType("") })),
                 h(Form.Item, { label: "密码", name: "password", rules: [{ required: true, message: "请输入密码" }, { min: 6, message: "密码至少6位" }] }, h(Input.Password, { placeholder: "至少6位", visibilityToggle: { visible: showPassword, onVisibleChange: setShowPassword }, onFocus: () => setFocusType("password"), onBlur: () => setFocusType("") })),
-              ),
               h(
-                Space,
-                { wrap: true },
-                h(Button, { type: "primary", loading, onClick: submit, className: "auth-primary-button" }, isRegister ? "注册并登录" : "登录"),
-                h(Button, { onClick: () => onModeChange(isRegister ? "login" : "register") }, isRegister ? "已有账号，去登录" : "没有账号，去注册"),
+                React.Fragment,
+                null,
+                h(
+                  "div",
+                  { className: "auth-secondary-actions" },
+                  h(Button, { type: "primary", loading, onClick: submit, className: "auth-primary-button" }, isRegister ? "注册并登录" : "登录"),
+                  h(Button, { onClick: () => onModeChange(isRegister ? "login" : "register") }, isRegister ? "已有账号，去登录" : "没有账号，去注册"),
+                ),
+                !isRegister
+                  ? h(
+                      "div",
+                      { className: "auth-guest-row" },
+                      h(Button, { onClick: onGuestBrowse, className: "auth-guest-button" }, "随便看看"),
+                    )
+                  : null,
+              ),
               ),
             ),
           ),
@@ -3121,7 +3154,7 @@
                                   ? h(
                                       "div",
                                       { style: { marginTop: 8 } },
-                                      h(Text, { type: "secondary", strong: true }, "??????????????????????"),
+                                      h(Text, { type: "secondary", strong: true }, "服务器扫码登录后，请手动点击生成复盘报告"),
                                     )
                                   : null,                                Array.isArray(weComBrowserSession.exportProbeDetails) && weComBrowserSession.exportProbeDetails.length
                                   ? h(
@@ -3339,9 +3372,13 @@
 
       function AIConfigWorkspace({ auth }) {
         const [form] = Form.useForm();
+        const [promptForm] = Form.useForm();
         const [status, setStatus] = React.useState(null);
         const [saving, setSaving] = React.useState(false);
         const [testing, setTesting] = React.useState(false);
+        const [promptMeta, setPromptMeta] = React.useState({ defaultInstruction: "", updatedAt: "" });
+        const [promptLoading, setPromptLoading] = React.useState(false);
+        const [promptSaving, setPromptSaving] = React.useState(false);
 
         const loadStatus = React.useCallback(async () => {
           const response = await fetch("/api/ai-config/status");
@@ -3354,9 +3391,31 @@
           });
         }, [form]);
 
+        const loadPrompt = React.useCallback(async () => {
+          if (auth?.user?.role !== "admin") return;
+          setPromptLoading(true);
+          try {
+            const response = await fetch("/api/review-prompt");
+            const data = await readApiJson(response);
+            promptForm.setFieldsValue({ instruction: data.instruction || "" });
+            setPromptMeta({
+              defaultInstruction: data.defaultInstruction || "",
+              updatedAt: data.updatedAt || "",
+            });
+          } catch (err) {
+            message.error(err.message || "\u590d\u76d8AI\u6307\u4ee4\u52a0\u8f7d\u5931\u8d25");
+          } finally {
+            setPromptLoading(false);
+          }
+        }, [auth?.user?.role, promptForm]);
+
         React.useEffect(() => {
           loadStatus().catch(() => setStatus({ configured: false }));
         }, [loadStatus]);
+
+        React.useEffect(() => {
+          loadPrompt().catch(() => {});
+        }, [loadPrompt]);
 
         const saveConfig = async () => {
           const values = await form.validateFields();
@@ -3393,6 +3452,48 @@
             message.error(err.message || "连接失败");
           } finally {
             setTesting(false);
+          }
+        };
+
+        const savePrompt = async () => {
+          const values = await promptForm.validateFields();
+          setPromptSaving(true);
+          try {
+            const response = await fetch("/api/review-prompt", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ instruction: values.instruction }),
+            });
+            const data = await readApiJson(response);
+            promptForm.setFieldsValue({ instruction: data.instruction || values.instruction });
+            setPromptMeta((current) => ({ ...current, updatedAt: data.updatedAt || current.updatedAt }));
+            message.success(data.message || "\u590d\u76d8AI\u6307\u4ee4\u5df2\u4fdd\u5b58");
+          } catch (err) {
+            message.error(err.message || "\u590d\u76d8AI\u6307\u4ee4\u4fdd\u5b58\u5931\u8d25");
+          } finally {
+            setPromptSaving(false);
+          }
+        };
+
+        const resetPrompt = async () => {
+          setPromptSaving(true);
+          try {
+            const response = await fetch("/api/review-prompt", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ reset: true }),
+            });
+            const data = await readApiJson(response);
+            promptForm.setFieldsValue({ instruction: data.instruction || promptMeta.defaultInstruction || "" });
+            setPromptMeta({
+              defaultInstruction: data.instruction || promptMeta.defaultInstruction || "",
+              updatedAt: data.updatedAt || "",
+            });
+            message.success(data.message || "\u590d\u76d8AI\u6307\u4ee4\u5df2\u6062\u590d\u9ed8\u8ba4");
+          } catch (err) {
+            message.error(err.message || "\u6062\u590d\u9ed8\u8ba4\u5931\u8d25");
+          } finally {
+            setPromptSaving(false);
           }
         };
 
@@ -3475,6 +3576,38 @@
                 description: `当前登录账号：${auth.user.name}。当前账号自己的API优先；没有自己的API时，使用hydee管理员API兜底；API Key不会回显。`,
               }),
             ),
+            auth?.user?.role === "admin"
+              ? h(
+                  Card,
+                  { bordered: false, className: "ai-card" },
+                  h(Tag, { color: "gold", className: "hero-platform-tag" }, "\u590d\u76d8AI\u6307\u4ee4"),
+                  h(Title, { level: 4 }, "\u7ef4\u62a4\u590d\u76d8\u5206\u6790\u65b9\u5411"),
+                  h(Paragraph, null, "\u8fd9\u91cc\u7ef4\u62a4\u7684\u662f\u540e\u7aef\u5b9e\u9645\u8c03\u7528\u7684\u590d\u76d8AI\u6307\u4ee4\u3002\u4fdd\u5b58\u540e\u4f1a\u5199\u5165\u6570\u636e\u5e93\u957f\u671f\u4fdd\u5b58\uff0c\u540e\u7eed\u6240\u6709\u65b0\u751f\u6210\u7684\u590d\u76d8\u62a5\u544a\u90fd\u4f1a\u6309\u8fd9\u4efd\u6307\u4ee4\u6267\u884c\u3002"),
+                  h(Alert, {
+                    type: "info",
+                    showIcon: true,
+                    style: { marginBottom: 16 },
+                    message: "\u6570\u636e\u5e93\u6301\u4e45\u5316",
+                    description: promptMeta.updatedAt ? `\u6700\u8fd1\u66f4\u65b0\u65f6\u95f4\uff1a${dayjs(promptMeta.updatedAt).format("YYYY-MM-DD HH:mm:ss")}` : "\u5f53\u524d\u4f7f\u7528\u9ed8\u8ba4\u590d\u76d8\u6307\u4ee4\u3002",
+                  }),
+                  h(
+                    Form,
+                    { form: promptForm, layout: "vertical" },
+                    h(
+                      Form.Item,
+                      { label: "\u590d\u76d8AI\u6307\u4ee4", name: "instruction", rules: [{ required: true, message: "\u8bf7\u8f93\u5165\u590d\u76d8AI\u6307\u4ee4" }] },
+                      h(Input.TextArea, { rows: 14, showCount: true, maxLength: 20000, placeholder: "\u8bf7\u8f93\u5165\u590d\u76d8\u5206\u6790\u65b9\u5411\u3001\u4e1a\u52a1\u53e3\u5f84\u548c\u8f93\u51fa\u504f\u597d" }),
+                    ),
+                  ),
+                  h(
+                    Space,
+                    { wrap: true },
+                    h(Button, { type: "primary", loading: promptSaving, onClick: savePrompt }, "\u4fdd\u5b58\u590d\u76d8\u6307\u4ee4"),
+                    h(Button, { loading: promptSaving, onClick: resetPrompt }, "\u6062\u590d\u9ed8\u8ba4"),
+                    h(Button, { loading: promptLoading, onClick: loadPrompt }, "\u5237\u65b0"),
+                  ),
+                )
+              : null,
           ),
         );
       }
@@ -3540,16 +3673,16 @@
                 "div",
                 { className: "mobile-card-head" },
                 row.status === "completed" && item.shareUrl
-                  ? h("a", { href: item.shareUrl, target: "_blank", rel: "noreferrer", className: "mobile-card-title" }, row.reportTitle || "???AI????")
-                  : h("div", { className: "mobile-card-title" }, row.reportTitle || "??????"),
-                h(Space, { wrap: true, size: [6, 6] }, h(ReportStatusTag, { status: row.status }), h(Tag, { color: row.sourceType === "login" ? "blue" : "gold" }, row.sourceName || row.sourceType || "??")),
+                  ? h("a", { href: item.shareUrl, target: "_blank", rel: "noreferrer", className: "mobile-card-title" }, row.reportTitle || "四季蝉AI复盘报告")
+                  : h("div", { className: "mobile-card-title" }, row.reportTitle || "复盘报告任务"),
+                h(Space, { wrap: true, size: [6, 6] }, h(ReportStatusTag, { status: row.status }), h(Tag, { color: row.sourceType === "login" ? "blue" : "gold" }, row.sourceName || row.sourceType || "未知来源")),
               ),
               h(
                 "div",
                 { className: "mobile-meta-grid" },
-                h(MobileMetaItem, { label: "????" }, row.createdAt ? dayjs(row.createdAt).format("YYYY-MM-DD HH:mm") : "??"),
-                h(MobileMetaItem, { label: "??" }, row.sourceName || "??"),
-                row.errorMessage ? h(MobileMetaItem, { label: "????" }, h(Text, { type: "danger" }, row.errorMessage)) : null,
+                h(MobileMetaItem, { label: "生成时间" }, row.createdAt ? dayjs(row.createdAt).format("YYYY-MM-DD HH:mm") : "--"),
+                h(MobileMetaItem, { label: "数据来源" }, row.sourceName || "未知"),
+                row.errorMessage ? h(MobileMetaItem, { label: "错误原因" }, h(Text, { type: "danger" }, row.errorMessage)) : null,
               ),
               h(ReportActionButtons, { row, compact: true, onRefresh: loadReports, onRetryOpen: () => onOpenAiReview?.() }),
             );
@@ -4763,7 +4896,8 @@
         const [activeKey, setActiveKey] = React.useState("home");
         const [auth, setAuth] = React.useState({ user: null, profile: null, loading: true });
         const initialAuthPage = new URLSearchParams(window.location.search).get("page");
-        const [authPage, setAuthPage] = React.useState(initialAuthPage === "register" ? "register" : initialAuthPage === "login" ? "login" : "");
+        const defaultLoginHost = window.location.hostname === "192.168.1.200";
+        const [authPage, setAuthPage] = React.useState(initialAuthPage === "register" ? "register" : initialAuthPage === "login" ? "login" : defaultLoginHost ? "login" : "");
         const dates = React.useMemo(getDynamicDates, []);
         const loadMe = React.useCallback(async () => {
           try {
@@ -4797,6 +4931,11 @@
         };
         const openLogin = () => openAuthPage("login");
         const openRegister = () => openAuthPage("register");
+        const openGuestBrowse = () => {
+          setAuthPage("");
+          window.history.replaceState(null, "", `${window.location.pathname}?v=guest`);
+          setActiveKey("home");
+        };
         const authProps = { auth, onLogin: openLogin, onRegister: openRegister };
         const tabItems = [
           { key: "home", label: "首页", children: h(HomePage, { onOpenCalendar: () => setActiveKey("calendar") }) },
@@ -4822,7 +4961,7 @@
                 },
               },
             },
-            h("main", { className: "auth-route-shell" }, h(AuthPage, { mode: authPage, onModeChange: openAuthPage, onAuthed })),
+            h("main", { className: "auth-route-shell" }, h(AuthPage, { mode: authPage, onModeChange: openAuthPage, onAuthed, onGuestBrowse: openGuestBrowse })),
           );
         }
 

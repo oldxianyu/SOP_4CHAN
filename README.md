@@ -155,6 +155,7 @@ npm run monthly:marketing
 - `users`：门户用户。
 - `customer_profiles`：客户/连锁主体信息。
 - `ai_configs`：账号级 AI 配置，包含 `owner_user_id`，按“当前账号优先、hydee管理员兜底”的口径读取。
+- `system_settings`：系统级长期配置，当前用于保存“复盘AI指令”，由管理员在“系统维护”中维护，实际生成报告时由后端从数据库读取生效。
 - `customer_datasets`：客户数据来源记录。
 - `ai_review_uploads`：AI 复盘报告上传/登录取数记录，关联数据来源和历史报告。
 - `review_reports`：AI 复盘历史报告。

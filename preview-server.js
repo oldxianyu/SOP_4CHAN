@@ -76,6 +76,18 @@ const expectedSheets = [
   "店员晒单厂家给额外激励",
 ];
 
+const defaultReviewPromptInstruction = [
+  "你是海典四季蝉重点品数字化动销平台的运营复盘顾问。",
+  "请基于客户上传的Excel数据摘要，输出品种动销复盘报告。",
+  "固定业务口径：AAA品种是销售额、毛利额、客流量都进入核心贡献区间的主力赚钱品种。",
+  "四季蝉不是单纯红包工具，而是把厂家、连锁总部、门店店员、顾客连接起来，围绕重点品完成选品、培训、激励、销售、提现、统计、复盘的数字化运营平台。",
+  "不要加入与客户数据无关的营销节点、季节场景或泛化品类建议。",
+  "请关注：品种增长/下滑、活动商品销售与奖励闭环、激励方式使用/未使用价值、店员提现参与、厂家晒单打赏、下一步动作。",
+  "新增复盘目标：通过数据证明四季蝉价值，引导客户持续使用，降低流失风险。必须使用 operationInsights 中的健康度、续用风险、价值证明点和建议动作。",
+  "请明确输出：1）客户继续使用四季蝉的价值证据；2）可能导致客户流失的风险信号；3）下月应推动客户多用哪些模块或玩法；4）总部、门店、厂家三方各自的跟进动作。",
+  "报告面向中国医药连锁客户阅读，所有可见文字必须使用中文。不要在报告正文中出现 role、actions、bullets、headquarters、stores、factories 等英文键名；下一步动作请写成“总部：……”“门店：……”“厂家：……”这类中文句子。",
+].join("\n");
+
 function ensureServerDir() {
   fs.mkdirSync(serverDir, { recursive: true });
 }
@@ -167,7 +179,7 @@ function clearSessionCookie(res) {
 }
 
 function emptyLocalData() {
-  return { users: [], customerProfiles: [], aiConfigs: [], customerDatasets: [], reviewReports: [], capabilityTestSubmissions: [] };
+  return { users: [], customerProfiles: [], aiConfigs: [], customerDatasets: [], reviewReports: [], capabilityTestSubmissions: [], systemSettings: [] };
 }
 
 function readLocalData() {
@@ -184,6 +196,7 @@ function readLocalData() {
       customerDatasets: data.customerDatasets || [],
       reviewReports: data.reviewReports || [],
       capabilityTestSubmissions: data.capabilityTestSubmissions || [],
+      systemSettings: data.systemSettings || [],
     };
   } catch {
     return emptyLocalData();
@@ -382,6 +395,13 @@ async function ensureDatabase() {
       protocol text not null,
       api_key_encrypted text not null,
       updated_by text references users(id),
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists system_settings (
+      key text primary key,
+      value_json jsonb not null default '{}'::jsonb,
+      updated_by text references users(id) on delete set null,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     );
@@ -659,6 +679,7 @@ async function ensureDatabase() {
           'users',
           'customer_profiles',
           'ai_configs',
+          'system_settings',
           'customer_datasets',
           'ai_review_uploads',
           'review_reports',
@@ -720,6 +741,7 @@ async function ensureDatabase() {
       create index if not exists idx_review_reports_created on review_reports(created_at desc);
       create index if not exists idx_review_reports_status_created on review_reports(status, created_at desc);
       create index if not exists idx_review_reports_job_key on review_reports(job_key);
+      create index if not exists idx_system_settings_updated on system_settings(updated_at desc);
       update ai_configs set owner_user_id = updated_by where owner_user_id is null and updated_by is not null;
       create index if not exists idx_ai_configs_owner_updated on ai_configs(owner_user_id, updated_at desc);
       create index if not exists idx_ai_review_uploads_user_created on ai_review_uploads(user_id, created_at desc);
@@ -2812,18 +2834,82 @@ function summaryForResponse(summary) {
   return next;
 }
 
-function buildPrompt(summary) {
+async function loadSystemSetting(key) {
+  const normalizedKey = String(key || "").trim();
+  if (!normalizedKey) return null;
+  if (await isDbAvailable()) {
+    const result = await queryDb("select * from system_settings where key = $1 limit 1", [normalizedKey]);
+    return result.rows[0] || null;
+  }
+  const data = readLocalData();
+  return data.systemSettings.find((item) => item.key === normalizedKey) || null;
+}
+
+async function saveSystemSetting(key, valueJson, userId = "") {
+  const normalizedKey = String(key || "").trim();
+  if (!normalizedKey) {
+    const error = new Error("系统配置键不能为空。");
+    error.statusCode = 400;
+    throw error;
+  }
+  const payload = jsonClone(valueJson ?? {});
+  if (await isDbAvailable()) {
+    const result = await queryDb(
+      `insert into system_settings(key, value_json, updated_by)
+       values($1, $2::jsonb, $3)
+       on conflict (key) do update
+       set value_json = excluded.value_json,
+           updated_by = excluded.updated_by,
+           updated_at = now()
+       returning *`,
+      [normalizedKey, JSON.stringify(payload), userId || null],
+    );
+    return result.rows[0] || null;
+  }
+  const data = readLocalData();
+  const now = new Date().toISOString();
+  const index = data.systemSettings.findIndex((item) => item.key === normalizedKey);
+  const next = {
+    key: normalizedKey,
+    valueJson: payload,
+    updatedBy: userId || "",
+    createdAt: index >= 0 ? data.systemSettings[index].createdAt || now : now,
+    updatedAt: now,
+  };
+  if (index >= 0) data.systemSettings[index] = next;
+  else data.systemSettings.push(next);
+  writeLocalData(data);
+  return next;
+}
+
+async function loadReviewPromptInstruction() {
+  const setting = await loadSystemSetting("review_prompt_instruction");
+  const instruction = setting?.value_json?.instruction ?? setting?.valueJson?.instruction ?? "";
+  return String(instruction || defaultReviewPromptInstruction).trim() || defaultReviewPromptInstruction;
+}
+
+async function saveReviewPromptInstruction(instruction, userId = "") {
+  const text = String(instruction || "").trim();
+  if (!text) {
+    const error = new Error("复盘AI指令不能为空。");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (text.length > 20000) {
+    const error = new Error("复盘AI指令过长，请控制在 20000 字以内。");
+    error.statusCode = 400;
+    throw error;
+  }
+  return saveSystemSetting("review_prompt_instruction", { instruction: text }, userId);
+}
+
+function buildPrompt(summary, instruction = defaultReviewPromptInstruction) {
   return [
-    "你是海典四季蝉重点品数字化动销平台的运营复盘顾问。",
-    "请基于客户上传的Excel数据摘要，输出品种动销复盘报告。",
-    "固定业务口径：AAA品种是销售额、毛利额、客流量都进入核心贡献区间的主力赚钱品种。",
-    "四季蝉不是单纯红包工具，而是把厂家、连锁总部、门店店员、顾客连接起来，围绕重点品完成选品、培训、激励、销售、提现、统计、复盘的数字化运营平台。",
-    "不要加入与客户数据无关的营销节点、季节场景或泛化品类建议。",
-    "请关注：品种增长/下滑、活动商品销售与奖励闭环、激励方式使用/未使用价值、店员提现参与、厂家晒单打赏、下一步动作。",
-    "新增复盘目标：通过数据证明四季蝉价值，引导客户持续使用，降低流失风险。必须使用 operationInsights 中的健康度、续用风险、价值证明点和建议动作。",
-    "请明确输出：1）客户继续使用四季蝉的价值证据；2）可能导致客户流失的风险信号；3）下月应推动客户多用哪些模块或玩法；4）总部、门店、厂家三方各自的跟进动作。",
-    "报告面向中国医药连锁客户阅读，所有可见文字必须使用中文。不要在报告正文中出现 role、actions、bullets、headquarters、stores、factories 等英文键名；下一步动作请写成“总部：……”“门店：……”“厂家：……”这类中文句子。",
-    "输出必须是JSON，不要输出Markdown代码块。",
+    String(instruction || defaultReviewPromptInstruction).trim(),
+    "",
+    "系统固定输出要求：输出必须是JSON，不要输出Markdown代码块。",
+    "字段必须包含：title、executiveSummary、highlights、risks、sections、nextActions。",
+    "sections 数组每项必须包含 heading 和 bullets；所有可见文字必须使用中文。",
     "数据摘要如下：",
     JSON.stringify(summaryForAi(summary)),
   ].join("\n");
@@ -3931,7 +4017,8 @@ async function generateReportFromSummary(summary, user = null) {
 
   let report;
   try {
-    const prompt = buildPrompt(summary);
+    const promptInstruction = await loadReviewPromptInstruction();
+    const prompt = buildPrompt(summary, promptInstruction);
     const reportText = await callConfiguredAI(config, prompt);
     report = normalizeReport(parseReportJson(reportText));
   } catch (error) {
@@ -6586,6 +6673,31 @@ async function handleTestConfig(req, res) {
   sendJson(res, 200, { ok: true, message: output || "连接成功" });
 }
 
+async function handleGetReviewPrompt(req, res) {
+  const user = await requireAdmin(req, res);
+  if (!user) return;
+  const setting = await loadSystemSetting("review_prompt_instruction");
+  sendJson(res, 200, {
+    instruction: await loadReviewPromptInstruction(),
+    defaultInstruction: defaultReviewPromptInstruction,
+    updatedAt: setting?.updated_at || setting?.updatedAt || "",
+  });
+}
+
+async function handleSaveReviewPrompt(req, res) {
+  const user = await requireAdmin(req, res);
+  if (!user) return;
+  const body = await readJsonBody(req, 1024 * 1024);
+  const instruction = body?.reset ? defaultReviewPromptInstruction : body?.instruction;
+  const saved = await saveReviewPromptInstruction(instruction, user.id);
+  sendJson(res, 200, {
+    ok: true,
+    instruction: await loadReviewPromptInstruction(),
+    updatedAt: saved?.updated_at || saved?.updatedAt || new Date().toISOString(),
+    message: body?.reset ? "复盘AI指令已恢复默认。" : "复盘AI指令已保存。",
+  });
+}
+
 const reviewJobTtlMs = Number(process.env.REVIEW_JOB_TTL_MS || 30 * 60 * 1000);
 
 async function cleanupExpiredReviewJobs() {
@@ -7464,6 +7576,8 @@ function createServer() {
       if (url.pathname === "/api/ai-config/status" && req.method === "GET") return handleConfigStatus(req, res);
       if (url.pathname === "/api/ai-config" && req.method === "POST") return await handleSaveConfig(req, res);
       if (url.pathname === "/api/ai-config/test" && req.method === "POST") return await handleTestConfig(req, res);
+      if (url.pathname === "/api/review-prompt" && req.method === "GET") return await handleGetReviewPrompt(req, res);
+      if (url.pathname === "/api/review-prompt" && req.method === "POST") return await handleSaveReviewPrompt(req, res);
       if (url.pathname === "/api/review-report" && req.method === "POST") return await handleReviewReport(req, res);
       if (url.pathname === "/api/sijichan-review-report" && req.method === "POST") return await handleSijichanReviewReport(req, res);
       if (url.pathname === "/api/wecom-token-review-report" && req.method === "POST") return await handleWeComTokenReviewReport(req, res);
