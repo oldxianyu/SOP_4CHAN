@@ -4193,6 +4193,14 @@ function isMerchantRuntimeUrl(url) {
   }
 }
 
+function isMerchantHostUrl(url) {
+  try {
+    return new URL(String(url || ""), sijichanApiOrigin).hostname === "merchants.hydee.cn";
+  } catch {
+    return false;
+  }
+}
+
 function isWeComSsoJumpUrl(url) {
   try {
     const parsed = new URL(String(url || ""), sijichanApiOrigin);
@@ -4338,7 +4346,8 @@ async function createWeComBrowserSession(user, body = {}) {
     if (session.status === "captured") return;
     const runtimeUrl = sourceUrl || session.currentUrl || "";
     const allowSsoJump = Boolean(options.allowSsoJump);
-    if (!isMerchantRuntimeUrl(runtimeUrl) && !(allowSsoJump && isWeComSsoJumpUrl(runtimeUrl))) return;
+    const allowMerchantHost = Boolean(options.allowMerchantHost);
+    if (!isMerchantRuntimeUrl(runtimeUrl) && !(allowSsoJump && isWeComSsoJumpUrl(runtimeUrl)) && !(allowMerchantHost && isMerchantHostUrl(runtimeUrl))) return;
     const sourceText = String(raw || "");
     const match = sourceText.match(tokenPattern);
     if (!match && !options.explicitToken) return;
@@ -4432,7 +4441,7 @@ async function createWeComBrowserSession(user, body = {}) {
     }
   };
   const scanMerchantPageStorage = async () => {
-    if (!session.page || session.page.isClosed() || !isMerchantRuntimeUrl(session.page.url())) return;
+    if (!session.page || session.page.isClosed() || !isMerchantHostUrl(session.page.url())) return;
     const storageItems = await session.page.evaluate(() => {
       const items = [];
       const readStore = (store, storeName) => {
@@ -4449,17 +4458,17 @@ async function createWeComBrowserSession(user, body = {}) {
       return items.slice(0, 30);
     }).catch(() => []);
     for (const item of storageItems) {
-      await maybeCapture(item.value, `server-browser-${item.storeName}:${item.key}`, session.page.url());
+      await maybeCapture(item.value, `server-browser-${item.storeName}:${item.key}`, session.page.url(), { allowMerchantHost: true });
     }
   };
   const scanMerchantCookies = async () => {
-    if (!session.page || session.page.isClosed() || !isMerchantRuntimeUrl(session.page.url())) return;
+    if (!session.page || session.page.isClosed() || !isMerchantHostUrl(session.page.url())) return;
     const cookies = await session.page.context().cookies(sijichanApiOrigin).catch(() => []);
     for (const cookie of cookies) {
       const key = cookie?.name || "";
       const value = cookie?.value || "";
       if (/token|authorization|access|jwt|_?pati/i.test(key) || /Bearer\s+/i.test(value)) {
-        await maybeCapture(value, `server-browser-cookie:${key}`, session.page.url());
+        await maybeCapture(value, `server-browser-cookie:${key}`, session.page.url(), { allowMerchantHost: true });
       }
     }
   };
