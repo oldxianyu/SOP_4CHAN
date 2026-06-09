@@ -2743,8 +2743,6 @@
             message.error(err.message || "服务器登录态检测失败");
           }
         };
-        createWeComBrowserSessionRef.current = createWeComBrowserProfileSession;
-
         const copyWeComHelperScript = () => {
           if (!weComHandoff?.helperScript) {
             message.warning("请先创建企微授权交接会话");
