@@ -2421,7 +2421,7 @@
       }
 
       function AIReviewWorkspace({ auth }) {
-        const [sourceType, setSourceType] = React.useState("excel");
+        const [sourceType, setSourceType] = React.useState("sijichan");
         const [sourceForm] = Form.useForm();
         const [status, setStatus] = React.useState(null);
         const [file, setFile] = React.useState(null);
@@ -2437,8 +2437,6 @@
         const progressTimersRef = React.useRef([]);
         const handoffPollRef = React.useRef(null);
         const browserSessionPollRef = React.useRef(null);
-        const weComAutoReportRef = React.useRef({ triggered: false, running: false });
-        const generateFromWeComRef = React.useRef(null);
         const createWeComBrowserSessionRef = React.useRef(null);
         const weComQrRefreshRef = React.useRef({ count: 0, running: false, lastAt: 0 });
         const weComSsoUrl = "https://login.work.weixin.qq.com/wwlogin/sso/login/?login_type=CorpApp&appid=ww408c023179829552&agentid=1000157&redirect_uri=https%3A%2F%2Fmerchants.hydee.cn%2Fapp-jump%2Fsuper-admin-login&state=WWLogin";
@@ -2591,20 +2589,6 @@
           window.open(weComSsoUrl, "_blank", "noopener,noreferrer");
         };
 
-        const triggerWeComAutoReport = (reason, nextSession = null, nextHandoff = null) => {
-          if (weComAutoReportRef.current.triggered || weComAutoReportRef.current.running) return;
-          const run = generateFromWeComRef.current;
-          if (typeof run !== "function") return;
-          weComAutoReportRef.current = { triggered: true, running: true };
-          message.success(reason || "企微扫码已就绪，开始自动生成复盘报告");
-          new Promise((resolve) => setTimeout(resolve, 500))
-            .then(() => generateFromWeComRef.current?.({ auto: true, session: nextSession, handoff: nextHandoff }))
-            .catch(() => null)
-            .finally(() => {
-              weComAutoReportRef.current.running = false;
-            });
-        };
-
         const refreshExpiredWeComQr = () => {
           const state = weComQrRefreshRef.current || { count: 0, running: false, lastAt: 0 };
           const now = Date.now();
@@ -2633,7 +2617,7 @@
                   clearInterval(handoffPollRef.current);
                   handoffPollRef.current = null;
                   message.success("已捕获新零售授权token，可以生成报告");
-                  triggerWeComAutoReport("已捕获新零售授权，开始自动生成复盘报告", null, data.handoff);
+                  message.success("\u626b\u7801\u767b\u5f55\u5df2\u5c31\u7eea\uff0c\u8bf7\u624b\u52a8\u70b9\u51fb\u751f\u6210\u590d\u76d8\u62a5\u544a");
                 }
               }
             } catch {
@@ -2658,9 +2642,9 @@
                   clearInterval(browserSessionPollRef.current);
                   browserSessionPollRef.current = null;
                   message.success("服务器已捕获新零售授权token，可以生成报告");
-                  triggerWeComAutoReport("服务器已捕获新零售授权，开始自动生成复盘报告", data.session, data.handoff);
+                  message.success("\u626b\u7801\u767b\u5f55\u5df2\u5c31\u7eea\uff0c\u8bf7\u624b\u52a8\u70b9\u51fb\u751f\u6210\u590d\u76d8\u62a5\u544a");
                 } else if (data.session.exportReady) {
-                  triggerWeComAutoReport("服务器登录态已具备导出能力，开始自动生成复盘报告", data.session, data.handoff);
+                  message.success("\u626b\u7801\u767b\u5f55\u5df2\u5c31\u7eea\uff0c\u8bf7\u624b\u52a8\u70b9\u51fb\u751f\u6210\u590d\u76d8\u62a5\u544a");
                 } else if (data.session.scanStage === "qr_expired") {
                   refreshExpiredWeComQr();
                 }
@@ -2746,7 +2730,6 @@
             setWeComBrowserSession(null);
             setWeComHandoff(null);
             if (!options.autoRefresh) {
-              weComAutoReportRef.current = { triggered: false, running: false };
               weComQrRefreshRef.current = { count: 0, running: false, lastAt: 0 };
             }
             const response = await fetch("/api/wecom-browser-session", {
@@ -2771,7 +2754,6 @@
           try {
             setWeComBrowserSession(null);
             setWeComHandoff(null);
-            weComAutoReportRef.current = { triggered: false, running: false };
             const response = await fetch("/api/wecom-browser-profile-session", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -2782,7 +2764,7 @@
             setWeComBrowserSession(data.session);
             setWeComHandoff({ id: data.session.handoffId, captured: data.session.captured });
             pollWeComBrowserSession(data.session.id);
-            message.success(data.session.exportReady ? "服务器已有登录态，正在准备自动生成报告" : data.session.merchantReady ? "服务器已进入新零售，正在探测接口" : "已打开服务器登录态检测页面");
+            message.success(data.session.exportReady ? "服务器已有登录态，请手动点击生成复盘报告" : data.session.merchantReady ? "服务器已进入新零售，正在探测接口" : "已打开服务器登录态检测页面");
           } catch (err) {
             message.error(err.message || "服务器登录态检测失败");
           }
@@ -2842,7 +2824,6 @@
             setLoading(false);
           }
         };
-        generateFromWeComRef.current = generateFromWeComHandoff;
 
         const generateReport = async () => {
           if (!file) {
@@ -2967,7 +2948,7 @@
               { bordered: false, className: "ai-card" },
               h(Tag, { color: "blue", className: "hero-platform-tag" }, "AI复盘报告"),
               h(Title, { level: 2, className: "june-title" }, "上传客户数据，生成四季蝉复盘报告"),
-              h(Paragraph, null, "支持Excel模板上传，也支持通过登录获取客户复盘数据。系统会读取销售变化、活动商品、店员提现、激励玩法、晒单打赏等明细，再由AI生成品种动销复盘。"),
+              h(Paragraph, null, "默认通过账密登录获取客户复盘数据，也支持企微扫码和Excel模板上传。系统会读取销售变化、活动商品、店员提现、激励玩法、晒单打赏等明细，再由AI生成品种动销复盘。"),
               h(Alert, {
 
                 type: status?.configured ? "success" : "warning",
@@ -2988,9 +2969,9 @@
                   buttonStyle: "solid",
                   style: { marginBottom: 16 },
                 },
-                h(Radio.Button, { value: "excel" }, "Excel模板上传"),
                 h(Radio.Button, { value: "sijichan" }, "登录获取"),
                 h(Radio.Button, { value: "wecom" }, "企微扫码"),
+                h(Radio.Button, { value: "excel" }, "Excel模板上传"),
               ),
               sourceType === "excel"
                 ? h(
@@ -3071,7 +3052,7 @@
                           h(Button, { type: "primary", loading, onClick: createWeComBrowserSession }, "生成服务器扫码二维码"),
                           h(Button, { disabled: !weComBrowserSession?.id, onClick: refreshWeComBrowserSession }, "刷新扫码状态"),
                           h(Button, { disabled: !weComBrowserSession?.id || !weComBrowserSession?.merchantCodeFillAvailable, onClick: fillWeComBrowserMerchantCode }, "重新提交客户编码"),
-                          h(Button, { type: "primary", loading, disabled: !weComBrowserSession?.merchantReady && !weComBrowserSession?.exportReady, onClick: generateFromWeComHandoff }, "用服务器登录态生成报告"),
+                          h(Button, { type: "primary", loading, disabled: !weComBrowserSession?.merchantReady && !weComBrowserSession?.exportReady && !weComHandoff?.captured, onClick: generateFromWeComHandoff }, "\u751f\u6210\u590d\u76d8\u62a5\u544a"),
                           h(Button, { loading, onClick: createWeComBrowserProfileSession }, "检测服务器已登录态"),
                           h(Button, {
                             onClick: () => {
@@ -3139,12 +3120,9 @@
                                   ? h(
                                       "div",
                                       { style: { marginTop: 8 } },
-                                      h(Text, { type: weComBrowserSession.autoReport.status === "failed" ? "danger" : weComBrowserSession.autoReport.status === "completed" ? "success" : "secondary", strong: true }, `自动生成报告：${weComBrowserSession.autoReport.status === "running" ? "生成中" : weComBrowserSession.autoReport.status === "completed" ? "已完成" : weComBrowserSession.autoReport.status === "failed" ? "失败" : "等待"}`),
-                                      weComBrowserSession.autoReport.error ? h(Text, { type: "danger", style: { display: "block" } }, weComBrowserSession.autoReport.error) : null,
-                                      weComBrowserSession.autoReport.shareUrl ? h("a", { href: normalizeReportArtifact(weComBrowserSession.autoReport.shareUrl), target: "_blank", rel: "noreferrer", style: { display: "block", wordBreak: "break-all" } }, "打开自动生成的分享报告") : null,
+                                      h(Text, { type: "secondary", strong: true }, "??????????????????????"),
                                     )
-                                  : null,
-                                Array.isArray(weComBrowserSession.exportProbeDetails) && weComBrowserSession.exportProbeDetails.length
+                                  : null,                                Array.isArray(weComBrowserSession.exportProbeDetails) && weComBrowserSession.exportProbeDetails.length
                                   ? h(
                                       "div",
                                       { style: { marginTop: 8 } },

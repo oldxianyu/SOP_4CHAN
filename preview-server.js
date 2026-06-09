@@ -1441,6 +1441,18 @@ async function createRunningReviewReportRecord(userId, sourceType, sourceName, j
   const profile = await getCustomerProfile(userId);
   const reportTitle = `${sourceName || "AI复盘报告"}生成中`;
   if (await isDbAvailable()) {
+    const recent = await queryDb(
+      `select id from review_reports
+       where user_id=$1
+         and source_type=$2
+         and status in ('running','failed')
+         and coalesce(job_key, '')=$3
+         and created_at > now() - interval '2 minutes'
+       order by created_at desc
+       limit 1`,
+      [userId, sourceType, jobKey],
+    );
+    if (recent.rows[0]?.id) return recent.rows[0].id;
     const result = await queryDb(
       `insert into review_reports(
         user_id, customer_profile_id, source_type, source_name, status, report_title, row_counts_json,
@@ -6803,6 +6815,8 @@ async function generateWeComTokenReportForUser(user, res, body) {
 }
 
 async function triggerWeComTokenAutoReport(userId, handoff, token, reason = "") {
+  console.log(`[wecom-token] auto-report disabled; waiting for manual generate ${handoff?.id || ""} ${reason}`.trim());
+  return;
   if (!userId || !handoff?.id || !token) return;
   const autoKey = `token:${handoff.id}`;
   if (activeWeComAutoReports.has(autoKey)) return;
@@ -7101,6 +7115,12 @@ async function generateWeComBrowserSessionReportForUser(user, res, session, body
 }
 
 async function triggerWeComBrowserAutoReport(session, reason = "") {
+  if (session) {
+    session.autoReport = { status: "manual_required", reason, updatedAt: new Date().toISOString() };
+    session.updatedAt = session.autoReport.updatedAt;
+  }
+  console.log(`[wecom-browser] auto-report disabled; waiting for manual generate ${session?.id || ""} ${reason}`.trim());
+  return;
   if (!session || !session.userId || !session.id) return;
   if (session.autoReport?.status === "running" || session.autoReport?.status === "completed") return;
   if (activeWeComAutoReports.has(session.id)) return;
