@@ -3996,9 +3996,12 @@ function playwrightLaunchOptions() {
   };
 }
 
-function weComBrowserProfileDir(userId = "") {
+function weComBrowserProfileDir(userId = "", sessionId = "") {
   const safeUser = String(userId || "default").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80) || "default";
-  const dir = path.join(serverDir, "wecom-browser-profile", safeUser);
+  const safeSession = String(sessionId || "").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80);
+  const dir = safeSession
+    ? path.join(serverDir, "wecom-browser-profile", safeUser, safeSession)
+    : path.join(serverDir, "wecom-browser-profile", safeUser);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -4106,6 +4109,9 @@ async function closeWeComBrowserSession(session, status = "") {
   }
   session.context = null;
   session.browser = null;
+  if (session.profileDir && !session.profileReuse) {
+    fs.rm(session.profileDir, { recursive: true, force: true }, () => {});
+  }
   if (session.id) activeWeComBrowserSessions.delete(session.id);
 }
 
@@ -4477,7 +4483,8 @@ async function createWeComBrowserSession(user, body = {}) {
     }
   };
   try {
-    const context = await chromium.launchPersistentContext(weComBrowserProfileDir(user.id), {
+    session.profileDir = weComBrowserProfileDir(user.id, body.profileReuse ? "" : session.id);
+    const context = await chromium.launchPersistentContext(session.profileDir, {
       ...playwrightLaunchOptions(),
       viewport: { width: 1280, height: 900 },
     });
@@ -4737,7 +4744,7 @@ async function createWeComBrowserSession(user, body = {}) {
 }
 
 async function createWeComBrowserProfileSession(user, body = {}) {
-  const publicSession = await createWeComBrowserSession(user, body);
+  const publicSession = await createWeComBrowserSession(user, { ...body, profileReuse: true });
   const session = activeWeComBrowserSessions.get(publicSession.id);
   if (!session) return publicSession;
   session.profileReuse = true;
