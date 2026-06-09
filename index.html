@@ -2717,6 +2717,7 @@
             message.error(err.message || "服务器登录态检测失败");
           }
         };
+        createWeComBrowserSessionRef.current = createWeComBrowserProfileSession;
 
         const copyWeComHelperScript = () => {
           if (!weComHandoff?.helperScript) {
@@ -2988,12 +2989,13 @@
                         Card,
                         { size: "small", className: "gate-card", style: { marginTop: 16 } },
                         h(Title, { level: 5, style: { marginBottom: 8 } }, "服务器扫码登录新零售管理平台"),
-                        h(Paragraph, { type: "secondary" }, "点击后会在服务器启动一次性浏览器会话，并把企微二维码显示在本页。扫码确认后如果进入新零售管理平台，系统会自动监听授权；也可以直接使用该服务器浏览器登录态导出数据。"),
+                        h(Paragraph, { type: "secondary" }, "点击后会在服务器打开可复用浏览器资料，并把企微二维码显示在本页。扫码确认后如果进入新零售管理平台，登录态会保留在服务器，系统会自动监听授权并尝试导出数据。"),
                         h(
                           Space,
                           { wrap: true },
-                          h(Button, { type: "primary", loading, onClick: createWeComBrowserSession }, "生成企微扫码二维码"),
+                          h(Button, { type: "primary", loading, onClick: createWeComBrowserProfileSession }, "生成并保存服务器扫码登录"),
                           h(Button, { loading, onClick: createWeComBrowserProfileSession }, "检测服务器已登录态"),
+                          h(Button, { loading, onClick: createWeComBrowserSession }, "一次性扫码"),
                           h(Button, { disabled: !weComBrowserSession?.id, onClick: refreshWeComBrowserSession }, "刷新扫码状态"),
                           h(Button, { type: "primary", loading, disabled: !weComBrowserSession?.merchantReady && !weComBrowserSession?.exportReady && !weComHandoff?.captured, onClick: generateFromWeComHandoff }, weComHandoff?.captured ? "用已捕获授权生成报告" : "用服务器登录态生成报告"),
                           h(Button, {
