@@ -3300,9 +3300,6 @@ function renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUr
           <a class="button" href="${escapeHtml(svgUrl)}" download>下载SVG长图</a>
           <a class="button secondary" href="${escapeHtml(qrSvgUrl)}" download>下载二维码</a>
           <a class="button secondary" href="${escapeHtml(excelUrl)}" download>下载Excel汇总</a>
-          <a class="button secondary" href="${escapeHtml(diagnosticsUrl)}" download>接口诊断</a>
-          <a class="button secondary" href="${escapeHtml(normalizedDataUrl)}" download>标准化数据</a>
-          <a class="button secondary" href="${escapeHtml(shareUrl)}">刷新报告页</a>
         </div>
       </div>
       <button class="qr-button" id="openQr" type="button" aria-label="查看报告二维码">
