@@ -1688,7 +1688,7 @@ async function exchangeWeComCodeForSijichanToken({ code, handoffId = "", state =
   const token = extractSijichanTokenFromText([location, setCookie, text].join("\n"));
   diagnostics.push(`status:${response.status}`);
   if (location) diagnostics.push(`location:${location.slice(0, 300)}`);
-  diagnostics.push(token ? "token_extracted" : "token_not_found");
+  diagnostics.push(token ? "candidate_token_extracted_unverified" : "token_not_found");
   return { token, diagnostics };
 }
 
@@ -4610,6 +4610,15 @@ async function createWeComBrowserSession(user, body = {}) {
     try {
       const exchanged = await exchangeWeComCodeForSijichanToken({ code, handoffId: handoff.id, state });
       if (exchanged.token) {
+        const validation = await validateSijichanTokenCandidate(exchanged.token, handoff.merCode);
+        if (!validation.ok) {
+          const message = `企微code候选授权验证失败：HTTP ${validation.status || "-"}${validation.code ? ` / ${validation.code}` : ""}${validation.message ? ` / ${validation.message}` : ""}`;
+          session.lastError = message;
+          addSsoDiagnostic({ from: "server-browser-code", path: "/app-jump/super-admin-login", tokenFound: false, message });
+          await markSijichanHandoffError(state || handoff.handoffToken, message);
+          logWeComSessionState(session, "code-token-rejected");
+          return;
+        }
         const capturedHandoff = await markSijichanHandoffCapturedById(handoff.id, user.id, exchanged.token, {
           from: "server-browser-wecom-code",
           href: pageUrl,
