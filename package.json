@@ -6,6 +6,10 @@
   "scripts": {
     "start": "node preview-server.js",
     "dev": "node preview-server.js",
+    "check": "node --check preview-server.js && node --check scripts/smoke-test.js && node --check scripts/assert-architecture.js && node --check scripts/prepare-release.js && node scripts/assert-architecture.js && node scripts/smoke-test.js",
+    "smoke": "node scripts/smoke-test.js",
+    "assert:architecture": "node scripts/assert-architecture.js",
+    "release:prepare": "node scripts/prepare-release.js",
     "monthly:marketing": "node -e \"process.env.MONTHLY_MARKETING_ONLY='true'; require('./preview-server.js')\"",
     "migrate:local-data": "node scripts/migrate-local-data-to-postgres.js",
     "backup:db": "bash scripts/backup-postgres.sh"

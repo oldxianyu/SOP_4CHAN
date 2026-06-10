@@ -59,6 +59,10 @@ https://sijichan.top
 - AI API 已改为账号级配置：当前账号配置优先；没有账号级配置时，使用 `hydee` 管理员 API 兜底。
 - 当月营销推荐新增月初取数能力：对已经授权保存的四季蝉账号，系统可读取活动列表和活动商品明细，合并分析后以脱敏小栏目轮播展示当月重点品营销建议。
 - 管理员后台新增用户管理：支持查看用户角色、启用状态、AI配置数量、历史报告数量、数据来源数量和最近登录时间，并可维护用户基础资料。
+- 前端内存进一步瘦身：历史报告改为分页加载，生成中任务只轮询轻量状态；静态内容 JSON 增加缓存与请求去重；切换页签时销毁非活跃页面树，避免大表格和表单长期驻留。
+- 后端报告生成进一步拆线程：AI 报告和分享页优先返回，Excel 汇总改为 Worker 后台生成；Excel 只接收裁剪后的工作簿输入，避免大明细同时压在主线程内存里。
+- 分享产物进一步瘦身：`report.json` 只保留报告、链接和轻量摘要，完整接口诊断与标准化数据拆到独立 JSON 文件，旧本地报告产物也已刷新为轻量结构。
+- 新增自动检查脚本：`npm run check` 会同时执行语法检查、架构边界断言和 HTTP 烟测，防止历史报告列表、大对象载荷、分享产物和 Excel 生成链路回退。
 
 ## AI 复盘数据来源
 
@@ -171,6 +175,8 @@ npm run monthly:marketing
 - `review_report_payloads` 保存完整历史分析数据，只在查看报告详情或后续深度复盘时读取。
 - 历史报告列表接口不读取完整 `summary_json/report_json`，避免大 JSON 占用 Node 内存。
 - `.server/reports/{reportId}/` 继续保存可直接分享和下载的静态产物；数据库保存结构化内容和产物索引。
+- 分享目录中的 `report.json` 是轻量索引文件；完整标准化数据和接口诊断分别保存为独立 JSON 文件，浏览器和历史列表不再默认加载大对象。
+- Excel 汇总由后台 Worker 读取临时 `workbook-input.json` 生成，完成或失败后更新 `status.json` 和历史报告状态，临时输入会在任务结束后清理。
 - 生产环境设置 `DISABLE_LOCAL_DATA_FALLBACK=true`，数据库启用后不再回退读取 `.server/portal-data.json`。
 - 所有业务表使用主键和核心查询索引；`updated_at` 由统一触发器自动维护。
 - 生产库包含 `get_review_report_list`、`record_auth_operation`、`review_report_payload_count` 等数据库函数，分别用于历史报告轻量列表、登录审计写入和载荷完整性检查。
@@ -219,7 +225,20 @@ http://localhost:8765/
 
 ```bash
 node --check preview-server.js
+node scripts/assert-architecture.js
+node scripts/smoke-test.js
 ```
+
+也可以在支持 npm 脚本的终端中执行：
+
+```bash
+npm run check
+```
+
+其中：
+
+- `assert-architecture` 用于守住架构边界：历史报告列表必须走轻量视图，完整复盘载荷必须存到 `review_report_payloads`，Excel 必须后台 Worker 生成，分享产物 `report.json` 不能再塞入 `rawData/interfaceDiagnostics` 大对象。
+- `smoke-test` 会临时启动服务，检查首页、登录/注册、友链、内容 JSON、AI 配置状态和未登录权限边界。设置 `SMOKE_BASE_URL=https://sijichan.top` 时可直接检查线上站点；设置 `SMOKE_LOGIN/SMOKE_PASSWORD` 时会额外验证登录后的历史报告列表是否保持轻量返回。
 
 ## 环境变量
 
@@ -325,6 +344,29 @@ PORT=8765 HOST=0.0.0.0 npm start
 ```
 
 长期运行建议使用 systemd 或 pm2。
+
+部署或同步服务器时，除了 `index.html`、`preview-server.js`、`package.json`，还必须同步这些静态资产目录：
+
+- `content/`：首页、对接行事历、激励玩法、选品思路、当月营销推荐的外置 JSON 内容。缺失时页面会出现内容加载失败或空白模块。
+- `links/`、`oms/`、`assets/`、`vendor/`：友链资料、FAQ、站点图标和前端依赖资源。
+- `scripts/`：迁移、备份、烟测和架构断言脚本。
+
+可以先在本地生成白名单发布包：
+
+```bash
+npm run release:prepare
+```
+
+发布包会生成在 `.server/releases/sop-4chan-YYYYMMDD-HHMMSS/`，只包含代码、静态内容、友链资料、脚本和文档；不会包含 `.server` 运行数据、数据库备份、企微调试截图、录屏帧或 `node_modules`。
+
+部署后建议先跑：
+
+```bash
+npm run check
+SMOKE_BASE_URL=https://sijichan.top node scripts/smoke-test.js
+```
+
+如果线上 `content/*.json` 返回 404，说明静态内容目录没有同步完整，需要重新部署 `content/`。
 
 当前线上通过 Cloudflare Tunnel 映射到：
 

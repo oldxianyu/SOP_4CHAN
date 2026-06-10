@@ -532,6 +532,20 @@
         box-shadow: 0 18px 42px rgba(24, 52, 126, 0.08);
       }
 
+      .job-event-timeline {
+        margin-top: 12px;
+      }
+
+      .job-event-item {
+        display: grid;
+        gap: 6px;
+      }
+
+      .job-event-time {
+        color: #6b7280;
+        font-size: 12px;
+      }
+
       .mobile-only {
         display: none;
       }
@@ -615,6 +629,18 @@
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
+      }
+
+      .report-progress-hint,
+      .mobile-report-progress {
+        display: grid;
+        gap: 6px;
+        width: min(420px, 100%);
+      }
+
+      .report-progress-hint .ant-progress,
+      .mobile-report-progress .ant-progress {
+        margin: 0;
       }
 
       .auth-card {
@@ -1904,6 +1930,8 @@
         Progress,
         Radio,
         Row,
+        Skeleton,
+        Select,
         Space,
         Statistic,
         Steps,
@@ -1917,6 +1945,18 @@
       } = antd;
       const { Paragraph, Text, Title } = Typography;
       const h = React.createElement;
+
+      function queryStringFromObject(values) {
+        const params = new URLSearchParams();
+        Object.entries(values || {}).forEach(([key, value]) => {
+          if (value === undefined || value === null) return;
+          const text = String(value).trim();
+          if (!text) return;
+          params.set(key, text);
+        });
+        const query = params.toString();
+        return query ? `?${query}` : "";
+      }
 
       function formatChineseDate(date) {
         return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
@@ -1932,20 +1972,6 @@
         };
       }
 
-      const materials = {
-        payment: [
-          { label: "斗拱平台综合支付服务协议", href: "协议文件/02%20斗拱平台综合支付服务协议（四季蝉）20260113.docx" },
-          { label: "药店与店员激励协议", href: "协议文件/03%20药店与店员激励协议.doc" },
-        ],
-        baseInfo: [
-          { label: "门店地址批量更新模板", href: "协议文件/门店地址批量更新模板.xlsx" },
-          { label: "员工账号批量更新模板", href: "协议文件/员工账号批量更新模板.xlsx" },
-        ],
-        industry: [
-          { label: "四季蝉厂家&品种政策收集表", href: "协议文件/四季蝉厂家%26品种政策收集表.xlsx" },
-        ],
-      };
-
       function MaterialButtons({ items }) {
         if (!items || !items.length) return h(Text, { type: "secondary" }, "暂无");
         return h(
@@ -1959,6 +1985,46 @@
             ),
           ),
         );
+      }
+
+      function formatCalendarNoteText(text, dates) {
+        return String(text || "")
+          .replaceAll("__TODAY__", dates?.todayText || "")
+          .replaceAll("__RANGE__", dates?.rangeText || "");
+      }
+
+      function renderCalendarNote(note, dates) {
+        if (!note) return h(Text, { type: "secondary" }, "暂无");
+        if (typeof note === "string") {
+          return note === "暂无" ? h(Text, { type: "secondary" }, note) : h(Paragraph, null, formatCalendarNoteText(note, dates));
+        }
+        if (note.kind === "plain") {
+          return note.text === "暂无" ? h(Text, { type: "secondary" }, note.text) : h(Paragraph, null, formatCalendarNoteText(note.text, dates));
+        }
+        if (note.kind === "group") {
+          return h(
+            "div",
+            { className: "notes-block" },
+            (note.children || []).map((item, index) => renderCalendarNoteNode(item, dates, index)),
+          );
+        }
+        return renderCalendarNoteNode(note, dates, "single");
+      }
+
+      function renderCalendarNoteNode(item, dates, key) {
+        if (!item) return null;
+        if (item.kind === "heading") return h(Text, { strong: true, key }, formatCalendarNoteText(item.text, dates));
+        if (item.kind === "paragraph") return h(Paragraph, { key }, formatCalendarNoteText(item.text, dates));
+        if (item.kind === "list") {
+          return h(
+            "ul",
+            { key },
+            (item.items || []).map((text, index) => h("li", { key: `${key}-${index}` }, formatCalendarNoteText(text, dates))),
+          );
+        }
+        if (item.kind === "text") return h("div", { key }, formatCalendarNoteText(item.text, dates));
+        if (item.kind === "plain") return item.text === "暂无" ? h(Text, { key, type: "secondary" }, item.text) : h(Paragraph, { key }, formatCalendarNoteText(item.text, dates));
+        return h(Paragraph, { key }, formatCalendarNoteText(item.text || "", dates));
       }
 
       function MobileMetaItem({ label, children }) {
@@ -1982,7 +2048,71 @@
         return h(Tag, { color: meta.color }, meta.text);
       }
 
-      function ReportActionButtons({ row, compact = false, onRefresh, onRetryOpen }) {
+      function ReportProgressHint({ row, compact = false }) {
+        if (!row || row.status !== "running") return null;
+        const percent = Math.max(0, Math.min(100, Math.round(Number(row.progressPercent || 0))));
+        const text = row.progressText || "正在处理中";
+        return h(
+          "div",
+          { className: compact ? "mobile-report-progress" : "report-progress-hint" },
+          h(Text, { type: "secondary" }, `${text}${percent > 0 ? `（${percent}%）` : ""}`),
+          h(Progress, {
+            percent: percent || 8,
+            size: "small",
+            status: "active",
+            showInfo: false,
+            strokeColor: { "0%": "#4f7cff", "100%": "#8d5cff" },
+          }),
+        );
+      }
+
+      const reviewJobEventMeta = {
+        created: { text: "任务创建", color: "blue" },
+        progress: { text: "进度更新", color: "processing" },
+        cancel_requested: { text: "请求取消", color: "orange" },
+        status_changed: { text: "状态变化", color: "purple" },
+        current_state: { text: "当前状态", color: "cyan" },
+      };
+
+      function ReviewJobEventTimeline({ events = [] }) {
+        if (!events.length) {
+          return h(Alert, {
+            type: "info",
+            showIcon: true,
+            message: "暂无任务流水",
+            description: "旧报告可能还没有生成过程记录；新生成的报告会自动记录任务创建、进度、取消和状态变化。",
+          });
+        }
+        return h(
+          Timeline,
+          {
+            className: "job-event-timeline",
+            items: events.map((event) => {
+              const meta = reviewJobEventMeta[event.eventType] || { text: event.eventType || "任务事件", color: "gray" };
+              const timeText = event.createdAt ? dayjs(event.createdAt).format("YYYY-MM-DD HH:mm:ss") : "";
+              const percentText = event.progressPercent ? ` · ${event.progressPercent}%` : "";
+              return {
+                color: meta.color,
+                children: h(
+                  "div",
+                  { className: "job-event-item" },
+                  h(
+                    Space,
+                    { wrap: true, size: [6, 4] },
+                    h(Tag, { color: meta.color }, meta.text),
+                    event.status ? h(ReportStatusTag, { status: event.status }) : null,
+                    event.progressStage ? h(Tag, null, event.progressStage) : null,
+                  ),
+                  h(Text, { strong: true }, event.message || meta.text),
+                  h("div", { className: "job-event-time" }, `${timeText}${percentText}`),
+                ),
+              };
+            }),
+          },
+        );
+      }
+
+      function ReportActionButtons({ row, compact = false, onRefresh, onRetryOpen, onShowEvents }) {
         const item = normalizeReportArtifact(row);
         const gridClass = compact ? "mobile-action-grid" : "";
         const isCompleted = (row.status || "completed") === "completed" && item.shareUrl;
@@ -2009,6 +2139,7 @@
           return h(
             "div",
             { className: compact ? gridClass : "report-action-inline" },
+            h(Button, { onClick: () => onShowEvents?.(row) }, "任务流水"),
             row.status === "running" ? h(Button, { danger: true, onClick: cancelJob }, "\u53d6\u6d88\u4efb\u52a1") : null,
             ["failed", "cancelled"].includes(row.status) ? h(Button, { type: "primary", onClick: retryJob }, "\u91cd\u8bd5") : null,
           );
@@ -2018,8 +2149,9 @@
           { className: compact ? gridClass : "report-action-inline" },
           h(Button, { href: item.shareUrl, target: "_blank", type: compact ? "primary" : "default" }, "\u6253\u5f00\u5206\u4eab\u9875"),
           h(Button, { onClick: () => showQrModal(item) }, "\u4e8c\u7ef4\u7801"),
+          h(Button, { onClick: () => onShowEvents?.(row) }, "任务流水"),
           h(Button, { href: item.svgUrl, target: "_blank" }, "\u4e0b\u8f7dSVG"),
-          item.excelUrl ? h(Button, { href: item.excelUrl, target: "_blank" }, "Excel\u6c47\u603b") : null,
+          renderExcelAction(item, "Excel\u6c47\u603b"),
           item.diagnosticsUrl ? h(Button, { href: item.diagnosticsUrl, target: "_blank" }, "\u63a5\u53e3\u8bca\u65ad") : null,
           item.normalizedDataUrl ? h(Button, { href: item.normalizedDataUrl, target: "_blank" }, "\u6807\u51c6\u5316\u6570\u636e") : null,
           h(Button, { onClick: () => copyText(item.shareUrl).then(() => message.success("\u5206\u4eab\u94fe\u63a5\u5df2\u590d\u5236")) }, "\u590d\u5236\u94fe\u63a5"),
@@ -2033,6 +2165,7 @@
 
       async function apiJson(url, options = {}) {
         const response = await fetch(url, {
+          cache: options.cache || "no-store",
           ...options,
           headers: {
             ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
@@ -2040,6 +2173,45 @@
           },
         });
         return readApiJson(response);
+      }
+
+      const contentResourceCache = new Map();
+      const contentResourceInflight = new Map();
+
+      function useContentResource(url) {
+        const cached = contentResourceCache.get(url);
+        const [state, setState] = React.useState(() => cached ? { loading: false, data: cached, error: "" } : { loading: true, data: null, error: "" });
+        React.useEffect(() => {
+          let disposed = false;
+          const controller = new AbortController();
+          const cachedData = contentResourceCache.get(url);
+          if (cachedData) {
+            setState({ loading: false, data: cachedData, error: "" });
+            return () => {
+              disposed = true;
+            };
+          }
+          setState((prev) => ({ loading: true, data: prev.data, error: "" }));
+          const request = contentResourceInflight.get(url) || apiJson(url, { signal: controller.signal, cache: "force-cache" })
+            .finally(() => {
+              contentResourceInflight.delete(url);
+            });
+          contentResourceInflight.set(url, request);
+          request
+            .then((data) => {
+              contentResourceCache.set(url, data);
+              if (!disposed) setState({ loading: false, data, error: "" });
+            })
+            .catch((error) => {
+              if (error?.name === "AbortError") return;
+              if (!disposed) setState({ loading: false, data: null, error: error.message || "页面内容加载失败" });
+            });
+          return () => {
+            disposed = true;
+            if (!contentResourceInflight.has(url)) controller.abort();
+          };
+        }, [url]);
+        return state;
       }
 
       async function copyText(text) {
@@ -2075,15 +2247,33 @@
 
       function normalizeReportArtifact(artifact = {}) {
         const shareUrl = toCurrentOriginUrl(artifact.shareUrl || artifact.share_url);
+        const explicitExcelUrl = artifact.excelUrl || artifact.excel_url || "";
+        const excelStatus = String(artifact.excelStatus || artifact.excel_status || (explicitExcelUrl ? "ready" : "")).trim();
         return {
           ...artifact,
           shareUrl,
           svgUrl: toCurrentOriginUrl(artifact.svgUrl || artifact.svg_url || reportFileUrl(shareUrl, "report.svg")),
           qrSvgUrl: toCurrentOriginUrl(artifact.qrSvgUrl || artifact.qr_svg_url || reportFileUrl(shareUrl, "qr.svg")),
-          excelUrl: toCurrentOriginUrl(artifact.excelUrl || artifact.excel_url || reportFileUrl(shareUrl, "review.xlsx")),
+          excelUrl: toCurrentOriginUrl(explicitExcelUrl || (!excelStatus ? reportFileUrl(shareUrl, "review.xlsx") : "")),
+          excelStatus: excelStatus || (explicitExcelUrl ? "ready" : ""),
+          excelError: artifact.excelError || artifact.excel_error || "",
           diagnosticsUrl: toCurrentOriginUrl(artifact.diagnosticsUrl || artifact.diagnostics_url || reportFileUrl(shareUrl, encodeURIComponent("四季蝉接口诊断.json"))),
           normalizedDataUrl: toCurrentOriginUrl(artifact.normalizedDataUrl || artifact.normalized_data_url || reportFileUrl(shareUrl, encodeURIComponent("四季蝉登录获取标准化数据.json"))),
         };
+      }
+
+      function renderExcelAction(item, label = "Excel汇总", buttonProps = {}) {
+        const status = String(item?.excelStatus || "").trim();
+        if (status === "generating") {
+          return h(Button, { ...buttonProps, disabled: true, loading: true }, "Excel生成中");
+        }
+        if (status === "failed") {
+          return h(Button, { ...buttonProps, disabled: true, danger: true, title: item.excelError || "Excel汇总生成失败" }, "Excel失败");
+        }
+        if (item?.excelUrl) {
+          return h(Button, { ...buttonProps, href: item.excelUrl, target: "_blank" }, label);
+        }
+        return null;
       }
 
       function showQrModal(artifact) {
@@ -2387,7 +2577,7 @@
                     h(Button, { href: shareArtifact.shareUrl, target: "_blank", type: "primary" }, "打开分享网页"),
                     h(Button, { href: shareArtifact.svgUrl, target: "_blank", download: true }, "下载SVG图片"),
                     h(Button, { onClick: () => showQrModal(shareArtifact) }, "二维码"),
-                    shareArtifact.excelUrl ? h(Button, { href: shareArtifact.excelUrl, target: "_blank", download: true }, "下载Excel汇总") : null,
+                    renderExcelAction(shareArtifact, "下载Excel汇总", { download: true }),
                     shareArtifact.diagnosticsUrl ? h(Button, { href: shareArtifact.diagnosticsUrl, target: "_blank", download: true }, "接口诊断") : null,
                     shareArtifact.normalizedDataUrl ? h(Button, { href: shareArtifact.normalizedDataUrl, target: "_blank", download: true }, "标准化数据") : null,
                     h(Button, {
@@ -2467,36 +2657,194 @@
         const [reviewProgress, setReviewProgress] = React.useState(null);
         const [weComHandoff, setWeComHandoff] = React.useState(null);
         const [weComBrowserSession, setWeComBrowserSession] = React.useState(null);
+        const [weComBrowserDebug, setWeComBrowserDebug] = React.useState(null);
         const progressTimersRef = React.useRef([]);
+        const reviewStatusPollRef = React.useRef(null);
         const handoffPollRef = React.useRef(null);
         const browserSessionPollRef = React.useRef(null);
+        const generateRequestRef = React.useRef(null);
+        const detailRequestRef = React.useRef(null);
+        const weComRequestControllersRef = React.useRef(new Set());
         const createWeComBrowserSessionRef = React.useRef(null);
         const weComQrRefreshRef = React.useRef({ count: 0, running: false, lastAt: 0 });
         const weComSsoUrl = "https://login.work.weixin.qq.com/wwlogin/sso/login/?login_type=CorpApp&appid=ww408c023179829552&agentid=1000157&redirect_uri=https%3A%2F%2Fmerchants.hydee.cn%2Fapp-jump%2Fsuper-admin-login&state=WWLogin";
 
-        const loadStatus = React.useCallback(async () => {
-          const response = await fetch("/api/ai-config/status");
+        const loadStatus = React.useCallback(async (options = {}) => {
+          const response = await fetch("/api/ai-config/status", { signal: options.signal });
           setStatus(await response.json());
         }, []);
 
         React.useEffect(() => {
-          loadStatus().catch(() => setStatus({ configured: false }));
+          const controller = new AbortController();
+          loadStatus({ signal: controller.signal }).catch((error) => {
+            if (error?.name !== "AbortError") setStatus({ configured: false });
+          });
+          return () => controller.abort();
         }, [loadStatus]);
+
+        const beginWeComRequest = React.useCallback(() => {
+          const controller = new AbortController();
+          weComRequestControllersRef.current.add(controller);
+          return controller;
+        }, []);
+
+        const finishWeComRequest = React.useCallback((controller) => {
+          weComRequestControllersRef.current.delete(controller);
+        }, []);
+
+        const abortWeComRequests = React.useCallback(() => {
+          weComRequestControllersRef.current.forEach((controller) => controller.abort());
+          weComRequestControllersRef.current.clear();
+        }, []);
 
         React.useEffect(() => () => {
           progressTimersRef.current.forEach((timer) => clearTimeout(timer));
           progressTimersRef.current = [];
+          if (reviewStatusPollRef.current) clearInterval(reviewStatusPollRef.current);
           if (handoffPollRef.current) clearInterval(handoffPollRef.current);
           if (browserSessionPollRef.current) clearInterval(browserSessionPollRef.current);
+          abortWeComRequests();
+          if (generateRequestRef.current) {
+            generateRequestRef.current.abort();
+            generateRequestRef.current = null;
+          }
+          if (detailRequestRef.current) {
+            detailRequestRef.current.abort();
+            detailRequestRef.current = null;
+          }
         }, []);
 
+        const stopReviewStatusPolling = React.useCallback(() => {
+          if (reviewStatusPollRef.current) {
+            clearInterval(reviewStatusPollRef.current);
+            reviewStatusPollRef.current = null;
+          }
+        }, []);
+
+        const abortReviewRequests = React.useCallback((options = {}) => {
+          let aborted = false;
+          if (!options.keepGenerate && generateRequestRef.current) {
+            generateRequestRef.current.abort();
+            generateRequestRef.current = null;
+            aborted = true;
+          }
+          if (!options.keepDetail && detailRequestRef.current) {
+            detailRequestRef.current.abort();
+            detailRequestRef.current = null;
+            aborted = true;
+          }
+          return aborted;
+        }, []);
+
+        const beginGenerateRequest = React.useCallback(() => {
+          abortReviewRequests();
+          const controller = new AbortController();
+          generateRequestRef.current = controller;
+          return controller;
+        }, [abortReviewRequests]);
+
+        const beginDetailRequest = React.useCallback(() => {
+          abortReviewRequests({ keepGenerate: true });
+          const controller = new AbortController();
+          detailRequestRef.current = controller;
+          return controller;
+        }, [abortReviewRequests]);
+
+        const reviewSourceGroupFor = React.useCallback((type) => {
+          if (type === "excel") return "excel";
+          if (type === "wecom") return "wecom";
+          return "sijichan";
+        }, []);
+
+        const reviewStepsFor = React.useCallback((type) => {
+          return type === "excel"
+            ? [
+                { title: "校验模板", description: "正在检查Excel文件格式与模板结构。" },
+                { title: "上传数据", description: "正在安全上传客户复盘数据。" },
+                { title: "AI分析", description: "正在识别品种增长、奖励闭环和下期建议。" },
+                { title: "生成报告", description: "正在生成分享网页、SVG长图和二维码。" },
+              ]
+            : [
+                { title: "登录中", description: "正在登录四季蝉后台并获取授权。" },
+                { title: "读取销售数据", description: "正在读取销售汇总、上月对比和半年对比数据。" },
+                { title: "读取奖励活动", description: "正在读取奖励统计、活动汇总和概览校验数据。" },
+                { title: "读取培训打赏", description: "正在读取培训情况和厂家打赏数据。" },
+                { title: "生成报告", description: "正在生成AI报告和分享材料，Excel汇总将在后台生成。" },
+              ];
+        }, []);
+
+        const reviewStepIndexForStage = React.useCallback((type, stage) => {
+          const normalized = String(stage || "").trim();
+          if (type === "excel") {
+            return {
+              queued: 0,
+              template_validated: 1,
+              ai_generating: 2,
+              publishing: 3,
+              completed: 3,
+              failed: 0,
+              cancelled: 0,
+            }[normalized] ?? 0;
+          }
+          return {
+            queued: 0,
+            collecting: 1,
+            dataset_ready: 3,
+            ai_generating: 4,
+            publishing: 4,
+            completed: 4,
+            failed: 0,
+            cancelled: 0,
+          }[normalized] ?? 0;
+        }, []);
+
+        const applyRunningReportProgress = React.useCallback((runningReport, type) => {
+          if (!runningReport) return;
+          const steps = reviewStepsFor(type);
+          const startedAtMs = runningReport.startedAt ? dayjs(runningReport.startedAt).valueOf() : Date.now();
+          const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
+          setReviewProgress({
+            steps,
+            current: reviewStepIndexForStage(type, runningReport.progressStage),
+            status: "process",
+            text: runningReport.progressText || "正在处理",
+            elapsedSeconds,
+            percent: Number(runningReport.progressPercent || 8),
+            startedAt: startedAtMs,
+            backendReportId: runningReport.id,
+          });
+        }, [reviewStepIndexForStage, reviewStepsFor]);
+
+        const startReviewStatusPolling = React.useCallback((type, options = {}) => {
+          stopReviewStatusPolling();
+          const sourceGroup = reviewSourceGroupFor(type);
+          const poll = async () => {
+            try {
+              const data = await apiJson(`/api/review-reports/running?sourceGroup=${encodeURIComponent(sourceGroup)}`);
+              if (data.report) {
+                applyRunningReportProgress(data.report, type);
+              } else if (options.keepLocalWhenMissing !== true) {
+                setReviewProgress((prev) => (prev?.status === "process" ? null : prev));
+              }
+            } catch {
+              // ignore polling errors and keep local progress fallback
+            }
+          };
+          poll();
+          reviewStatusPollRef.current = window.setInterval(poll, 4000);
+        }, [applyRunningReportProgress, reviewSourceGroupFor, stopReviewStatusPolling]);
+
         const resetReport = (options = {}) => {
+          const aborted = !options.keepRequests && abortReviewRequests();
+          if (aborted && !options.keepLoading) setLoading(false);
           setError("");
           setReport(null);
           setMarkdown("");
           setSummary(null);
           setArtifact(null);
           setReviewProgress(null);
+          setWeComBrowserDebug(null);
+          stopReviewStatusPolling();
           if (!options.keepWeComHandoff) setWeComHandoff(null);
           if (!options.keepWeComHandoff) setWeComBrowserSession(null);
           progressTimersRef.current.forEach((timer) => clearTimeout(timer));
@@ -2509,26 +2857,36 @@
             clearInterval(browserSessionPollRef.current);
             browserSessionPollRef.current = null;
           }
+          if (!options.keepWeComHandoff) abortWeComRequests();
         };
+
+        React.useEffect(() => {
+          if (!auth?.user) return undefined;
+          let disposed = false;
+          const controller = new AbortController();
+          const loadRunning = async () => {
+            try {
+              const data = await apiJson(`/api/review-reports/running?sourceGroup=${encodeURIComponent(reviewSourceGroupFor(sourceType))}`, { signal: controller.signal });
+              if (disposed || !data.report) return;
+              applyRunningReportProgress(data.report, sourceType);
+              startReviewStatusPolling(sourceType);
+            } catch (error) {
+              if (error?.name !== "AbortError") {
+                // ignore
+              }
+            }
+          };
+          loadRunning();
+          return () => {
+            disposed = true;
+            controller.abort();
+          };
+        }, [auth?.user, sourceType, applyRunningReportProgress, reviewSourceGroupFor, startReviewStatusPolling]);
 
         const startReviewProgress = (type) => {
           progressTimersRef.current.forEach((timer) => clearTimeout(timer));
           progressTimersRef.current = [];
-          const steps =
-            type === "excel"
-              ? [
-                  { title: "校验模板", description: "正在检查Excel文件格式与模板结构。" },
-                  { title: "上传数据", description: "正在安全上传客户复盘数据。" },
-                  { title: "AI分析", description: "正在识别品种增长、奖励闭环和下期建议。" },
-                  { title: "生成报告", description: "正在生成分享网页、SVG长图和二维码。" },
-                ]
-              : [
-                  { title: "登录中", description: "正在登录四季蝉后台并获取授权。" },
-                  { title: "读取销售数据", description: "正在读取销售汇总、上月对比和半年对比数据。" },
-                  { title: "读取奖励活动", description: "正在读取奖励统计、活动汇总和概览校验数据。" },
-                  { title: "读取培训打赏", description: "正在读取培训情况和厂家打赏数据。" },
-                  { title: "生成报告", description: "正在生成AI报告、Excel汇总、分享网页、SVG长图和二维码。" },
-                ];
+          const steps = reviewStepsFor(type);
           const finalStep = steps.length - 1;
           const startedAt = Date.now();
           const waitMessages = [
@@ -2570,6 +2928,7 @@
             const timer = setTimeout(() => {
               setReviewProgress((prev) => {
                 if (!prev || prev.status !== "process") return prev;
+                if (prev.backendReportId) return prev;
                 const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
                 return {
                   ...prev,
@@ -2585,6 +2944,7 @@
           const interval = setInterval(() => {
             setReviewProgress((prev) => {
               if (!prev || prev.status !== "process") return prev;
+              if (prev.backendReportId) return prev;
               const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
               const current = elapsedSeconds >= 8 ? Math.max(prev.current, finalStep) : prev.current;
               return {
@@ -2597,11 +2957,13 @@
             });
           }, 3000);
           progressTimersRef.current.push(interval);
+          startReviewStatusPolling(type, { keepLocalWhenMissing: true });
         };
 
         const finishReviewProgress = (ok, text) => {
           progressTimersRef.current.forEach((timer) => clearTimeout(timer));
           progressTimersRef.current = [];
+          stopReviewStatusPolling();
           setReviewProgress((prev) => {
             if (!prev) return null;
             return {
@@ -2613,6 +2975,58 @@
             };
           });
         };
+
+        const loadGeneratedReportDetail = async (reportDbId, options = {}) => {
+          if (!reportDbId) return null;
+          const controller = beginDetailRequest();
+          try {
+            const data = await apiJson(`/api/review-reports/${encodeURIComponent(reportDbId)}`, { signal: controller.signal });
+            if (detailRequestRef.current !== controller) return null;
+            const detail = data.report || {};
+            setSummary(detail.summary || options.fallbackSummary || null);
+            setReport(detail.report || null);
+            setMarkdown(detail.markdown || "");
+            setArtifact(normalizeReportArtifact({ ...(options.artifact || {}), ...detail }));
+            return detail;
+          } catch (err) {
+            if (err?.name === "AbortError") return null;
+            if (options.fallbackSummary) setSummary(options.fallbackSummary);
+            if (options.artifact) setArtifact(normalizeReportArtifact(options.artifact));
+            message.warning(err.message || "报告详情加载失败，可到历史复盘报告查看。");
+            return null;
+          } finally {
+            if (detailRequestRef.current === controller) detailRequestRef.current = null;
+          }
+        };
+
+        React.useEffect(() => {
+          const reportDbId = artifact?.id || artifact?.reportDbId || artifact?.report_db_id;
+          if (!reportDbId || artifact?.excelStatus !== "generating") return undefined;
+          let disposed = false;
+          let interval = null;
+          const refreshExcelState = async () => {
+            try {
+              const data = await apiJson(`/api/review-reports/${encodeURIComponent(reportDbId)}/status`);
+              if (disposed) return;
+              const detail = data.report || {};
+              const nextArtifact = normalizeReportArtifact({ ...artifact, ...detail });
+              setArtifact(nextArtifact);
+              if (nextArtifact.excelStatus !== "generating" && interval) {
+                clearInterval(interval);
+                interval = null;
+              }
+            } catch {
+              // Keep the visible report; history can still be refreshed manually.
+            }
+          };
+          const timeout = window.setTimeout(refreshExcelState, 2500);
+          interval = window.setInterval(refreshExcelState, 5000);
+          return () => {
+            disposed = true;
+            window.clearTimeout(timeout);
+            if (interval) window.clearInterval(interval);
+          };
+        }, [artifact?.id, artifact?.reportDbId, artifact?.report_db_id, artifact?.excelStatus]);
 
         const openWeComSso = () => {
           const values = sourceForm.getFieldsValue();
@@ -2642,8 +3056,9 @@
           if (!handoffId) return;
           if (handoffPollRef.current) clearInterval(handoffPollRef.current);
           const check = async () => {
+            const controller = beginWeComRequest();
             try {
-              const response = await fetch(`/api/wecom-handoff/${encodeURIComponent(handoffId)}`);
+              const response = await fetch(`/api/wecom-handoff/${encodeURIComponent(handoffId)}`, { signal: controller.signal });
               const data = await response.json().catch(() => ({}));
               if (response.ok && data.handoff) {
                 setWeComHandoff((prev) => ({ ...(prev || {}), ...data.handoff }));
@@ -2654,20 +3069,24 @@
                   message.success("\u626b\u7801\u767b\u5f55\u5df2\u5c31\u7eea\uff0c\u8bf7\u624b\u52a8\u70b9\u51fb\u751f\u6210\u590d\u76d8\u62a5\u544a");
                 }
               }
-            } catch {
+            } catch (error) {
+              if (error?.name === "AbortError") return;
               // keep polling while the page is open
+            } finally {
+              finishWeComRequest(controller);
             }
           };
           check();
           handoffPollRef.current = setInterval(check, 5000);
-        }, []);
+        }, [beginWeComRequest, finishWeComRequest]);
 
         const pollWeComBrowserSession = React.useCallback((sessionId) => {
           if (!sessionId) return;
           if (browserSessionPollRef.current) clearInterval(browserSessionPollRef.current);
           const check = async () => {
+            const controller = beginWeComRequest();
             try {
-              const response = await fetch(`/api/wecom-browser-session/${encodeURIComponent(sessionId)}`);
+              const response = await fetch(`/api/wecom-browser-session/${encodeURIComponent(sessionId)}`, { signal: controller.signal });
               const data = await response.json().catch(() => ({}));
               if (response.ok && data.session) {
                 setWeComBrowserSession(data.session);
@@ -2683,13 +3102,16 @@
                   refreshExpiredWeComQr();
                 }
               }
-            } catch {
+            } catch (error) {
+              if (error?.name === "AbortError") return;
               // keep polling while the page is open
+            } finally {
+              finishWeComRequest(controller);
             }
           };
           check();
           browserSessionPollRef.current = setInterval(check, 4000);
-        }, []);
+        }, [beginWeComRequest, finishWeComRequest]);
 
         const refreshWeComBrowserSession = async () => {
           if (!weComBrowserSession?.id) {
@@ -2697,7 +3119,8 @@
             return;
           }
           try {
-            const response = await fetch(`/api/wecom-browser-session/${encodeURIComponent(weComBrowserSession.id)}`);
+            const controller = beginWeComRequest();
+            const response = await fetch(`/api/wecom-browser-session/${encodeURIComponent(weComBrowserSession.id)}`, { signal: controller.signal }).finally(() => finishWeComRequest(controller));
             const data = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(data.error || "扫码状态刷新失败");
             setWeComBrowserSession(data.session);
@@ -2705,6 +3128,21 @@
             message.success(data.session?.exportReady ? "服务器已具备导出能力" : data.session?.merchantReady ? "已进入新零售，正在等待接口探测" : "扫码状态已刷新");
           } catch (err) {
             message.error(err.message || "扫码状态刷新失败");
+          }
+        };
+
+        const loadWeComBrowserDebug = async () => {
+          if (!weComBrowserSession?.id) {
+            message.warning("请先生成企微扫码二维码");
+            return;
+          }
+          try {
+            const controller = beginWeComRequest();
+            const data = await apiJson(`/api/wecom-browser-session/${encodeURIComponent(weComBrowserSession.id)}/debug`, { signal: controller.signal }).finally(() => finishWeComRequest(controller));
+            setWeComBrowserDebug(data.debug || { exportProbeDetails: [], ssoDiagnostics: [], openPages: [] });
+            message.success("调试详情已加载");
+          } catch (err) {
+            message.error(err.message || "调试详情加载失败");
           }
         };
 
@@ -2720,11 +3158,13 @@
             return;
           }
           try {
+            const controller = beginWeComRequest();
             const response = await fetch(`/api/wecom-browser-session/${encodeURIComponent(weComBrowserSession.id)}/merchant-code`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
+              signal: controller.signal,
               body: JSON.stringify(values),
-            });
+            }).finally(() => finishWeComRequest(controller));
             const data = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(data.error || "商户编码填入失败");
             setWeComBrowserSession(data.session);
@@ -2737,11 +3177,13 @@
         const createWeComHandoff = async () => {
           const values = sourceForm.getFieldsValue();
           try {
+            const controller = beginWeComRequest();
             const response = await fetch("/api/wecom-handoff", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
+              signal: controller.signal,
               body: JSON.stringify(values),
-            });
+            }).finally(() => finishWeComRequest(controller));
             const data = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(data.error || "企微授权交接会话创建失败");
             setWeComHandoff(data);
@@ -2762,15 +3204,18 @@
           }
           try {
             setWeComBrowserSession(null);
+            setWeComBrowserDebug(null);
             setWeComHandoff(null);
             if (!options.autoRefresh) {
               weComQrRefreshRef.current = { count: 0, running: false, lastAt: 0 };
             }
+            const controller = beginWeComRequest();
             const response = await fetch("/api/wecom-browser-session", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
+              signal: controller.signal,
               body: JSON.stringify(values),
-            });
+            }).finally(() => finishWeComRequest(controller));
             const data = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(data.error || "服务器扫码会话创建失败");
             setWeComBrowserSession(data.session);
@@ -2787,12 +3232,15 @@
           const values = sourceForm.getFieldsValue();
           try {
             setWeComBrowserSession(null);
+            setWeComBrowserDebug(null);
             setWeComHandoff(null);
+            const controller = beginWeComRequest();
             const response = await fetch("/api/wecom-browser-profile-session", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
+              signal: controller.signal,
               body: JSON.stringify(values),
-            });
+            }).finally(() => finishWeComRequest(controller));
             const data = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(data.error || "服务器登录态检测失败");
             setWeComBrowserSession(data.session);
@@ -2831,31 +3279,38 @@
           }
           const values = sourceForm.getFieldsValue();
           setLoading(true);
-          resetReport({ keepWeComHandoff: true });
+          resetReport({ keepWeComHandoff: true, keepLoading: true });
+          const controller = beginGenerateRequest();
           startReviewProgress("sijichan");
           try {
             const useBrowserSession = Boolean(activeSession?.id);
             const response = await fetch(useBrowserSession ? "/api/wecom-browser-session-review-report" : "/api/wecom-handoff-review-report", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
+              signal: controller.signal,
               body: JSON.stringify({ sessionId: activeSession?.id, handoffId: activeHandoff?.id, merCode: values.merCode, merName: values.merName }),
             });
             const data = await response.json().catch(() => ({}));
+            if (generateRequestRef.current !== controller) return;
             if (!response.ok) {
               setSummary(data.summary || null);
               throw new Error(data.error || "企微授权数据导入失败。");
             }
-            setSummary(data.summary);
-            setReport(data.report);
-            setMarkdown(data.markdown || "");
-            setArtifact({ reportId: data.reportId, shareUrl: data.shareUrl, svgUrl: data.svgUrl, qrSvgUrl: data.qrSvgUrl, excelUrl: data.excelUrl, normalizedDataUrl: data.normalizedDataUrl, diagnosticsUrl: data.diagnosticsUrl });
+            await loadGeneratedReportDetail(data.id, {
+              fallbackSummary: data.summary || null,
+              artifact: { reportId: data.reportId, shareUrl: data.shareUrl, svgUrl: data.svgUrl, qrSvgUrl: data.qrSvgUrl, excelUrl: data.excelUrl, excelStatus: data.excelStatus, excelError: data.excelError, normalizedDataUrl: data.normalizedDataUrl, diagnosticsUrl: data.diagnosticsUrl },
+            });
             finishReviewProgress(true);
             message.success("企微授权复盘报告已生成");
           } catch (err) {
+            if (err?.name === "AbortError") return;
             setError(err.message || "企微授权数据导入失败。");
             finishReviewProgress(false, err.message || "企微授权数据导入失败。");
           } finally {
-            setLoading(false);
+            if (generateRequestRef.current === controller) {
+              generateRequestRef.current = null;
+              setLoading(false);
+            }
           }
         };
 
@@ -2873,27 +3328,33 @@
           setReport(null);
           setMarkdown("");
           setArtifact(null);
+          const controller = beginGenerateRequest();
           startReviewProgress("excel");
           try {
             const formData = new FormData();
             formData.append("file", file);
-            const response = await fetch("/api/review-report", { method: "POST", body: formData });
+            const response = await fetch("/api/review-report", { method: "POST", body: formData, signal: controller.signal });
             const data = await response.json().catch(() => ({}));
+            if (generateRequestRef.current !== controller) return;
             if (!response.ok) {
               setSummary(data.summary || null);
               throw new Error(data.error || "复盘报告生成失败。");
             }
-            setSummary(data.summary);
-            setReport(data.report);
-            setMarkdown(data.markdown || "");
-            setArtifact({ reportId: data.reportId, shareUrl: data.shareUrl, svgUrl: data.svgUrl, qrSvgUrl: data.qrSvgUrl, excelUrl: data.excelUrl, normalizedDataUrl: data.normalizedDataUrl, diagnosticsUrl: data.diagnosticsUrl });
+            await loadGeneratedReportDetail(data.id, {
+              fallbackSummary: data.summary || null,
+              artifact: { reportId: data.reportId, shareUrl: data.shareUrl, svgUrl: data.svgUrl, qrSvgUrl: data.qrSvgUrl, excelUrl: data.excelUrl, excelStatus: data.excelStatus, excelError: data.excelError, normalizedDataUrl: data.normalizedDataUrl, diagnosticsUrl: data.diagnosticsUrl },
+            });
             finishReviewProgress(true);
             message.success("AI复盘报告已生成");
           } catch (err) {
+            if (err?.name === "AbortError") return;
             setError(err.message || "复盘报告生成失败。");
             finishReviewProgress(false, err.message || "复盘报告生成失败。");
           } finally {
-            setLoading(false);
+            if (generateRequestRef.current === controller) {
+              generateRequestRef.current = null;
+              setLoading(false);
+            }
           }
         };
 
@@ -2904,31 +3365,38 @@
           }
           const values = await sourceForm.validateFields();
           setLoading(true);
-          resetReport();
+          resetReport({ keepLoading: true });
+          const controller = beginGenerateRequest();
           startReviewProgress("sijichan");
           try {
             const response = await fetch("/api/sijichan-review-report", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
+              signal: controller.signal,
               body: JSON.stringify(values),
             });
             const data = await response.json().catch(() => ({}));
+            if (generateRequestRef.current !== controller) return;
             if (!response.ok) {
               setSummary(data.summary || null);
               throw new Error(data.error || "接口数据导入失败。");
             }
-            setSummary(data.summary);
-            setReport(data.report);
-            setMarkdown(data.markdown || "");
-            setArtifact({ reportId: data.reportId, shareUrl: data.shareUrl, svgUrl: data.svgUrl, qrSvgUrl: data.qrSvgUrl, excelUrl: data.excelUrl, normalizedDataUrl: data.normalizedDataUrl, diagnosticsUrl: data.diagnosticsUrl });
+            await loadGeneratedReportDetail(data.id, {
+              fallbackSummary: data.summary || null,
+              artifact: { reportId: data.reportId, shareUrl: data.shareUrl, svgUrl: data.svgUrl, qrSvgUrl: data.qrSvgUrl, excelUrl: data.excelUrl, excelStatus: data.excelStatus, excelError: data.excelError, normalizedDataUrl: data.normalizedDataUrl, diagnosticsUrl: data.diagnosticsUrl },
+            });
 
             finishReviewProgress(true);
             message.success("接口数据复盘报告已生成");
           } catch (err) {
+            if (err?.name === "AbortError") return;
             setError(err.message || "接口数据导入失败。");
             finishReviewProgress(false, err.message || "接口数据导入失败。");
           } finally {
-            setLoading(false);
+            if (generateRequestRef.current === controller) {
+              generateRequestRef.current = null;
+              setLoading(false);
+            }
           }
         };
 
@@ -2944,30 +3412,37 @@
             return;
           }
           setLoading(true);
-          resetReport();
+          resetReport({ keepLoading: true });
+          const controller = beginGenerateRequest();
           startReviewProgress("sijichan");
           try {
             const response = await fetch("/api/wecom-token-review-report", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
+              signal: controller.signal,
               body: JSON.stringify(values),
             });
             const data = await response.json().catch(() => ({}));
+            if (generateRequestRef.current !== controller) return;
             if (!response.ok) {
               setSummary(data.summary || null);
               throw new Error(data.error || "企微授权数据导入失败。");
             }
-            setSummary(data.summary);
-            setReport(data.report);
-            setMarkdown(data.markdown || "");
-            setArtifact({ reportId: data.reportId, shareUrl: data.shareUrl, svgUrl: data.svgUrl, qrSvgUrl: data.qrSvgUrl, excelUrl: data.excelUrl, normalizedDataUrl: data.normalizedDataUrl, diagnosticsUrl: data.diagnosticsUrl });
+            await loadGeneratedReportDetail(data.id, {
+              fallbackSummary: data.summary || null,
+              artifact: { reportId: data.reportId, shareUrl: data.shareUrl, svgUrl: data.svgUrl, qrSvgUrl: data.qrSvgUrl, excelUrl: data.excelUrl, excelStatus: data.excelStatus, excelError: data.excelError, normalizedDataUrl: data.normalizedDataUrl, diagnosticsUrl: data.diagnosticsUrl },
+            });
             finishReviewProgress(true);
             message.success("企微授权复盘报告已生成");
           } catch (err) {
+            if (err?.name === "AbortError") return;
             setError(err.message || "企微授权数据导入失败。");
             finishReviewProgress(false, err.message || "企微授权数据导入失败。");
           } finally {
-            setLoading(false);
+            if (generateRequestRef.current === controller) {
+              generateRequestRef.current = null;
+              setLoading(false);
+            }
           }
         };
 
@@ -3142,6 +3617,7 @@
                                 weComBrowserSession.merCodeFilled ? h(Tag, { color: weComBrowserSession.merCodeSubmitTried ? "green" : "blue", className: "large-tag" }, weComBrowserSession.merCodeSubmitTried ? "客户编码已提交" : "客户编码已填入") : null,
                                 weComBrowserSession.exportProbeAt ? h(Tag, { color: "default", className: "large-tag" }, `探测时间 ${dayjs(weComBrowserSession.exportProbeAt).format("HH:mm:ss")}`) : null,
                                 weComBrowserSession.screenshotUrl ? h(Button, { size: "small", onClick: () => window.open(weComBrowserSession.screenshotUrl, "_blank", "noopener,noreferrer") }, "查看服务器页面截图") : null,
+                                h(Button, { size: "small", onClick: loadWeComBrowserDebug }, weComBrowserDebug ? "刷新调试详情" : "加载调试详情"),
                               ),
                               h(
                                 "div",
@@ -3156,36 +3632,37 @@
                                       { style: { marginTop: 8 } },
                                       h(Text, { type: "secondary", strong: true }, "服务器扫码登录后，请手动点击生成复盘报告"),
                                     )
-                                  : null,                                Array.isArray(weComBrowserSession.exportProbeDetails) && weComBrowserSession.exportProbeDetails.length
+                                  : null,
+                                Array.isArray(weComBrowserDebug?.exportProbeDetails) && weComBrowserDebug.exportProbeDetails.length
                                   ? h(
                                       "div",
                                       { style: { marginTop: 8 } },
                                       h(Text, { type: "secondary", strong: true }, "接口探测："),
-                                      ...weComBrowserSession.exportProbeDetails.map((item, index) => h(
+                                      ...weComBrowserDebug.exportProbeDetails.map((item, index) => h(
                                         Text,
                                         { key: `${item.label || ""}-${index}`, type: String(item.code || "") === "10000" || item.hasData ? "success" : "secondary", style: { display: "block", wordBreak: "break-all" } },
                                         `${item.label || `接口${index + 1}`}：HTTP ${item.status || "-"}${item.code ? ` / ${item.code}` : ""}${item.msg ? ` / ${item.msg}` : ""}${item.hasData ? " / 有数据" : ""}`,
                                       )),
                                     )
                                   : null,
-                                Array.isArray(weComBrowserSession.ssoDiagnostics) && weComBrowserSession.ssoDiagnostics.length
+                                Array.isArray(weComBrowserDebug?.ssoDiagnostics) && weComBrowserDebug.ssoDiagnostics.length
                                   ? h(
                                       "div",
                                       { style: { marginTop: 8 } },
                                       h(Text, { type: "secondary", strong: true }, "企微跳转诊断："),
-                                      ...weComBrowserSession.ssoDiagnostics.map((item, index) => h(
+                                      ...weComBrowserDebug.ssoDiagnostics.map((item, index) => h(
                                         Text,
                                         { key: `${item.at || ""}-${index}`, type: item.tokenFound ? "success" : item.codeSeen ? "secondary" : "secondary", style: { display: "block", wordBreak: "break-all" } },
                                         `${dayjs(item.at).isValid() ? dayjs(item.at).format("HH:mm:ss") : ""} ${item.from || "诊断"}：${item.status ? `HTTP ${item.status} / ` : ""}${item.codeSeen ? "已看到企微code / " : ""}${item.tokenFound ? "发现授权 / " : ""}${item.message || ""}${item.location ? ` / 跳转：${item.location}` : ""}`,
                                       )),
                                     )
                                   : null,
-                                Array.isArray(weComBrowserSession.openPages) && weComBrowserSession.openPages.length
+                                Array.isArray(weComBrowserDebug?.openPages) && weComBrowserDebug.openPages.length
                                   ? h(
                                       "div",
                                       { style: { marginTop: 8 } },
                                       h(Text, { type: "secondary", strong: true }, "服务器浏览器页面："),
-                                      ...weComBrowserSession.openPages.map((page, index) => h(
+                                      ...weComBrowserDebug.openPages.map((page, index) => h(
                                         Text,
                                         { key: `${page.url || ""}-${index}`, type: page.merchantReady ? "success" : "secondary", style: { display: "block", wordBreak: "break-all" } },
                                         `${page.merchantReady ? "已进入新零售" : "页面"} ${index + 1}：${page.title || "无标题"} ${page.url || ""}`,
@@ -3380,8 +3857,8 @@
         const [promptLoading, setPromptLoading] = React.useState(false);
         const [promptSaving, setPromptSaving] = React.useState(false);
 
-        const loadStatus = React.useCallback(async () => {
-          const response = await fetch("/api/ai-config/status");
+        const loadStatus = React.useCallback(async (options = {}) => {
+          const response = await fetch("/api/ai-config/status", { signal: options.signal });
           const data = await response.json();
           setStatus(data);
           form.setFieldsValue({
@@ -3391,11 +3868,11 @@
           });
         }, [form]);
 
-        const loadPrompt = React.useCallback(async () => {
+        const loadPrompt = React.useCallback(async (options = {}) => {
           if (auth?.user?.role !== "admin") return;
           setPromptLoading(true);
           try {
-            const response = await fetch("/api/review-prompt");
+            const response = await fetch("/api/review-prompt", { signal: options.signal });
             const data = await readApiJson(response);
             promptForm.setFieldsValue({ instruction: data.instruction || "" });
             setPromptMeta({
@@ -3403,18 +3880,24 @@
               updatedAt: data.updatedAt || "",
             });
           } catch (err) {
-            message.error(err.message || "\u590d\u76d8AI\u6307\u4ee4\u52a0\u8f7d\u5931\u8d25");
+            if (err?.name !== "AbortError") message.error(err.message || "\u590d\u76d8AI\u6307\u4ee4\u52a0\u8f7d\u5931\u8d25");
           } finally {
-            setPromptLoading(false);
+            if (!options.signal?.aborted) setPromptLoading(false);
           }
         }, [auth?.user?.role, promptForm]);
 
         React.useEffect(() => {
-          loadStatus().catch(() => setStatus({ configured: false }));
+          const controller = new AbortController();
+          loadStatus({ signal: controller.signal }).catch((error) => {
+            if (error?.name !== "AbortError") setStatus({ configured: false });
+          });
+          return () => controller.abort();
         }, [loadStatus]);
 
         React.useEffect(() => {
-          loadPrompt().catch(() => {});
+          const controller = new AbortController();
+          loadPrompt({ signal: controller.signal }).catch(() => {});
+          return () => controller.abort();
         }, [loadPrompt]);
 
         const saveConfig = async () => {
@@ -3616,27 +4099,129 @@
         if (!auth?.user) {
           return h(GateCard, { title: "登录后查看历史复盘报告", text: "每次AI复盘生成后都会保存到历史报告，方便再次打开分享页、下载SVG或二维码。", onLogin, onRegister });
         }
-        const [loading, setLoading] = React.useState(false);
-        const [reports, setReports] = React.useState([]);
-        const loadReports = React.useCallback(async () => {
-          setLoading(true);
+        const [tableState, setTableState] = React.useState({ items: [], total: 0, page: 1, pageSize: 8, loading: false });
+        const [historyFilters, setHistoryFilters] = React.useState({ status: "", sourceType: "", keyword: "" });
+        const reportRequestRef = React.useRef(null);
+        const statusRequestRef = React.useRef(null);
+        const buildReportQuery = React.useCallback((nextPage = 1, nextPageSize = tableState.pageSize, nextFilters = historyFilters) => queryStringFromObject({
+          page: nextPage,
+          pageSize: nextPageSize,
+          status: nextFilters.status,
+          sourceType: nextFilters.sourceType,
+          keyword: nextFilters.keyword,
+        }), [historyFilters, tableState.pageSize]);
+        const loadReports = React.useCallback(async (nextPage = 1, nextPageSize = tableState.pageSize, nextFilters = historyFilters) => {
+          if (reportRequestRef.current) reportRequestRef.current.abort();
+          const controller = new AbortController();
+          reportRequestRef.current = controller;
+          setTableState((prev) => ({ ...prev, loading: true }));
           try {
-            const data = await apiJson("/api/review-reports");
-            setReports(data.reports || []);
+            const data = await apiJson(`/api/review-reports${buildReportQuery(nextPage, nextPageSize, nextFilters)}`, { signal: controller.signal });
+            if (reportRequestRef.current !== controller) return;
+            setTableState({
+              items: data.items || data.reports || [],
+              total: Number(data.total || 0),
+              page: Number(data.page || nextPage),
+              pageSize: Number(data.pageSize || nextPageSize),
+              loading: false,
+            });
           } catch (err) {
-            message.error(err.message || "历史报告加载失败");
+            if (err?.name === "AbortError") return;
+            message.error(err.message || "\u52a0\u8f7d\u5386\u53f2\u62a5\u544a\u5931\u8d25");
+            if (reportRequestRef.current === controller) {
+              setTableState((prev) => ({ ...prev, loading: false }));
+            }
           } finally {
-            setLoading(false);
+            if (reportRequestRef.current === controller) reportRequestRef.current = null;
+          }
+        }, [buildReportQuery, historyFilters, tableState.pageSize]);
+        const refreshCurrentReports = React.useCallback(() => loadReports(tableState.page, tableState.pageSize, historyFilters), [historyFilters, loadReports, tableState.page, tableState.pageSize]);
+        const refreshVisibleReportStatuses = React.useCallback(async () => {
+          const pendingIds = tableState.items
+            .filter((row) => row.status === "running" || String(row.excelStatus || row.excel_status || "") === "generating")
+            .map((row) => row.id)
+            .filter(Boolean);
+          if (!pendingIds.length) return;
+          if (statusRequestRef.current) statusRequestRef.current.abort();
+          const controller = new AbortController();
+          statusRequestRef.current = controller;
+          try {
+            const data = await apiJson(`/api/review-reports/status?ids=${pendingIds.map(encodeURIComponent).join(",")}`, { signal: controller.signal });
+            if (statusRequestRef.current !== controller) return;
+            const updates = new Map((data.items || data.reports || []).map((row) => [row.id, row]));
+            if (!updates.size) return;
+            const shouldReload = Boolean(historyFilters.status) && tableState.items.some((row) => {
+              const updated = updates.get(row.id);
+              return updated && updated.status !== historyFilters.status;
+            });
+            setTableState((prev) => ({
+              ...prev,
+              items: prev.items.map((row) => updates.has(row.id) ? { ...row, ...updates.get(row.id) } : row),
+            }));
+            if (shouldReload) refreshCurrentReports();
+          } catch (err) {
+            if (err?.name !== "AbortError") {
+              // Keep the last visible rows; the manual refresh button still performs a full list reload.
+            }
+          } finally {
+            if (statusRequestRef.current === controller) statusRequestRef.current = null;
+          }
+        }, [historyFilters.status, refreshCurrentReports, tableState.items]);
+        const applyHistoryFilters = React.useCallback(() => loadReports(1, tableState.pageSize, historyFilters), [historyFilters, loadReports, tableState.pageSize]);
+        const resetHistoryFilters = React.useCallback(() => {
+          const nextFilters = { status: "", sourceType: "", keyword: "" };
+          setHistoryFilters(nextFilters);
+          loadReports(1, tableState.pageSize, nextFilters);
+        }, [loadReports, tableState.pageSize]);
+        const showJobEvents = React.useCallback(async (row) => {
+          if (!row?.id) return;
+          const closeLoading = message.loading("正在读取任务流水...", 0);
+          try {
+            const data = await apiJson(`/api/review-reports/${encodeURIComponent(row.id)}/events`);
+            const report = data.report || row;
+            Modal.info({
+              title: "复盘任务流水",
+              icon: null,
+              width: 760,
+              centered: true,
+              okText: "关闭",
+              content: h(
+                "div",
+                null,
+                h(
+                  Space,
+                  { wrap: true, size: [8, 8], style: { marginBottom: 12 } },
+                  h(Tag, { color: "blue" }, report.sourceName || report.sourceType || "未知来源"),
+                  h(ReportStatusTag, { status: report.status }),
+                  report.createdAt ? h(Text, { type: "secondary" }, dayjs(report.createdAt).format("YYYY-MM-DD HH:mm:ss")) : null,
+                ),
+                report.errorMessage ? h(Alert, { type: "error", showIcon: true, style: { marginBottom: 12 }, message: "错误原因", description: report.errorMessage }) : null,
+                h(ReviewJobEventTimeline, { events: data.events || [] }),
+              ),
+            });
+          } catch (err) {
+            message.error(err.message || "任务流水读取失败");
+          } finally {
+            closeLoading();
           }
         }, []);
         React.useEffect(() => {
-          loadReports();
-        }, [loadReports]);
+          loadReports(1, tableState.pageSize, historyFilters);
+        }, []);
+        React.useEffect(() => () => {
+          if (reportRequestRef.current) reportRequestRef.current.abort();
+          if (statusRequestRef.current) statusRequestRef.current.abort();
+        }, []);
         React.useEffect(() => {
-          if (!reports.some((row) => row.status === "running")) return undefined;
-          const timer = window.setInterval(loadReports, 8000);
-          return () => window.clearInterval(timer);
-        }, [reports, loadReports]);
+          const shouldRefresh = tableState.items.some((row) => row.status === "running" || String(row.excelStatus || row.excel_status || "") === "generating");
+          if (!shouldRefresh) return undefined;
+          const timeout = window.setTimeout(refreshVisibleReportStatuses, 2500);
+          const timer = window.setInterval(refreshVisibleReportStatuses, 8000);
+          return () => {
+            window.clearTimeout(timeout);
+            window.clearInterval(timer);
+          };
+        }, [refreshVisibleReportStatuses, tableState.items]);
 
         const columns = [
           { title: "\u62a5\u544a\u6807\u9898", dataIndex: "reportTitle", render: (text, row) => {
@@ -3644,7 +4229,13 @@
             const titleNode = row.status === "completed" && item.shareUrl
               ? h("a", { href: item.shareUrl, target: "_blank", rel: "noreferrer" }, text)
               : h(Text, null, text || "\u590d\u76d8\u62a5\u544a\u4efb\u52a1");
-            return h(Space, { direction: "vertical", size: 4 }, titleNode, row.errorMessage ? h(Text, { type: "danger" }, row.errorMessage) : null);
+            return h(
+              Space,
+              { direction: "vertical", size: 4 },
+              titleNode,
+              h(ReportProgressHint, { row }),
+              row.errorMessage ? h(Text, { type: "danger" }, row.errorMessage) : null,
+            );
           } },
           { title: "\u72b6\u6001", dataIndex: "status", width: 100, render: (status) => h(ReportStatusTag, { status }) },
           { title: "\u6765\u6e90", dataIndex: "sourceName", width: 140 },
@@ -3656,7 +4247,7 @@
               return h(
                 Space,
                 { wrap: true },
-                h(ReportActionButtons, { row, onRefresh: loadReports, onRetryOpen: () => onOpenAiReview?.() }),
+                h(ReportActionButtons, { row, onRefresh: refreshCurrentReports, onRetryOpen: () => onOpenAiReview?.(), onShowEvents: showJobEvents }),
               );
             },
           },
@@ -3664,7 +4255,7 @@
         const mobileReports = h(
           "div",
           { className: "mobile-only mobile-card-list" },
-          reports.map((row) => {
+          tableState.items.map((row) => {
             const item = normalizeReportArtifact(row);
             return h(
               Card,
@@ -3682,9 +4273,10 @@
                 { className: "mobile-meta-grid" },
                 h(MobileMetaItem, { label: "生成时间" }, row.createdAt ? dayjs(row.createdAt).format("YYYY-MM-DD HH:mm") : "--"),
                 h(MobileMetaItem, { label: "数据来源" }, row.sourceName || "未知"),
+                row.status === "running" ? h(MobileMetaItem, { label: "当前进度" }, h(ReportProgressHint, { row, compact: true })) : null,
                 row.errorMessage ? h(MobileMetaItem, { label: "错误原因" }, h(Text, { type: "danger" }, row.errorMessage)) : null,
               ),
-              h(ReportActionButtons, { row, compact: true, onRefresh: loadReports, onRetryOpen: () => onOpenAiReview?.() }),
+              h(ReportActionButtons, { row, compact: true, onRefresh: refreshCurrentReports, onRetryOpen: () => onOpenAiReview?.(), onShowEvents: showJobEvents }),
             );
           }),
         );
@@ -3697,8 +4289,62 @@
             h(Tag, { color: "blue", className: "hero-platform-tag" }, auth.user.role === "admin" ? "全部报告" : "我的报告"),
             h(Title, { level: 2, className: "june-title" }, "历史复盘报告"),
             h(Paragraph, null, auth.user.role === "admin" ? "管理员可查看平台生成过的复盘报告。" : "这里保存你生成过的AI复盘报告和分享产物。"),
-            h("div", { className: "desktop-only" }, h(Table, { rowKey: "id", loading, columns, dataSource: reports, pagination: { pageSize: 8 }, scroll: { x: 900 } })),
-            loading ? h(Alert, { className: "mobile-only", type: "info", showIcon: true, message: "历史报告加载中" }) : mobileReports,
+            h(
+              Space,
+              { wrap: true, style: { marginBottom: 16 } },
+              h(Select, {
+                style: { width: 150 },
+                allowClear: true,
+                placeholder: "全部状态",
+                value: historyFilters.status || undefined,
+                onChange: (value) => setHistoryFilters((prev) => ({ ...prev, status: value || "" })),
+                options: [
+                  { value: "running", label: "生成中" },
+                  { value: "completed", label: "已完成" },
+                  { value: "failed", label: "生成失败" },
+                  { value: "cancelled", label: "已取消" },
+                ],
+              }),
+              h(Select, {
+                style: { width: 170 },
+                allowClear: true,
+                placeholder: "全部来源",
+                value: historyFilters.sourceType || undefined,
+                onChange: (value) => setHistoryFilters((prev) => ({ ...prev, sourceType: value || "" })),
+                options: [
+                  { value: "login", label: "账密登录" },
+                  { value: "wecom_browser", label: "企微扫码" },
+                  { value: "wecom_token", label: "企微授权" },
+                  { value: "excel", label: "Excel上传" },
+                ],
+              }),
+              h(Input, {
+                style: { width: 220 },
+                allowClear: true,
+                placeholder: "搜索标题、来源或报告ID",
+                value: historyFilters.keyword,
+                onChange: (event) => setHistoryFilters((prev) => ({ ...prev, keyword: event.target.value })),
+                onPressEnter: applyHistoryFilters,
+              }),
+              h(Button, { type: "primary", onClick: applyHistoryFilters, loading: tableState.loading }, "筛选"),
+              h(Button, { onClick: resetHistoryFilters }, "重置"),
+              h(Button, { onClick: refreshCurrentReports, loading: tableState.loading }, "刷新"),
+              h(Text, { type: "secondary" }, `当前 ${tableState.total} 条`),
+            ),
+            h("div", { className: "desktop-only" }, h(Table, {
+              rowKey: "id",
+              loading: tableState.loading,
+              columns,
+              dataSource: tableState.items,
+              pagination: {
+                current: tableState.page,
+                pageSize: tableState.pageSize,
+                total: tableState.total,
+                onChange: (page, pageSize) => loadReports(page, pageSize, historyFilters),
+              },
+              scroll: { x: 900 },
+            })),
+            tableState.loading ? h(Alert, { className: "mobile-only", type: "info", showIcon: true, message: "历史报告加载中" }) : mobileReports,
           ),
         );
       }
@@ -3716,32 +4362,79 @@
         }
 
         const [form] = Form.useForm();
-        const [loading, setLoading] = React.useState(false);
+        const [tableState, setTableState] = React.useState({
+          items: [],
+          total: 0,
+          page: 1,
+          pageSize: 10,
+          loading: false,
+          stats: { totalUsers: 0, adminUsers: 0, customerUsers: 0, disabledUsers: 0 },
+        });
         const [saving, setSaving] = React.useState(false);
         const [editing, setEditing] = React.useState(null);
-        const [users, setUsers] = React.useState([]);
+        const [userFilters, setUserFilters] = React.useState({ role: "", status: "", keyword: "" });
+        const userRequestRef = React.useRef(null);
+
 
         const roleLabel = (role) => (role === "admin" ? "管理员" : "客户");
         const statusLabel = (status) => (status === "active" ? "启用" : "停用");
         const statusColor = (status) => (status === "active" ? "green" : "red");
         const roleColor = (role) => (role === "admin" ? "gold" : "blue");
-        const countBy = (predicate) => users.filter(predicate).length;
 
-        const loadUsers = React.useCallback(async () => {
-          setLoading(true);
+        const buildUserQuery = React.useCallback((nextPage = 1, nextPageSize = tableState.pageSize, nextFilters = userFilters) => queryStringFromObject({
+          page: nextPage,
+          pageSize: nextPageSize,
+          role: nextFilters.role,
+          status: nextFilters.status,
+          keyword: nextFilters.keyword,
+        }), [tableState.pageSize, userFilters]);
+        const loadUsers = React.useCallback(async (nextPage = 1, nextPageSize = tableState.pageSize, nextFilters = userFilters) => {
+          if (userRequestRef.current) userRequestRef.current.abort();
+          const controller = new AbortController();
+          userRequestRef.current = controller;
+          setTableState((prev) => ({ ...prev, loading: true }));
           try {
-            const data = await apiJson("/api/admin/users");
-            setUsers(data.users || []);
+            const data = await apiJson(`/api/admin/users${buildUserQuery(nextPage, nextPageSize, nextFilters)}`, { signal: controller.signal });
+            if (userRequestRef.current !== controller) return;
+            const items = data.items || data.users || [];
+            setTableState({
+              items,
+              total: Number(data.total || 0),
+              page: Number(data.page || nextPage),
+              pageSize: Number(data.pageSize || nextPageSize),
+              loading: false,
+              stats: data.stats || {
+                totalUsers: Number(data.total || 0),
+                adminUsers: items.filter((item) => item.role === "admin").length,
+                customerUsers: items.filter((item) => item.role !== "admin").length,
+                disabledUsers: items.filter((item) => item.status !== "active").length,
+              },
+            });
           } catch (err) {
-            message.error(err.message || "用户列表加载失败");
+            if (err?.name === "AbortError") return;
+            message.error(err.message || "\u52a0\u8f7d\u7528\u6237\u5217\u8868\u5931\u8d25");
+            if (userRequestRef.current === controller) {
+              setTableState((prev) => ({ ...prev, loading: false }));
+            }
           } finally {
-            setLoading(false);
+            if (userRequestRef.current === controller) userRequestRef.current = null;
           }
-        }, []);
+        }, [buildUserQuery, tableState.pageSize, userFilters]);
+        const refreshCurrentUsers = React.useCallback(() => loadUsers(tableState.page, tableState.pageSize, userFilters), [loadUsers, tableState.page, tableState.pageSize, userFilters]);
+        const applyUserFilters = React.useCallback(() => loadUsers(1, tableState.pageSize, userFilters), [loadUsers, tableState.pageSize, userFilters]);
+        const resetUserFilters = React.useCallback(() => {
+          const nextFilters = { role: "", status: "", keyword: "" };
+          setUserFilters(nextFilters);
+          loadUsers(1, tableState.pageSize, nextFilters);
+        }, [loadUsers, tableState.pageSize]);
+
 
         React.useEffect(() => {
-          loadUsers();
-        }, [loadUsers]);
+          loadUsers(1, tableState.pageSize, userFilters);
+        }, []);
+        React.useEffect(() => () => {
+          if (userRequestRef.current) userRequestRef.current.abort();
+        }, []);
 
         const openEdit = (row) => {
           setEditing(row);
@@ -3759,11 +4452,11 @@
           const values = await form.validateFields();
           setSaving(true);
           try {
-            const data = await apiJson(`/api/admin/users/${encodeURIComponent(editing.id)}`, {
+            await apiJson(`/api/admin/users/${encodeURIComponent(editing.id)}`, {
               method: "PATCH",
               body: JSON.stringify(values),
             });
-            setUsers((items) => items.map((item) => (item.id === data.user.id ? { ...item, ...data.user } : item)));
+            await loadUsers(tableState.page, tableState.pageSize, userFilters);
             setEditing(null);
             message.success("用户信息已更新");
           } catch (err) {
@@ -3809,7 +4502,7 @@
         const mobileUsers = h(
           "div",
           { className: "mobile-only mobile-card-list" },
-          users.map((row) =>
+          tableState.items.map((row) =>
             h(
               Card,
               { key: row.id, bordered: false, className: "mobile-report-card" },
@@ -3844,14 +4537,63 @@
             h(
               Row,
               { gutter: [12, 12], style: { marginBottom: 16 } },
-              h(Col, { xs: 12, md: 6 }, h(Card, { size: "small", bordered: false, className: "metric-card" }, h(Statistic, { title: "用户总数", value: users.length }))),
-              h(Col, { xs: 12, md: 6 }, h(Card, { size: "small", bordered: false, className: "metric-card" }, h(Statistic, { title: "管理员", value: countBy((item) => item.role === "admin") }))),
-              h(Col, { xs: 12, md: 6 }, h(Card, { size: "small", bordered: false, className: "metric-card" }, h(Statistic, { title: "客户账号", value: countBy((item) => item.role !== "admin") }))),
-              h(Col, { xs: 12, md: 6 }, h(Card, { size: "small", bordered: false, className: "metric-card" }, h(Statistic, { title: "已停用", value: countBy((item) => item.status !== "active") }))),
+              h(Col, { xs: 12, md: 6 }, h(Card, { size: "small", bordered: false, className: "metric-card" }, h(Statistic, { title: "\u7528\u6237\u603b\u6570", value: tableState.stats.totalUsers || tableState.total }))),
+              h(Col, { xs: 12, md: 6 }, h(Card, { size: "small", bordered: false, className: "metric-card" }, h(Statistic, { title: "管理员", value: tableState.stats.adminUsers || 0 }))),
+              h(Col, { xs: 12, md: 6 }, h(Card, { size: "small", bordered: false, className: "metric-card" }, h(Statistic, { title: "客户账号", value: tableState.stats.customerUsers || 0 }))),
+              h(Col, { xs: 12, md: 6 }, h(Card, { size: "small", bordered: false, className: "metric-card" }, h(Statistic, { title: "已停用", value: tableState.stats.disabledUsers || 0 }))),
             ),
-            h(Space, { style: { marginBottom: 16 }, wrap: true }, h(Button, { onClick: loadUsers, loading }, "刷新用户"), h(Text, { type: "secondary" }, "不会显示密码、Token 或 AI Key。")),
-            h("div", { className: "desktop-only" }, h(Table, { rowKey: "id", loading, columns, dataSource: users, pagination: { pageSize: 10 }, scroll: { x: 1200 } })),
-            loading ? h(Alert, { className: "mobile-only", type: "info", showIcon: true, message: "用户列表加载中" }) : mobileUsers,
+            h(
+              Space,
+              { style: { marginBottom: 16 }, wrap: true },
+              h(Select, {
+                style: { width: 150 },
+                allowClear: true,
+                placeholder: "全部角色",
+                value: userFilters.role || undefined,
+                onChange: (value) => setUserFilters((prev) => ({ ...prev, role: value || "" })),
+                options: [
+                  { value: "admin", label: "管理员" },
+                  { value: "customer", label: "客户" },
+                ],
+              }),
+              h(Select, {
+                style: { width: 150 },
+                allowClear: true,
+                placeholder: "全部状态",
+                value: userFilters.status || undefined,
+                onChange: (value) => setUserFilters((prev) => ({ ...prev, status: value || "" })),
+                options: [
+                  { value: "active", label: "启用" },
+                  { value: "disabled", label: "停用" },
+                ],
+              }),
+              h(Input, {
+                style: { width: 240 },
+                allowClear: true,
+                placeholder: "搜索姓名、公司、手机或邮箱",
+                value: userFilters.keyword,
+                onChange: (event) => setUserFilters((prev) => ({ ...prev, keyword: event.target.value })),
+                onPressEnter: applyUserFilters,
+              }),
+              h(Button, { type: "primary", onClick: applyUserFilters, loading: tableState.loading }, "筛选"),
+              h(Button, { onClick: resetUserFilters }, "重置"),
+              h(Button, { onClick: refreshCurrentUsers, loading: tableState.loading }, "刷新用户"),
+              h(Text, { type: "secondary" }, `当前 ${tableState.total} 条，不会显示密码、Token 或 AI Key。`),
+            ),
+            h("div", { className: "desktop-only" }, h(Table, {
+              rowKey: "id",
+              loading: tableState.loading,
+              columns,
+              dataSource: tableState.items,
+              pagination: {
+                current: tableState.page,
+                pageSize: tableState.pageSize,
+                total: tableState.total,
+                onChange: (page, pageSize) => loadUsers(page, pageSize, userFilters),
+              },
+              scroll: { x: 1200 },
+            })),
+            tableState.loading ? h(Alert, { className: "mobile-only", type: "info", showIcon: true, message: "用户列表加载中" }) : mobileUsers,
             h(
               Modal,
               {
@@ -3891,43 +4633,80 @@
           );
         }
 
-        const [loading, setLoading] = React.useState(false);
-        const [submissions, setSubmissions] = React.useState([]);
-        const loadSubmissions = React.useCallback(async () => {
-          setLoading(true);
+        const [tableState, setTableState] = React.useState({ items: [], total: 0, page: 1, pageSize: 10, loading: false });
+        const [submissionFilters, setSubmissionFilters] = React.useState({ completionBand: "", keyword: "" });
+        const submissionRequestRef = React.useRef(null);
+        const buildSubmissionQuery = React.useCallback((nextPage = 1, nextPageSize = tableState.pageSize, nextFilters = submissionFilters) => queryStringFromObject({
+          page: nextPage,
+          pageSize: nextPageSize,
+          completionBand: nextFilters.completionBand,
+          keyword: nextFilters.keyword,
+        }), [submissionFilters, tableState.pageSize]);
+        const loadSubmissions = React.useCallback(async (nextPage = 1, nextPageSize = tableState.pageSize, nextFilters = submissionFilters) => {
+          if (submissionRequestRef.current) submissionRequestRef.current.abort();
+          const controller = new AbortController();
+          submissionRequestRef.current = controller;
+          setTableState((prev) => ({ ...prev, loading: true }));
           try {
-            const data = await apiJson("/api/capability-test-submissions");
-            setSubmissions(data.submissions || []);
+            const data = await apiJson(`/api/capability-test-submissions${buildSubmissionQuery(nextPage, nextPageSize, nextFilters)}`, { signal: controller.signal });
+            if (submissionRequestRef.current !== controller) return;
+            setTableState({
+              items: data.items || data.submissions || [],
+              total: Number(data.total || 0),
+              page: Number(data.page || nextPage),
+              pageSize: Number(data.pageSize || nextPageSize),
+              loading: false,
+            });
           } catch (err) {
-            message.error(err.message || "测评数据加载失败");
+            if (err?.name === "AbortError") return;
+            message.error(err.message || "\u52a0\u8f7d\u6d4b\u8bc4\u6570\u636e\u5931\u8d25");
+            if (submissionRequestRef.current === controller) {
+              setTableState((prev) => ({ ...prev, loading: false }));
+            }
           } finally {
-            setLoading(false);
+            if (submissionRequestRef.current === controller) submissionRequestRef.current = null;
           }
-        }, []);
+        }, [buildSubmissionQuery, submissionFilters, tableState.pageSize]);
+        const refreshCurrentSubmissions = React.useCallback(() => loadSubmissions(tableState.page, tableState.pageSize, submissionFilters), [loadSubmissions, submissionFilters, tableState.page, tableState.pageSize]);
+        const applySubmissionFilters = React.useCallback(() => loadSubmissions(1, tableState.pageSize, submissionFilters), [loadSubmissions, submissionFilters, tableState.pageSize]);
+        const resetSubmissionFilters = React.useCallback(() => {
+          const nextFilters = { completionBand: "", keyword: "" };
+          setSubmissionFilters(nextFilters);
+          loadSubmissions(1, tableState.pageSize, nextFilters);
+        }, [loadSubmissions, tableState.pageSize]);
         React.useEffect(() => {
-          loadSubmissions();
-        }, [loadSubmissions]);
+          loadSubmissions(1, tableState.pageSize, submissionFilters);
+        }, []);
+        React.useEffect(() => () => {
+          if (submissionRequestRef.current) submissionRequestRef.current.abort();
+        }, []);
 
-        const showAnswers = (row) => {
-          Modal.info({
-            title: `${row.name || "未命名"}的测评答案`,
-            icon: null,
-            width: 820,
-            centered: true,
-            content: h(
-              "div",
-              { className: "answer-list" },
-              (row.answers || []).map((item, index) =>
-                h(
-                  "div",
-                  { className: "answer-item", key: `${item.number || index}-${index}` },
-                  h(Space, { wrap: true, size: [6, 6] }, h(Tag, { color: "blue" }, item.number || index + 1), item.section ? h(Tag, null, item.section) : null, item.score ? h(Tag, { color: "gold" }, item.score) : null),
-                  h(Text, { strong: true, className: "answer-question" }, item.question || "未命名题目"),
-                  h("pre", { className: "answer-text" }, item.answer || "未作答"),
+        const showAnswers = async (row) => {
+          try {
+            const data = await apiJson(`/api/capability-test-submissions/${encodeURIComponent(row.id)}`);
+            const detail = data.submission || row;
+            Modal.info({
+              title: `${detail.name || "未命名"}的测评答案`,
+              icon: null,
+              width: 820,
+              centered: true,
+              content: h(
+                "div",
+                { className: "answer-list" },
+                (detail.answers || []).map((item, index) =>
+                  h(
+                    "div",
+                    { className: "answer-item", key: `${item.number || index}-${index}` },
+                    h(Space, { wrap: true, size: [6, 6] }, h(Tag, { color: "blue" }, item.number || index + 1), item.section ? h(Tag, null, item.section) : null, item.score ? h(Tag, { color: "gold" }, item.score) : null),
+                    h(Text, { strong: true, className: "answer-question" }, item.question || "未命名题目"),
+                    h("pre", { className: "answer-text" }, item.answer || "未作答"),
+                  ),
                 ),
               ),
-            ),
-          });
+            });
+          } catch (err) {
+            message.error(err.message || "测评答案加载失败");
+          }
         };
 
         const columns = [
@@ -3946,7 +4725,7 @@
         const mobileSubmissions = h(
           "div",
           { className: "mobile-only mobile-card-list" },
-          submissions.map((row) =>
+          tableState.items.map((row) =>
             h(
               Card,
               { key: row.id, bordered: false, className: "mobile-report-card" },
@@ -3973,9 +4752,48 @@
             h(Tag, { color: "blue", className: "hero-platform-tag" }, "测评数据"),
             h(Title, { level: 2, className: "june-title" }, "五大金刚综合能力评估提交"),
             h(Paragraph, null, "这里汇总友链测评页提交的数据，管理员可查看提交人、部门、完成度和每题答案。"),
-            h(Space, { style: { marginBottom: 16 }, wrap: true }, h(Button, { onClick: loadSubmissions, loading }, "刷新数据"), h(Text, { type: "secondary" }, `共 ${submissions.length} 条提交`)),
-            h("div", { className: "desktop-only" }, h(Table, { rowKey: "id", loading, columns, dataSource: submissions, pagination: { pageSize: 10 }, scroll: { x: 900 } })),
-            loading ? h(Alert, { className: "mobile-only", type: "info", showIcon: true, message: "测评数据加载中" }) : mobileSubmissions,
+            h(
+              Space,
+              { style: { marginBottom: 16 }, wrap: true },
+              h(Select, {
+                style: { width: 180 },
+                allowClear: true,
+                placeholder: "完成度分层",
+                value: submissionFilters.completionBand || undefined,
+                onChange: (value) => setSubmissionFilters((prev) => ({ ...prev, completionBand: value || "" })),
+                options: [
+                  { value: "high", label: "高完成度 90%+" },
+                  { value: "medium", label: "中完成度 60-89%" },
+                  { value: "low", label: "低完成度 0-59%" },
+                ],
+              }),
+              h(Input, {
+                style: { width: 240 },
+                allowClear: true,
+                placeholder: "搜索姓名、部门或测试日期",
+                value: submissionFilters.keyword,
+                onChange: (event) => setSubmissionFilters((prev) => ({ ...prev, keyword: event.target.value })),
+                onPressEnter: applySubmissionFilters,
+              }),
+              h(Button, { type: "primary", onClick: applySubmissionFilters, loading: tableState.loading }, "筛选"),
+              h(Button, { onClick: resetSubmissionFilters }, "重置"),
+              h(Button, { onClick: refreshCurrentSubmissions, loading: tableState.loading }, "刷新数据"),
+              h(Text, { type: "secondary" }, `当前 ${tableState.total} 条提交`),
+            ),
+            h("div", { className: "desktop-only" }, h(Table, {
+              rowKey: "id",
+              loading: tableState.loading,
+              columns,
+              dataSource: tableState.items,
+              pagination: {
+                current: tableState.page,
+                pageSize: tableState.pageSize,
+                total: tableState.total,
+                onChange: (page, pageSize) => loadSubmissions(page, pageSize, submissionFilters),
+              },
+              scroll: { x: 900 },
+            })),
+            tableState.loading ? h(Alert, { className: "mobile-only", type: "info", showIcon: true, message: "测评数据加载中" }) : mobileSubmissions,
           ),
         );
       }
@@ -4001,66 +4819,19 @@
           h(Tabs, {
             className: "maintenance-tabs",
             defaultActiveKey: "aiConfig",
+            destroyInactiveTabPane: true,
+            destroyOnHidden: true,
             items,
           }),
         );
       }
 
       function HomePage({ onOpenCalendar }) {
-        const stakeholderCards = [
-          ["连锁总部", "提升重点品、高毛利品动销，把活动过程、费用核算和执行结果集中管理。"],
-          ["门店店员", "清楚知道今天重点卖什么、怎么卖、卖了能赚多少、奖励什么时候到账。"],
-          ["工业厂家", "把市场费用真正打到门店执行层，用门店和员工数据判断活动投入效果。"],
-          ["运营团队", "减少红包群、Excel对账和人工统计，形成活动上线、跟踪、复盘的标准动作。"],
-        ];
-        const painPoints = [
-          ["重点品种管理难", "店员记不住重点品、政策、奖励算法和产品卖点。"],
-          ["激励反馈不及时", "传统方式依赖月底工资、微信群红包和人工统计，奖励感知弱。"],
-          ["总部统计慢", "销量、完成率、员工表现和费用核算依赖Excel，慢且容易错。"],
-          ["厂家落地难", "厂家有费用和政策，却难以看到门店是否执行、哪里有效。"],
-          ["培训销售脱节", "培训学完不等于卖出去，知识和销售结果没有形成闭环。"],
-          ["过程管理靠人盯", "排行榜、重点提醒、大单分享、激励通知缺少自动化触达。"],
-        ];
-        const modules = [
-          ["员工端小程序", "看活动、看收益、看排行榜、看培训内容、查产品卖点。"],
-          ["活动配置", "支持单品突破、关联销售、黄金单品、任务品、培训奖励等活动。"],
-          ["培训考试", "产品知识培训、题库考试、考试奖励与销售目标联动。"],
-          ["AI机器人/社群运营", "自动推送排行榜、重点通知、大单分享、激励提醒和产品问答。"],
-          ["数据看板", "总部、门店、厂家查看活动销量、执行情况、员工表现和费用使用。"],
-          ["资金与提现", "奖励可实时到账/提现，资金在连锁账户中流转，流程更可控。"],
-        ];
-        const friendLinks = [
-          {
-            title: "华南某连锁 6月四季蝉营销方案",
-            desc: "面向客户场景的月度动销方案，可作为重点品营销活动参考。",
-            href: "links/south-chain-june-marketing.html",
-            tag: "营销方案",
-          },
-          {
-            title: "医药连锁四季营销日历",
-            desc: "按季节与营销节点梳理医药连锁可用的品类运营节奏。",
-            href: "links/pharmacy-seasonal-marketing-calendar.html",
-            tag: "营销日历",
-          },
-          {
-            title: "四季蝉产品学习手册 v2",
-            desc: "帮助连锁总部、运营和门店理解四季蝉产品能力与使用场景。",
-            href: "links/sijichan-product-handbook-v2.html",
-            tag: "学习手册",
-          },
-          {
-            title: "五大金刚综合能力评估测试",
-            desc: "用于店员或团队学习后的能力测评，辅助培训闭环。",
-            href: "links/five-core-capability-test.html",
-            tag: "能力测试",
-          },
-          {
-            title: "O2O新零售FAQ速查表",
-            desc: "汇总O2O新零售常见问题和处理口径，方便运营、门店和客户快速查阅。",
-            href: "/oms",
-            tag: "O2O FAQ",
-          },
-        ];
+        const { data: contentData } = useContentResource("/content/home.json");
+        const stakeholderCards = contentData?.stakeholderCards || [];
+        const painPoints = contentData?.painPoints || [];
+        const modules = contentData?.modules || [];
+        const friendLinks = contentData?.friendLinks || [];
 
         return h(
           "div",
@@ -4211,227 +4982,43 @@
         );
       }
 
-      const incentiveModes = [
-        {
-          title: "按固定金额",
-          text: "卖出指定品种后按固定金额给奖励，适合店员容易理解、需要快速启动的活动。",
-        },
-        {
-          title: "按百分比%",
-          text: "按销售额或成交区间计算奖励，可配合最低成交价、不同价格区间、不同奖励规则。",
-        },
-      ];
-
-      const incentiveTypes = [
-        {
-          type: "1、单品激励",
-          plays: [
-            ["无阶梯", "卖出一盒给固定奖励", "黄金单品、动销爆破"],
-            ["有阶梯 ★★★", "按活动周期或单个订单设置阶梯奖励，如第1-20件、21-30件不同奖励", "季节热卖品、短期冲量"],
-            ["批号奖励 ★", "指定批号或排除批号设置激励", "效期品种、库存挤压品种"],
-          ],
-        },
-        {
-          type: "2、疗程激励",
-          plays: [["多件一单激励 ★★", "一次性卖出多件设置不同激励，如3件奖励5元、5件奖励10元", "慢病、长期用药品种动销"]],
-        },
-        {
-          type: "3、关联销售激励",
-          plays: [
-            ["固定品种关联 ★★★", "A+2B+3C 等固定组合奖励", "降低一单一品率，提高店员专业度"],
-            ["高频带低频/系列", "（A/B/C）+（D/E/F）+（X/Y/Z）任意组合", "病种搭配、系列化销售"],
-            ["任意品种关联", "多个品种中任意3种奖励5元，任意5种奖励10元，可加阶梯", "关联销售、客单提升"],
-          ],
-        },
-        {
-          type: "4、目标达成奖励",
-          plays: [
-            ["店员目标", "设置未达成、已达成、超额达成不同激励，支持销量或销售额目标", "内部目标PK、冲销量拿返利"],
-            ["门店目标", "按门店目标完成情况设置奖励", "门店团队目标管理"],
-            ["片区目标", "按片区目标完成情况设置奖励", "区域协同与片区PK"],
-          ],
-        },
-        {
-          type: "5、销售排名奖励",
-          plays: [
-            ["每日早鸟奖励 ★★", "设置排名激励，如某品种前3名额外奖励50、30、20元", "提高店员荣誉感"],
-            ["周排名奖励", "按周统计排名并发放奖励", "持续拉动销售节奏"],
-            ["月度排名奖励", "按月统计排名并发放奖励", "长期目标牵引"],
-            ["单品排名奖励", "围绕单一品种设置排名奖励", "重点品爆破"],
-          ],
-        },
-        {
-          type: "6、晒单打赏激励",
-          plays: [["店员晒单，厂家打赏 ★★★", "晒单内容连锁全员可见，厂家手机端额外打赏", "提高员工品种关注度"]],
-        },
-        {
-          type: "7、学习考试激励",
-          plays: [["领取固定/随机金额奖励", "课程学习完或考试及格后发放；可设置总预算、随机2-5元或固定5元", "提高员工学习主动性"]],
-        },
-      ];
-
-      const positionMappings = [
-        ["月度战略品", "目标管理"],
-        ["重点爆破品", "阶梯奖励"],
-        ["慢病消耗品", "疗程奖励"],
-        ["病种搭配品", "关联奖励"],
-        ["新进推广品", "晒单打赏"],
-        ["批号效期品", "批号激励"],
-      ];
-
-      const selectionLevels = [
-        {
-          level: "A",
-          name: "当月核心战略品",
-          stars: "★★★★★",
-          count: "10-15个",
-          position: ["连锁主推品", "厂家战略品"],
-          play: ["目标/排名", "单品阶梯/疗程"],
-          purpose: ["爆量", "标杆"],
-          incentive: "及时激励（双向奔赴）",
-        },
-        {
-          level: "B",
-          name: "阶段性重点品",
-          stars: "★★★",
-          count: "15-80个",
-          position: ["品类报告", "AAA重点品", "通用名热卖榜"],
-          play: ["单品", "疗程", "关联"],
-          purpose: ["用20%品带动80%销售额"],
-          incentive: "及时激励",
-        },
-        {
-          level: "C",
-          name: "常规代金品",
-          stars: "★★",
-          count: "不限",
-          position: ["近效期", "新品", "库存积压", "厂家普通挂金品", "常规提成品种"],
-          play: ["单品等基础玩法"],
-          purpose: ["常规带动"],
-          incentive: "及时/延时激励",
-        },
-      ];
-
-      const selectionSources = [
-        "当季热卖品：季节性需求较高、热销期短的品种。",
-        "厂家战略品、返利品种：用于冲击高销售，拿到返利。",
-        "通用名热卖榜：关注企业排名低于省份的品种。",
-        "重点3A品种：来自随心看重点品种经营报告中的3A品种。",
-        "近效期品种：近90天近效期品种，用随心看近效期催销。",
-        "新品突破：连锁新品，需要培训并做新品突破。",
-        "组合关联品种：按照病种梳理，设计关联销售组合。",
-        "门店活动组合品种：如买二赠一，既能激励顾客，也可对店员双向激励。",
-      ];
-
-      const juneCalendarNodes = [
-        {
-          date: "6/7-6/8",
-          title: "高考营养补给",
-          scene: "补脑、营养、维矿，重点做家长端的安心补充。",
-          products: ["葡萄糖酸钙锌", "维生素C", "维生素D", "多维元素", "葡萄糖酸锌"],
-          play: "培训考试 + 单品突破 + 员工排行榜",
-        },
-        {
-          date: "6/18",
-          title: "618健康品推广",
-          scene: "用健康品做客单提升，适合线上线下同推。",
-          products: ["碳酸钙片", "碳酸钙D3", "复方阿胶浆", "气血康", "补中益气"],
-          play: "阶梯奖励 + 满额目标 + 晒单打赏",
-        },
-        {
-          date: "6/19-6/21",
-          title: "端午回娘家礼品",
-          scene: "浙江地区回娘家礼品需求，主推营养礼盒和补益品。",
-          products: ["阿胶类", "维矿同步类", "蛋白粉类", "葡萄糖酸钙锌", "多维元素"],
-          play: "组合销售 + 门店目标 + 陈列晒单",
-        },
-        {
-          date: "6月中下旬",
-          title: "蚊虫叮咬与皮肤",
-          scene: "蚊虫、湿热、脚气和皮肤瘙痒场景开始抬头。",
-          products: ["炉甘石洗剂", "硝酸益康唑喷雾", "丁酸氢化可的松", "尿素维E", "复方醋酸氯己定"],
-          play: "关联销售 + 陈列晒单 + 专业问答",
-        },
-        {
-          date: "6月下旬",
-          title: "夏季肠胃专项",
-          scene: "冷饮、夜宵、出行增加，肠胃类可做场景组合。",
-          products: ["乳酸菌素片", "胶体果胶铋", "奥美拉唑", "地衣芽孢杆菌", "保和颗粒"],
-          play: "疗程激励 + 多件一单 + 关联销售",
-        },
-      ];
-
-      const juneCategoryPlays = [
-        {
-          category: "补益品种",
-          focus: "端午礼品、618健康品、高考营养补充",
-          products: ["葡萄糖酸钙锌", "碳酸钙/D3", "维生素C/D", "多维元素", "复方阿胶浆", "气血康", "补中益气"],
-          play: "黄金单品 + 组合礼盒 + 目标达成",
-        },
-        {
-          category: "肠胃类品种",
-          focus: "6月下旬胃肠病场景，兼顾家庭常备",
-          products: ["乳酸菌素片", "胶体果胶铋", "奥美拉唑", "地衣芽孢杆菌", "保和颗粒", "藿香清胃"],
-          play: "疗程奖励 + 多件一单 + 关联销售",
-        },
-        {
-          category: "真菌类品种",
-          focus: "脚气、湿热、皮肤瘙痒和外用护理",
-          products: ["硝酸益康唑喷雾", "炉甘石", "丁酸氢化可的松", "尿素维E", "皮肤外用乳膏"],
-          play: "陈列晒单 + 关联销售 + 培训考试",
-        },
-        {
-          category: "解热镇痛类",
-          focus: "空调感冒、退热疼痛、暑期出行常备",
-          products: ["布洛芬缓释", "复方感冒灵", "复方氨酚烷胺", "感冒清热", "强力枇杷露"],
-          play: "单品突破 + 阶梯奖励 + 排行榜",
-        },
-      ];
-
-      const juneActivityPacks = [
-        {
-          rank: "A",
-          title: "核心赚钱品稳动销",
-          products: ["葡萄糖酸钙锌", "乳酸菌素片", "布洛芬缓释", "复方感冒灵", "碳酸钙/维C"],
-          rule: "优先从AAA里选，AAA代表销售额、毛利额、客流量都进入核心贡献区间。",
-          play: "单品突破、阶梯奖励、员工排行榜",
-        },
-        {
-          rank: "B",
-          title: "节点场景品冲销量",
-          products: ["阿胶/营养礼盒", "多维元素", "炉甘石", "硝酸益康唑", "藿香正气"],
-          rule: "围绕端午、高考、618、蚊虫叮咬和肠胃节点做短周期冲刺。",
-          play: "门店目标、陈列晒单、培训考试",
-        },
-        {
-          rank: "C",
-          title: "组合关联品提客单",
-          products: ["胃肠三件套", "皮肤止痒组合", "端午营养礼盒", "咽喉护理组合"],
-          rule: "把单品卖点变成场景组合，降低一单一品率。",
-          play: "关联销售、疗程奖励、多件一单",
-        },
-      ];
-
       function JuneMarketingPage({ auth }) {
+        const { data: contentData } = useContentResource("/content/monthly-marketing.json");
+        const juneCalendarNodes = contentData?.juneCalendarNodes || [];
+        const juneCategoryPlays = contentData?.juneCategoryPlays || [];
+        const juneActivityPacks = contentData?.juneActivityPacks || [];
         const now = new Date();
         const monthLabel = `${now.getMonth() + 1}月`;
         const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
         const [monthly, setMonthly] = React.useState({ aggregate: null, loading: false, generating: false, loaded: false });
         const [slideIndex, setSlideIndex] = React.useState(0);
+        const monthlyRequestRef = React.useRef(null);
         const loadMonthly = React.useCallback(async () => {
           if (!auth?.user) return;
+          if (monthlyRequestRef.current) monthlyRequestRef.current.abort();
+          const controller = new AbortController();
+          monthlyRequestRef.current = controller;
           setMonthly((prev) => ({ ...prev, loading: true }));
           try {
-            const data = await apiJson(`/api/monthly-marketing-recommendations?month=${monthKey}`);
+            const data = await apiJson(`/api/monthly-marketing-recommendations?month=${monthKey}`, { signal: controller.signal });
+            if (monthlyRequestRef.current !== controller) return;
             setMonthly((prev) => ({ ...prev, aggregate: data.aggregate || null, loading: false, loaded: true }));
             setSlideIndex(0);
           } catch (error) {
-            setMonthly((prev) => ({ ...prev, loading: false, loaded: true, error: error.message }));
+            if (error?.name === "AbortError") return;
+            if (monthlyRequestRef.current === controller) {
+              setMonthly((prev) => ({ ...prev, loading: false, loaded: true, error: error.message }));
+            }
+          } finally {
+            if (monthlyRequestRef.current === controller) monthlyRequestRef.current = null;
           }
         }, [auth?.user?.id, monthKey]);
         React.useEffect(() => {
           loadMonthly();
         }, [loadMonthly]);
+        React.useEffect(() => () => {
+          if (monthlyRequestRef.current) monthlyRequestRef.current.abort();
+        }, []);
         React.useEffect(() => {
           const cards = monthly.aggregate?.cards || [];
           if (cards.length <= 1) return undefined;
@@ -4622,6 +5209,10 @@
       }
 
       function SelectionPage() {
+        const { data: contentData } = useContentResource("/content/selection.json");
+        const selectionLevels = contentData?.selectionLevels || [];
+        const selectionSources = contentData?.selectionSources || [];
+
         return h(
           "div",
           { className: "selection-shell" },
@@ -4701,6 +5292,10 @@
       }
 
       function IncentivePage() {
+        const { data: contentData } = useContentResource("/content/incentive.json");
+        const incentiveModes = contentData?.incentiveModes || [];
+        const incentiveTypes = contentData?.incentiveTypes || [];
+        const positionMappings = contentData?.positionMappings || [];
         const flatRows = incentiveTypes.flatMap((group) =>
           group.plays.map(([play, rule, effect], index) => ({
             key: `${group.type}-${play}`,
@@ -4802,53 +5397,33 @@
       }
 
       function CalendarPage({ dates }) {
-        const rows = [
-          {
-            key: 1,
-            index: 1,
-            project: "汇付账户开通",
-            property: "一次性",
-            propertyColor: "gold",
-            content: "填写两份协议，用于申请开通汇付账户。",
-            tasks: ["《汇付-斗拱平台综合支付协议》", "《药店与店员激励协议》"],
-            notes: h(
-              "div",
-              { className: "notes-block" },
-              h(Text, { strong: true }, "斗拱平台协议："),
-              h("ul", null, h("li", null, "02斗拱平台协议：打印两份。"), h("li", null, `第三页合同日期：${dates.rangeText}。`), h("li", null, `盖章、签字，日期手写为${dates.todayText}。`), h("li", null, "额外侧面加盖骑缝章，最后扫描成A4大小的PDF文件。")),
-              h(Text, { strong: true }, "药店与店员激励协议："),
-              h("ul", null, h("li", null, "03药店与店员激励协议：打印一份。"), h("li", null, `签字、盖章，乙方按手印，日期手写为${dates.todayText}。`), h("li", null, "最后扫描成A4大小的PDF文件。")),
-              h(Paragraph, null, "按文档说明操作。法人和联系人身份证可以直接上传身份证原件；如使用复印件，需要盖公章。"),
-            ),
-            materialItems: materials.payment,
-            people: ["财务", "信息"],
-          },
-          { key: 2, index: 2, project: "基础信息维护", property: "一次性", propertyColor: "gold", content: "维护员工信息、门店信息。", tasks: ["Excel表格维护至新零售后台。"], notes: "暂无", materialItems: materials.baseInfo, people: ["信息"] },
-          { key: 3, index: 3, project: "工业信息收集", property: "及时更新", propertyColor: "cyan", content: "收集厂家信息，开通厂家账号，用于充值及建活动。", tasks: ["按模板填写《四季蝉供应商信息收集表》。"], notes: "暂无", materialItems: materials.industry, people: ["运营", "采购"] },
-          { key: 4, index: 4, project: "活动商品创建", property: "每月更新", propertyColor: "cyan", content: "确认活动品种和活动政策。", tasks: ["按模板填写《品种政策收集模板表》。"], notes: "暂无", materialItems: [], people: ["运营", "采购"] },
-          { key: 5, index: 5, project: "操作培训", property: "一次性", propertyColor: "gold", content: "连锁培训。", tasks: ["参与在线会议。"], notes: "暂无", materialItems: [], people: ["运营", "采购", "财务", "信息"] },
-          { key: 6, index: 6, project: "订单测试", property: "一次性", propertyColor: "gold", content: "完成正向、逆向订单的奖励生成收回测试。", tasks: ["零售测试。"], notes: "暂无", materialItems: [], people: ["信息"] },
-          { key: 7, index: 7, project: "店员培训上线", property: "一次性", propertyColor: "gold", content: "员工手机端培训：登录、认证；如何确认销售与奖励获得情况。", tasks: ["发送视频操作说明，可给店员集中线上培训。"], notes: "暂无", materialItems: [], people: ["店员"] },
+        const { data: contentData, loading: contentLoading, error: contentError } = useContentResource("/content/calendar.json");
+        const rows = contentData?.rows || [];
+        const summaryItems = [
+          ["\u603b\u4e8b\u9879", rows.length],
+          ["\u4e00\u6b21\u6027\u5de5\u4f5c", rows.filter((item) => item.property === "\u4e00\u6b21\u6027").length],
+          ["\u6bcf\u6708\u66f4\u65b0", rows.filter((item) => item.property === "\u6bcf\u6708\u66f4\u65b0").length],
+          ["\u53ca\u65f6\u66f4\u65b0", rows.filter((item) => item.property === "\u53ca\u65f6\u66f4\u65b0").length],
         ];
 
         const columns = [
-          { title: "序号", dataIndex: "index", width: 64, fixed: "left", align: "center", render: (value) => h(Text, { strong: true }, value) },
-          { title: "项目", dataIndex: "project", width: 140, fixed: "left", render: (value) => h(Text, { strong: true, className: "project-name" }, value) },
-          { title: "工作属性", dataIndex: "property", width: 112, render: (value, row) => h(Tag, { color: row.propertyColor, className: "work-tag" }, value) },
-          { title: "对接内容", dataIndex: "content", width: 190 },
+          { title: "\u5e8f\u53f7", dataIndex: "index", width: 64, fixed: "left", align: "center", render: (value) => h(Text, { strong: true }, value) },
+          { title: "\u9879\u76ee", dataIndex: "project", width: 140, fixed: "left", render: (value) => h(Text, { strong: true, className: "project-name" }, value) },
+          { title: "\u5de5\u4f5c\u5c5e\u6027", dataIndex: "property", width: 112, render: (value, row) => h(Tag, { color: row.propertyColor, className: "work-tag" }, value) },
+          { title: "\u5bf9\u63a5\u5185\u5bb9", dataIndex: "content", width: 190 },
           {
-            title: "处理事务",
+            title: "\u5904\u7406\u4e8b\u52a1",
             dataIndex: "tasks",
             width: 180,
-            render: (tasks) => h(Space, { direction: "vertical", size: 8 }, tasks.map((task) => h(Tag, { className: "task-tag", key: task }, task))),
+            render: (tasks) => h(Space, { direction: "vertical", size: 8 }, (tasks || []).map((task) => h(Tag, { className: "task-tag", key: task }, task))),
           },
-          { title: "注意事项", dataIndex: "notes", width: 360, render: (notes) => (notes === "暂无" ? h(Text, { type: "secondary" }, "暂无") : notes) },
-          { title: "材料下载", dataIndex: "materialItems", width: 230, render: (items) => h(MaterialButtons, { items }) },
+          { title: "\u6ce8\u610f\u4e8b\u9879", dataIndex: "notes", width: 360, render: (notes) => renderCalendarNote(notes, dates) },
+          { title: "\u6750\u6599\u4e0b\u8f7d", dataIndex: "materialItems", width: 230, render: (items) => h(MaterialButtons, { items }) },
           {
-            title: "连锁配合人员（建议）",
+            title: "\u8fde\u9501\u914d\u5408\u4eba\u5458\uff08\u5efa\u8bae\uff09",
             dataIndex: "people",
             width: 180,
-            render: (people) => h(Space, { wrap: true, size: [6, 6] }, people.map((person) => h(Tag, { color: "blue", className: "people-tag", key: person }, person))),
+            render: (people) => h(Space, { wrap: true, size: [6, 6] }, (people || []).map((person) => h(Tag, { color: "blue", className: "people-tag", key: person }, person))),
           },
         ];
 
@@ -4862,17 +5437,17 @@
               h(
                 "div",
                 { className: "mobile-card-head" },
-                h("div", { className: "mobile-card-title" }, `${row.index}. ${row.project}`),
+                h("div", { className: "mobile-card-title" }, row.index + ". " + row.project),
                 h(Tag, { color: row.propertyColor, className: "work-tag" }, row.property),
               ),
               h(
                 "div",
                 { className: "mobile-meta-grid" },
-                h(MobileMetaItem, { label: "对接内容" }, row.content),
-                h(MobileMetaItem, { label: "处理事务" }, h(Space, { direction: "vertical", size: 6 }, row.tasks.map((task) => h(Tag, { className: "task-tag", key: task }, task)))),
-                h(MobileMetaItem, { label: "注意事项" }, row.notes === "暂无" ? h(Text, { type: "secondary" }, "暂无") : row.notes),
-                h(MobileMetaItem, { label: "材料下载" }, h(MaterialButtons, { items: row.materialItems })),
-                h(MobileMetaItem, { label: "连锁配合人员" }, h(Space, { wrap: true, size: [6, 6] }, row.people.map((person) => h(Tag, { color: "blue", className: "people-tag", key: person }, person)))),
+                h(MobileMetaItem, { label: "\u5bf9\u63a5\u5185\u5bb9" }, row.content),
+                h(MobileMetaItem, { label: "\u5904\u7406\u4e8b\u52a1" }, h(Space, { direction: "vertical", size: 6 }, (row.tasks || []).map((task) => h(Tag, { className: "task-tag", key: task }, task)))),
+                h(MobileMetaItem, { label: "\u6ce8\u610f\u4e8b\u9879" }, renderCalendarNote(row.notes, dates)),
+                h(MobileMetaItem, { label: "\u6750\u6599\u4e0b\u8f7d" }, h(MaterialButtons, { items: row.materialItems })),
+                h(MobileMetaItem, { label: "\u8fde\u9501\u914d\u5408\u4eba\u5458" }, h(Space, { wrap: true, size: [6, 6] }, (row.people || []).map((person) => h(Tag, { color: "blue", className: "people-tag", key: person }, person)))),
               ),
             ),
           ),
@@ -4881,11 +5456,13 @@
         return h(
           "div",
           { className: "calendar-shell" },
-          h(Alert, { showIcon: true, type: "success", message: "对接行事历", description: "海典指导，连锁配合。材料下载列中的文件可直接提供给客户使用。" }),
+          h(Alert, { showIcon: true, type: "success", message: "\u5bf9\u63a5\u884c\u4e8b\u5386", description: "\u6d77\u5178\u6307\u5bfc\uff0c\u8fde\u9501\u914d\u5408\u3002\u6750\u6599\u4e0b\u8f7d\u5217\u4e2d\u7684\u6587\u4ef6\u53ef\u76f4\u63a5\u63d0\u4f9b\u7ed9\u5ba2\u6237\u4f7f\u7528\u3002" }),
+          contentError ? h(Alert, { showIcon: true, type: "warning", style: { marginTop: 12 }, message: contentError }) : null,
+          contentLoading && !rows.length ? h(Skeleton, { active: true, paragraph: { rows: 6 }, style: { marginTop: 16 } }) : null,
           h(
             Row,
             { gutter: [16, 16], className: "summary-row" },
-            [["总事项", 7], ["一次性工作", 5], ["每月更新", 1], ["及时更新", 1]].map(([title, value]) => h(Col, { xs: 12, md: 6, key: title }, h(Card, { bordered: false }, h(Statistic, { title, value })))),
+            summaryItems.map(([title, value]) => h(Col, { xs: 12, md: 6, key: title }, h(Card, { bordered: false }, h(Statistic, { title, value })))),
           ),
           h(Card, { bordered: false, className: "table-card desktop-only" }, h(Table, { columns, dataSource: rows, pagination: false, scroll: { x: 1500 }, sticky: true })),
           mobileCalendar,
@@ -5014,6 +5591,8 @@
             h(Tabs, {
               activeKey,
               className: "main-tabs",
+              destroyInactiveTabPane: true,
+              destroyOnHidden: true,
               onChange: setActiveKey,
               items: tabItems,
             }),

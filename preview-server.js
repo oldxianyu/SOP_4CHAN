@@ -6,6 +6,7 @@ const crypto = require("crypto");
 const net = require("net");
 const os = require("os");
 const { spawn } = require("child_process");
+const { Worker, isMainThread, parentPort, workerData } = require("worker_threads");
 const Busboy = require("busboy");
 const JSZip = require("jszip");
 const QRCode = require("qrcode");
@@ -23,6 +24,7 @@ const serverDir = path.join(root, ".server");
 dotenv.config({ path: path.join(serverDir, ".env") });
 const configPath = path.join(serverDir, "ai-config.json");
 const localDataPath = path.join(serverDir, "portal-data.json");
+const localReviewPayloadPath = path.join(serverDir, "review-report-payloads.json");
 const sessionSecretPath = path.join(serverDir, "session-secret");
 const reportsDir = path.join(serverDir, "reports");
 const publicReportBaseUrl = (process.env.PUBLIC_REPORT_BASE_URL || `http://localhost:${configuredPort}`).replace(/\/+$/, "");
@@ -47,10 +49,15 @@ let pool = null;
 let dbReady = false;
 let dbChecked = false;
 const activeReviewJobs = new Map();
+const activeWorkbookJobs = new Set();
 const activeWeComBrowserSessions = new Map();
 const activeWeComAutoReports = new Set();
 const workbookDetailRowLimit = Number(process.env.WORKBOOK_DETAIL_ROW_LIMIT || 5000);
+const reviewWorkbookTimeoutMs = Number(process.env.REVIEW_WORKBOOK_TIMEOUT_MS || 10 * 60 * 1000);
+const weComTokenBodyLimitBytes = Number(process.env.WE_COM_TOKEN_BODY_LIMIT_BYTES || 128 * 1024);
+const weComTokenScanTextLimit = Number(process.env.WE_COM_TOKEN_SCAN_TEXT_LIMIT || 256 * 1024);
 const disableLocalDataFallback = process.env.DISABLE_LOCAL_DATA_FALLBACK === "true";
+let localReviewPayloadStorageChecked = false;
 
 const mime = {
   ".html": "text/html; charset=utf-8",
@@ -179,7 +186,110 @@ function clearSessionCookie(res) {
 }
 
 function emptyLocalData() {
-  return { users: [], customerProfiles: [], aiConfigs: [], customerDatasets: [], reviewReports: [], capabilityTestSubmissions: [], systemSettings: [] };
+  return { users: [], customerProfiles: [], aiConfigs: [], customerDatasets: [], reviewReports: [], reviewJobs: [], reviewJobEvents: [], capabilityTestSubmissions: [], systemSettings: [] };
+}
+
+function emptyLocalReviewPayloadData() {
+  return { reviewReports: {} };
+}
+
+function writeLocalDataRaw(data) {
+  ensureServerDir();
+  fs.writeFileSync(localDataPath, JSON.stringify(data, null, 2), "utf8");
+}
+
+function readLocalReviewPayloadData() {
+  if (disableLocalDataFallback) return emptyLocalReviewPayloadData();
+  if (!fs.existsSync(localReviewPayloadPath)) {
+    return emptyLocalReviewPayloadData();
+  }
+  try {
+    const data = JSON.parse(fs.readFileSync(localReviewPayloadPath, "utf8"));
+    return {
+      reviewReports: data.reviewReports && typeof data.reviewReports === "object" ? data.reviewReports : {},
+    };
+  } catch {
+    return emptyLocalReviewPayloadData();
+  }
+}
+
+function writeLocalReviewPayloadData(data) {
+  if (disableLocalDataFallback) {
+    throw new Error("本地JSON兜底存储已关闭，请检查数据库连接。");
+  }
+  ensureServerDir();
+  fs.writeFileSync(localReviewPayloadPath, JSON.stringify({ reviewReports: data.reviewReports || {} }, null, 2), "utf8");
+}
+
+function normalizeLocalReviewPayloadEntry(value) {
+  return {
+    summaryJson: value?.summaryJson || value?.summary_json || value?.summary || null,
+    reportJson: value?.reportJson || value?.report_json || value?.report || null,
+    markdown: value?.markdown || "",
+  };
+}
+
+function stripLocalReviewReportPayloadFields(row) {
+  if (!row || typeof row !== "object") return row;
+  const next = { ...row };
+  delete next.summaryJson;
+  delete next.summary_json;
+  delete next.reportJson;
+  delete next.report_json;
+  delete next.markdown;
+  return next;
+}
+
+function extractLocalReviewPayload(row) {
+  return normalizeLocalReviewPayloadEntry({
+    summaryJson: row?.summaryJson || row?.summary_json || null,
+    reportJson: row?.reportJson || row?.report_json || null,
+    markdown: row?.markdown || "",
+  });
+}
+
+function hasLocalInlineReviewPayload(row) {
+  return Boolean(
+    row &&
+      (
+        row.summaryJson ||
+        row.summary_json ||
+        row.reportJson ||
+        row.report_json ||
+        row.markdown
+      ),
+  );
+}
+
+function saveLocalReviewPayload(reportId, payload) {
+  if (disableLocalDataFallback || !reportId) return;
+  const data = readLocalReviewPayloadData();
+  data.reviewReports[reportId] = normalizeLocalReviewPayloadEntry(payload);
+  writeLocalReviewPayloadData(data);
+}
+
+function getLocalReviewPayload(reportId) {
+  if (disableLocalDataFallback || !reportId) return null;
+  const row = readLocalReviewPayloadData().reviewReports[reportId];
+  return row ? normalizeLocalReviewPayloadEntry(row) : null;
+}
+
+function migrateLocalReviewPayloadStorage(data) {
+  if (disableLocalDataFallback || localReviewPayloadStorageChecked) return data;
+  localReviewPayloadStorageChecked = true;
+  let changed = false;
+  const payloadData = readLocalReviewPayloadData();
+  const reviewReports = (data.reviewReports || []).map((row) => {
+    if (!row?.id || !hasLocalInlineReviewPayload(row)) return row;
+    payloadData.reviewReports[row.id] = extractLocalReviewPayload(row);
+    changed = true;
+    return stripLocalReviewReportPayloadFields(row);
+  });
+  if (!changed) return data;
+  writeLocalReviewPayloadData(payloadData);
+  const nextData = { ...data, reviewReports };
+  writeLocalDataRaw(nextData);
+  return nextData;
 }
 
 function readLocalData() {
@@ -189,15 +299,17 @@ function readLocalData() {
   }
   try {
     const data = JSON.parse(fs.readFileSync(localDataPath, "utf8"));
-    return {
+    return migrateLocalReviewPayloadStorage({
       users: data.users || [],
       customerProfiles: data.customerProfiles || [],
       aiConfigs: data.aiConfigs || [],
       customerDatasets: data.customerDatasets || [],
       reviewReports: data.reviewReports || [],
+      reviewJobs: data.reviewJobs || [],
+      reviewJobEvents: data.reviewJobEvents || [],
       capabilityTestSubmissions: data.capabilityTestSubmissions || [],
       systemSettings: data.systemSettings || [],
-    };
+    });
   } catch {
     return emptyLocalData();
   }
@@ -207,8 +319,7 @@ function writeLocalData(data) {
   if (disableLocalDataFallback) {
     throw new Error("本地JSON兜底存储已关闭，请检查数据库连接。");
   }
-  ensureServerDir();
-  fs.writeFileSync(localDataPath, JSON.stringify(data, null, 2), "utf8");
+  writeLocalDataRaw(data);
 }
 
 function createId(prefix = "id") {
@@ -221,6 +332,67 @@ function jsonClone(value) {
 
 function jsonParam(value, fallback = null) {
   return JSON.stringify(value ?? fallback);
+}
+
+function normalizePageNumber(value, fallback = 1) {
+  const num = Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(num) && num > 0 ? num : fallback;
+}
+
+function normalizePageSize(value, fallback = 20, max = 100) {
+  const num = Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isFinite(num) || num <= 0) return fallback;
+  return Math.min(num, max);
+}
+
+function parsePagination(url, fallbackPageSize = 20, maxPageSize = 100) {
+  return {
+    page: normalizePageNumber(url.searchParams.get("page"), 1),
+    pageSize: normalizePageSize(url.searchParams.get("pageSize"), fallbackPageSize, maxPageSize),
+  };
+}
+
+function normalizeOptionalTextFilter(value, maxLength = 80) {
+  const text = String(value ?? "").trim();
+  return text ? text.slice(0, maxLength) : "";
+}
+
+function normalizeOptionalEnumFilter(value, allowedValues = []) {
+  const text = String(value ?? "").trim();
+  return allowedValues.includes(text) ? text : "";
+}
+
+function includesKeyword(value, keyword) {
+  return String(value || "").toLowerCase().includes(String(keyword || "").toLowerCase());
+}
+
+function parseReviewReportListOptions(url) {
+  const paging = parsePagination(url, 8, 50);
+  return {
+    ...paging,
+    status: normalizeOptionalEnumFilter(url.searchParams.get("status"), ["running", "completed", "failed", "cancelled"]),
+    sourceType: normalizeOptionalEnumFilter(url.searchParams.get("sourceType"), ["excel", "login", "wecom_browser", "wecom_token"]),
+    keyword: normalizeOptionalTextFilter(url.searchParams.get("keyword"), 120),
+  };
+}
+
+function parseAdminUserListOptions(url) {
+  const paging = parsePagination(url, 10, 50);
+  return {
+    ...paging,
+    role: normalizeOptionalEnumFilter(url.searchParams.get("role"), ["admin", "customer"]),
+    status: normalizeOptionalEnumFilter(url.searchParams.get("status"), ["active", "disabled"]),
+    keyword: normalizeOptionalTextFilter(url.searchParams.get("keyword"), 120),
+  };
+}
+
+function parseCapabilitySubmissionListOptions(url) {
+  const paging = parsePagination(url, 10, 50);
+  return {
+    ...paging,
+    completionBand: normalizeOptionalEnumFilter(url.searchParams.get("completionBand"), ["low", "medium", "high"]),
+    keyword: normalizeOptionalTextFilter(url.searchParams.get("keyword"), 120),
+  };
 }
 
 function escapeHtml(value) {
@@ -358,10 +530,17 @@ async function ensureDatabase() {
   dbChecked = true;
   const activePool = await getPool();
   if (!activePool) return false;
+  let trigramReady = false;
   try {
     await activePool.query("create extension if not exists pgcrypto");
   } catch {
     // Some Supabase roles may not be allowed to create extensions; fallback schemas use text ids.
+  }
+  try {
+    await activePool.query("create extension if not exists pg_trgm");
+    trigramReady = true;
+  } catch {
+    // Optional acceleration for ILIKE keyword filters; skip when the database role cannot create extensions.
   }
   try {
     await activePool.query(`
@@ -432,6 +611,11 @@ async function ensureDatabase() {
       markdown text,
       report_id text unique not null,
       job_key text,
+      cancel_requested boolean not null default false,
+      heartbeat_at timestamptz,
+      progress_stage text,
+      progress_text text,
+      progress_percent integer not null default 0,
       error_message text,
       retry_payload_json jsonb not null default '{}'::jsonb,
       started_at timestamptz,
@@ -440,6 +624,8 @@ async function ensureDatabase() {
       svg_url text,
       qr_svg_url text,
       excel_url text,
+      excel_status text not null default '',
+      excel_error text,
       normalized_data_url text,
       diagnostics_url text,
       created_at timestamptz not null default now(),
@@ -452,6 +638,40 @@ async function ensureDatabase() {
       markdown text,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
+    );
+    create table if not exists review_jobs (
+      id text primary key default gen_random_uuid()::text,
+      job_key text not null,
+      report_db_id text references review_reports(id) on delete cascade,
+      user_id text references users(id) on delete set null,
+      source_type text not null,
+      source_name text,
+      status text not null default 'running',
+      progress_stage text,
+      progress_text text,
+      progress_percent integer not null default 0,
+      cancel_requested boolean not null default false,
+      retry_payload_json jsonb not null default '{}'::jsonb,
+      error_message text,
+      started_at timestamptz not null default now(),
+      heartbeat_at timestamptz,
+      finished_at timestamptz,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists review_job_events (
+      id text primary key default gen_random_uuid()::text,
+      review_job_id text references review_jobs(id) on delete cascade,
+      report_db_id text references review_reports(id) on delete cascade,
+      user_id text references users(id) on delete set null,
+      job_key text,
+      event_type text not null,
+      status text,
+      progress_stage text,
+      progress_percent integer,
+      message text,
+      metadata_json jsonb not null default '{}'::jsonb,
+      created_at timestamptz not null default now()
     );
     create table if not exists ai_review_uploads (
       id text primary key default gen_random_uuid()::text,
@@ -549,9 +769,21 @@ async function ensureDatabase() {
     create index if not exists idx_ai_review_uploads_report on ai_review_uploads(report_db_id);
     create index if not exists idx_ai_review_uploads_status_created on ai_review_uploads(status, created_at desc);
     create index if not exists idx_capability_test_submissions_created on capability_test_submissions(created_at desc);
+    create index if not exists idx_capability_test_submissions_completion_created on capability_test_submissions(completion_rate, created_at desc);
     create index if not exists idx_auth_logs_user_created on auth_operation_logs(user_id, created_at desc);
     create index if not exists idx_auth_logs_identifier_created on auth_operation_logs(login_identifier, created_at desc);
     create index if not exists idx_auth_logs_success_created on auth_operation_logs(success, created_at desc);
+    create index if not exists idx_users_role_status_created on users(role, status, created_at desc);
+    create index if not exists idx_users_phone_created on users(phone, created_at desc);
+    create index if not exists idx_review_reports_user_status_created on review_reports(user_id, status, created_at desc);
+    create index if not exists idx_review_reports_source_status_created on review_reports(source_type, status, created_at desc);
+    create index if not exists idx_review_jobs_key_status_created on review_jobs(job_key, status, created_at desc);
+    create index if not exists idx_review_jobs_report on review_jobs(report_db_id);
+    create index if not exists idx_review_jobs_running_heartbeat on review_jobs(status, heartbeat_at desc);
+    create index if not exists idx_review_jobs_user_created on review_jobs(user_id, created_at desc);
+    create index if not exists idx_review_job_events_job_created on review_job_events(review_job_id, created_at desc);
+    create index if not exists idx_review_job_events_report_created on review_job_events(report_db_id, created_at desc);
+    create index if not exists idx_review_job_events_user_created on review_job_events(user_id, created_at desc);
     create unique index if not exists idx_sijichan_auth_unique on sijichan_account_authorizations(user_id, username, mer_code);
     create index if not exists idx_sijichan_auth_status_updated on sijichan_account_authorizations(status, updated_at desc);
     create index if not exists idx_sijichan_handoff_user_created on sijichan_token_handoffs(user_id, created_at desc);
@@ -567,14 +799,69 @@ async function ensureDatabase() {
       alter table review_reports add column if not exists health_score numeric;
       alter table review_reports add column if not exists risk_level text;
       alter table review_reports add column if not exists excel_url text;
+      alter table review_reports add column if not exists excel_status text not null default '';
+      alter table review_reports alter column excel_status set default '';
+      alter table review_reports add column if not exists excel_error text;
       alter table review_reports add column if not exists normalized_data_url text;
       alter table review_reports add column if not exists diagnostics_url text;
       alter table review_reports add column if not exists job_key text;
+      alter table review_reports add column if not exists cancel_requested boolean not null default false;
+      alter table review_reports add column if not exists heartbeat_at timestamptz;
+      alter table review_reports add column if not exists progress_stage text;
+      alter table review_reports add column if not exists progress_text text;
+      alter table review_reports add column if not exists progress_percent integer not null default 0;
       alter table review_reports add column if not exists error_message text;
       alter table review_reports add column if not exists retry_payload_json jsonb not null default '{}'::jsonb;
       alter table review_reports add column if not exists started_at timestamptz;
       alter table review_reports add column if not exists finished_at timestamptz;
+      create table if not exists review_jobs (
+        id text primary key default gen_random_uuid()::text,
+        job_key text not null,
+        report_db_id text references review_reports(id) on delete cascade,
+        user_id text references users(id) on delete set null,
+        source_type text not null,
+        source_name text,
+        status text not null default 'running',
+        progress_stage text,
+        progress_text text,
+        progress_percent integer not null default 0,
+        cancel_requested boolean not null default false,
+        retry_payload_json jsonb not null default '{}'::jsonb,
+        error_message text,
+        started_at timestamptz not null default now(),
+        heartbeat_at timestamptz,
+        finished_at timestamptz,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      );
+      create table if not exists review_job_events (
+        id text primary key default gen_random_uuid()::text,
+        review_job_id text references review_jobs(id) on delete cascade,
+        report_db_id text references review_reports(id) on delete cascade,
+        user_id text references users(id) on delete set null,
+        job_key text,
+        event_type text not null,
+        status text,
+        progress_stage text,
+        progress_percent integer,
+        message text,
+        metadata_json jsonb not null default '{}'::jsonb,
+        created_at timestamptz not null default now()
+      );
       create index if not exists idx_review_reports_job_key on review_reports(job_key);
+      create index if not exists idx_review_reports_running_heartbeat on review_reports(status, heartbeat_at desc);
+      create index if not exists idx_review_reports_user_status_created on review_reports(user_id, status, created_at desc);
+      create index if not exists idx_review_reports_source_status_created on review_reports(source_type, status, created_at desc);
+      create index if not exists idx_review_jobs_key_status_created on review_jobs(job_key, status, created_at desc);
+      create index if not exists idx_review_jobs_report on review_jobs(report_db_id);
+      create index if not exists idx_review_jobs_running_heartbeat on review_jobs(status, heartbeat_at desc);
+      create index if not exists idx_review_jobs_user_created on review_jobs(user_id, created_at desc);
+      create index if not exists idx_review_job_events_job_created on review_job_events(review_job_id, created_at desc);
+      create index if not exists idx_review_job_events_report_created on review_job_events(report_db_id, created_at desc);
+      create index if not exists idx_review_job_events_user_created on review_job_events(user_id, created_at desc);
+      create index if not exists idx_users_role_status_created on users(role, status, created_at desc);
+      create index if not exists idx_users_phone_created on users(phone, created_at desc);
+      create index if not exists idx_capability_test_submissions_completion_created on capability_test_submissions(completion_rate, created_at desc);
       drop function if exists get_review_report_list(text, boolean, integer);
     `);
     await activePool.query(`
@@ -609,6 +896,353 @@ async function ensureDatabase() {
         return v_id;
       end;
       $$;
+      create or replace function cleanup_auth_operation_logs(p_success_retention_days integer, p_failure_retention_days integer)
+      returns integer
+      language plpgsql
+      as $cleanup_auth_logs$
+      declare
+        v_removed integer := 0;
+      begin
+        delete from auth_operation_logs
+        where (
+            success = true
+            and created_at < now() - (greatest(1, coalesce(p_success_retention_days, 90))::text || ' days')::interval
+          )
+          or (
+            success = false
+            and created_at < now() - (greatest(1, coalesce(p_failure_retention_days, 180))::text || ' days')::interval
+          );
+
+        get diagnostics v_removed = row_count;
+        return v_removed;
+      end;
+      $cleanup_auth_logs$;
+      create or replace function record_review_job_event()
+      returns trigger
+      language plpgsql
+      as $review_job_event$
+      declare
+        v_message text;
+        v_metadata jsonb;
+        v_event_types text[];
+        v_event_type text;
+      begin
+        if TG_OP = 'INSERT' then
+          v_event_types := array['created'];
+        elsif TG_OP = 'UPDATE' then
+          v_event_types := array[]::text[];
+          if coalesce(old.cancel_requested, false) = false and coalesce(new.cancel_requested, false) = true then
+            v_event_types := array_append(v_event_types, 'cancel_requested');
+          end if;
+          if old.status is distinct from new.status then
+            v_event_types := array_append(v_event_types, 'status_changed');
+          end if;
+          if old.progress_stage is distinct from new.progress_stage
+             or old.progress_text is distinct from new.progress_text
+             or old.progress_percent is distinct from new.progress_percent then
+            v_event_types := array_append(v_event_types, 'progress');
+          end if;
+          if coalesce(array_length(v_event_types, 1), 0) = 0 then
+            return new;
+          end if;
+        else
+          return new;
+        end if;
+
+        v_message := coalesce(nullif(new.error_message, ''), nullif(new.progress_text, ''), new.status, v_event_type);
+        if TG_OP = 'UPDATE' then
+          v_metadata := jsonb_strip_nulls(jsonb_build_object(
+            'operation', TG_OP,
+            'sourceType', new.source_type,
+            'sourceName', new.source_name,
+            'oldStatus', old.status,
+            'newStatus', new.status,
+            'oldProgressStage', old.progress_stage,
+            'newProgressStage', new.progress_stage,
+            'oldProgressPercent', old.progress_percent,
+            'newProgressPercent', new.progress_percent,
+            'cancelRequested', new.cancel_requested,
+            'heartbeatAt', new.heartbeat_at,
+            'finishedAt', new.finished_at
+          ));
+        else
+          v_metadata := jsonb_strip_nulls(jsonb_build_object(
+            'operation', TG_OP,
+            'sourceType', new.source_type,
+            'sourceName', new.source_name,
+            'newStatus', new.status,
+            'newProgressStage', new.progress_stage,
+            'newProgressPercent', new.progress_percent,
+            'cancelRequested', new.cancel_requested,
+            'heartbeatAt', new.heartbeat_at,
+            'finishedAt', new.finished_at
+          ));
+        end if;
+
+        foreach v_event_type in array v_event_types loop
+          insert into review_job_events(
+            review_job_id,
+            report_db_id,
+            user_id,
+            job_key,
+            event_type,
+            status,
+            progress_stage,
+            progress_percent,
+            message,
+            metadata_json
+          )
+          values(
+            new.id,
+            new.report_db_id,
+            new.user_id,
+            new.job_key,
+            v_event_type,
+            new.status,
+            new.progress_stage,
+            new.progress_percent,
+            v_message,
+            coalesce(v_metadata, '{}'::jsonb)
+          );
+        end loop;
+
+        return new;
+      end;
+      $review_job_event$;
+      create or replace function sync_review_job_to_report()
+      returns trigger
+      language plpgsql
+      as $sync_review_job$
+      begin
+        if new.report_db_id is null then
+          return new;
+        end if;
+
+        update review_reports r
+        set
+          status = coalesce(new.status, r.status),
+          cancel_requested = coalesce(new.cancel_requested, r.cancel_requested),
+          heartbeat_at = coalesce(new.heartbeat_at, r.heartbeat_at),
+          progress_stage = coalesce(new.progress_stage, r.progress_stage),
+          progress_text = coalesce(new.progress_text, r.progress_text),
+          progress_percent = coalesce(new.progress_percent, r.progress_percent),
+          error_message = case
+            when new.status in ('running', 'completed') then null
+            when new.status in ('failed', 'cancelled') then coalesce(nullif(new.error_message, ''), r.error_message)
+            else r.error_message
+          end,
+          started_at = coalesce(r.started_at, new.started_at),
+          finished_at = case
+            when new.status in ('completed', 'failed', 'cancelled') then coalesce(new.finished_at, r.finished_at, now())
+            else r.finished_at
+          end,
+          report_title = case
+            when new.status = 'failed' then '复盘报告生成失败'
+            when new.status = 'cancelled' then '复盘报告已取消'
+            else r.report_title
+          end,
+          updated_at = now()
+        where r.id = new.report_db_id
+          and (
+            r.status is distinct from coalesce(new.status, r.status)
+            or r.cancel_requested is distinct from coalesce(new.cancel_requested, r.cancel_requested)
+            or r.heartbeat_at is distinct from coalesce(new.heartbeat_at, r.heartbeat_at)
+            or r.progress_stage is distinct from coalesce(new.progress_stage, r.progress_stage)
+            or r.progress_text is distinct from coalesce(new.progress_text, r.progress_text)
+            or r.progress_percent is distinct from coalesce(new.progress_percent, r.progress_percent)
+            or r.error_message is distinct from case
+              when new.status in ('running', 'completed') then null
+              when new.status in ('failed', 'cancelled') then coalesce(nullif(new.error_message, ''), r.error_message)
+              else r.error_message
+            end
+            or (new.status in ('completed', 'failed', 'cancelled') and r.finished_at is null)
+          );
+
+        return new;
+      end;
+      $sync_review_job$;
+      create or replace function apply_report_status_to_ai_review_upload()
+      returns trigger
+      language plpgsql
+      as $apply_upload_report_status$
+      declare
+        v_report record;
+      begin
+        if new.report_db_id is null then
+          return new;
+        end if;
+
+        select status, error_message
+        into v_report
+        from review_reports
+        where id = new.report_db_id;
+
+        if not found then
+          return new;
+        end if;
+
+        new.status = case
+          when v_report.status = 'completed' then 'completed'
+          when v_report.status = 'running' then 'processing'
+          when v_report.status = 'cancelled' then 'cancelled'
+          when v_report.status = 'failed' then 'failed'
+          else coalesce(new.status, 'parsed')
+        end;
+        new.error_message = case
+          when v_report.status in ('failed', 'cancelled') then coalesce(nullif(v_report.error_message, ''), new.error_message)
+          else null
+        end;
+        new.updated_at = now();
+        return new;
+      end;
+      $apply_upload_report_status$;
+      create or replace function sync_ai_review_uploads_from_report()
+      returns trigger
+      language plpgsql
+      as $sync_uploads_from_report$
+      begin
+        update ai_review_uploads u
+        set status = case
+              when new.status = 'completed' then 'completed'
+              when new.status = 'running' then 'processing'
+              when new.status = 'cancelled' then 'cancelled'
+              when new.status = 'failed' then 'failed'
+              else u.status
+            end,
+            error_message = case
+              when new.status in ('failed', 'cancelled') then coalesce(nullif(new.error_message, ''), u.error_message)
+              else null
+            end,
+            updated_at = now()
+        where u.report_db_id = new.id
+          and (
+            u.status is distinct from case
+              when new.status = 'completed' then 'completed'
+              when new.status = 'running' then 'processing'
+              when new.status = 'cancelled' then 'cancelled'
+              when new.status = 'failed' then 'failed'
+              else u.status
+            end
+            or u.error_message is distinct from case
+              when new.status in ('failed', 'cancelled') then coalesce(nullif(new.error_message, ''), u.error_message)
+              else null
+            end
+          );
+        return new;
+      end;
+      $sync_uploads_from_report$;
+      create or replace function expire_stale_review_jobs(p_timeout_ms bigint, p_message text)
+      returns table(job_key text, report_db_id text, source_table text)
+      language plpgsql
+      as $expire_review_jobs$
+      begin
+        return query
+        with expired_jobs as (
+          update review_jobs j
+          set status='failed',
+              error_message=p_message,
+              cancel_requested=false,
+              progress_stage='failed',
+              progress_text=p_message,
+              finished_at=now(),
+              updated_at=now()
+          where j.status='running'
+            and coalesce(j.cancel_requested, false)=false
+            and coalesce(j.heartbeat_at, j.started_at, j.created_at) < now() - (greatest(coalesce(p_timeout_ms, 1), 1)::text || ' milliseconds')::interval
+          returning j.job_key, j.report_db_id
+        ),
+        expired_reports as (
+          update review_reports r
+          set status='failed',
+              report_title='复盘报告生成失败',
+              error_message=p_message,
+              cancel_requested=false,
+              progress_stage='failed',
+              progress_text=p_message,
+              finished_at=now(),
+              updated_at=now()
+          where (
+              r.id in (select ej.report_db_id from expired_jobs ej where ej.report_db_id is not null)
+              or (
+                r.status='running'
+                and coalesce(r.cancel_requested, false)=false
+                and coalesce(r.heartbeat_at, r.started_at, r.created_at) < now() - (greatest(coalesce(p_timeout_ms, 1), 1)::text || ' milliseconds')::interval
+              )
+            )
+          returning r.job_key, r.id as report_db_id
+        )
+        select ej.job_key, ej.report_db_id, 'review_jobs'::text
+        from expired_jobs ej
+        union all
+        select er.job_key, er.report_db_id, 'review_reports'::text
+        from expired_reports er;
+      end;
+      $expire_review_jobs$;
+      create or replace function cleanup_review_job_events(p_retention_days integer, p_max_per_job integer)
+      returns integer
+      language plpgsql
+      as $cleanup_review_events$
+      declare
+        v_removed integer := 0;
+        v_count integer := 0;
+      begin
+        if coalesce(p_retention_days, 0) > 0 then
+          delete from review_job_events
+          where created_at < now() - (greatest(p_retention_days, 1)::text || ' days')::interval;
+          get diagnostics v_count = row_count;
+          v_removed := v_removed + coalesce(v_count, 0);
+        end if;
+
+        if coalesce(p_max_per_job, 0) > 0 then
+          delete from review_job_events e
+          using (
+            select id
+            from (
+              select
+                id,
+                row_number() over (
+                  partition by coalesce(review_job_id, report_db_id, job_key, id)
+                  order by created_at desc, id desc
+                ) as row_no
+              from review_job_events
+            ) ranked
+            where row_no > greatest(p_max_per_job, 1)
+          ) expired
+          where e.id = expired.id;
+          get diagnostics v_count = row_count;
+          v_removed := v_removed + coalesce(v_count, 0);
+        end if;
+
+        return v_removed;
+      end;
+      $cleanup_review_events$;
+      create or replace function expire_stale_review_workbooks(p_timeout_ms bigint, p_message text)
+      returns table(expired_report_db_id text)
+      language plpgsql
+      as $expire_review_workbooks$
+      begin
+        return query
+        with expired as (
+          update review_reports r
+          set excel_status='failed',
+              excel_url='',
+              excel_error=p_message,
+              updated_at=now()
+          where coalesce(r.excel_status, '') = 'generating'
+            and extract(epoch from (now() - coalesce(r.updated_at, r.created_at))) * 1000 > p_timeout_ms
+          returning r.id, r.user_id, r.job_key
+        ),
+        logged as (
+          insert into review_job_events(review_job_id, report_db_id, user_id, job_key, event_type, status, progress_stage, progress_percent, message, metadata_json)
+          select null::text, e.id, e.user_id, e.job_key, 'excel_status', 'completed', 'excel_failed', 100, p_message, jsonb_build_object('timeout', true)
+          from expired e
+          returning review_job_events.report_db_id
+        )
+        select e.id
+        from expired e
+        left join logged l on l.report_db_id = e.id;
+      end;
+      $expire_review_workbooks$;
       create or replace function get_review_report_list(p_user_id text, p_is_admin boolean, p_limit integer default 100)
       returns table(
         id text,
@@ -625,6 +1259,8 @@ async function ensureDatabase() {
         svg_url text,
         qr_svg_url text,
         excel_url text,
+        excel_status text,
+        excel_error text,
         normalized_data_url text,
         diagnostics_url text,
         job_key text,
@@ -651,6 +1287,8 @@ async function ensureDatabase() {
           r.svg_url,
           r.qr_svg_url,
           r.excel_url,
+          r.excel_status,
+          r.excel_error,
           r.normalized_data_url,
           r.diagnostics_url,
           r.job_key,
@@ -670,6 +1308,191 @@ async function ensureDatabase() {
       as $$
         select count(*)::integer from review_report_payloads;
       $$;
+      create or replace view review_report_list_view as
+        select
+          r.id,
+          r.user_id,
+          r.customer_profile_id,
+          r.source_type,
+          r.source_name,
+          r.status,
+          r.report_title,
+          r.report_id,
+          r.row_counts_json,
+          r.health_score,
+          r.risk_level,
+          r.share_url,
+          r.svg_url,
+          r.qr_svg_url,
+          r.excel_url,
+          r.excel_status,
+          r.excel_error,
+          r.normalized_data_url,
+          r.diagnostics_url,
+          r.job_key,
+          r.cancel_requested,
+          r.heartbeat_at,
+          r.progress_stage,
+          r.progress_text,
+          r.progress_percent,
+          r.error_message,
+          r.started_at,
+          r.finished_at,
+          r.created_at
+        from review_reports r;
+      create or replace view running_review_report_view as
+        select *
+        from review_report_list_view
+        where status = 'running'
+          and coalesce(cancel_requested, false) = false;
+      create or replace view admin_user_overview_view as
+        select
+          u.id,
+          u.name,
+          u.phone,
+          u.email,
+          u.role,
+          u.status,
+          u.created_at,
+          u.updated_at,
+          coalesce(cp.company_name, '') as company_name,
+          coalesce(rr.report_count, 0)::int as report_count,
+          coalesce(cd.dataset_count, 0)::int as dataset_count,
+          coalesce(ac.ai_config_count, 0)::int as ai_config_count,
+          al.last_login_at
+        from users u
+        left join (
+          select user_id, max(company_name) as company_name
+          from customer_profiles
+          group by user_id
+        ) cp on cp.user_id = u.id
+        left join (
+          select user_id, count(*)::int as report_count
+          from review_reports
+          group by user_id
+        ) rr on rr.user_id = u.id
+        left join (
+          select user_id, count(*)::int as dataset_count
+          from customer_datasets
+          group by user_id
+        ) cd on cd.user_id = u.id
+        left join (
+          select coalesce(owner_user_id, updated_by) as user_id, count(*)::int as ai_config_count
+          from ai_configs
+          group by coalesce(owner_user_id, updated_by)
+        ) ac on ac.user_id = u.id
+        left join (
+          select user_id, max(created_at) as last_login_at
+          from auth_operation_logs
+          where operation_type = 'login' and success = true
+          group by user_id
+        ) al on al.user_id = u.id;
+      create or replace view user_account_stats_view as
+        select
+          count(*)::int as total_users,
+          count(*) filter (where role = 'admin')::int as admin_users,
+          count(*) filter (where role <> 'admin')::int as customer_users,
+          count(*) filter (where status <> 'active')::int as disabled_users
+        from users;
+      create or replace view capability_submission_list_view as
+        select
+          id,
+          name,
+          department,
+          test_date,
+          total_questions,
+          answered_questions,
+          completion_rate,
+          created_at
+        from capability_test_submissions;
+      create or replace view monthly_marketing_list_view as
+        select
+          id,
+          month_key,
+          user_id,
+          customer_name,
+          customer_code,
+          status,
+          activity_count,
+          product_count,
+          error_message,
+          generated_at,
+          created_at,
+          coalesce(recommendation_json->'focusProducts', '[]'::jsonb) as focus_products_json,
+          coalesce(recommendation_json->'nextActions', '[]'::jsonb) as next_actions_json
+        from monthly_marketing_recommendations;
+      create or replace function get_monthly_marketing_aggregate(p_month_key text, p_user_id text, p_is_admin boolean)
+      returns table(
+        source_count integer,
+        failed_count integer,
+        activity_count integer,
+        product_count integer,
+        updated_at timestamptz,
+        focus_products_json jsonb,
+        next_actions_json jsonb
+      )
+      language sql
+      stable
+      as $monthly_marketing_aggregate$
+        with scoped as (
+          select *
+          from monthly_marketing_list_view
+          where month_key = p_month_key
+            and (coalesce(p_is_admin, false) or user_id = p_user_id)
+        ),
+        stats as (
+          select
+            count(*) filter (where status = 'completed')::int as source_count,
+            count(*) filter (where status <> 'completed')::int as failed_count,
+            coalesce(sum(activity_count) filter (where status = 'completed'), 0)::int as activity_count,
+            coalesce(sum(product_count) filter (where status = 'completed'), 0)::int as product_count,
+            max(generated_at) filter (where status = 'completed') as updated_at
+          from scoped
+        ),
+        focus as (
+          select coalesce(jsonb_agg(value order by score desc, value), '[]'::jsonb) as focus_products_json
+          from (
+            select value, count(*)::int as score
+            from (
+              select trim(focus_item.value) as value
+              from scoped s
+              cross join lateral jsonb_array_elements_text(coalesce(s.focus_products_json, '[]'::jsonb)) as focus_item(value)
+              where s.status = 'completed'
+                and trim(focus_item.value) <> ''
+            ) focus_items
+            group by value
+            order by score desc, value
+            limit 14
+          ) limited_focus
+        ),
+        actions as (
+          select coalesce(jsonb_agg(value order by score desc, value), '[]'::jsonb) as next_actions_json
+          from (
+            select value, count(*)::int as score
+            from (
+              select trim(action_item.value) as value
+              from scoped s
+              cross join lateral jsonb_array_elements_text(coalesce(s.next_actions_json, '[]'::jsonb)) as action_item(value)
+              where s.status = 'completed'
+                and trim(action_item.value) <> ''
+            ) action_items
+            group by value
+            order by score desc, value
+            limit 8
+          ) limited_actions
+        )
+        select
+          stats.source_count,
+          stats.failed_count,
+          stats.activity_count,
+          stats.product_count,
+          stats.updated_at,
+          focus.focus_products_json,
+          actions.next_actions_json
+        from stats
+        cross join focus
+        cross join actions;
+      $monthly_marketing_aggregate$;
       do $$
       declare
         t text;
@@ -684,6 +1507,7 @@ async function ensureDatabase() {
           'ai_review_uploads',
           'review_reports',
           'review_report_payloads',
+          'review_jobs',
           'capability_test_submissions',
           'auth_operation_logs',
           'sijichan_account_authorizations',
@@ -698,19 +1522,84 @@ async function ensureDatabase() {
         end loop;
       end;
       $$;
+      drop trigger if exists trg_review_jobs_event_log on review_jobs;
+      create trigger trg_review_jobs_event_log
+        after insert or update on review_jobs
+        for each row execute function record_review_job_event();
+      drop trigger if exists trg_review_jobs_sync_report on review_jobs;
+      create trigger trg_review_jobs_sync_report
+        after insert or update on review_jobs
+        for each row execute function sync_review_job_to_report();
       alter table review_reports add column if not exists status text not null default 'completed';
       alter table review_reports add column if not exists report_title text;
       alter table review_reports add column if not exists row_counts_json jsonb not null default '{}'::jsonb;
       alter table review_reports add column if not exists health_score numeric;
       alter table review_reports add column if not exists risk_level text;
       alter table review_reports add column if not exists excel_url text;
+      alter table review_reports add column if not exists excel_status text not null default '';
+      alter table review_reports alter column excel_status set default '';
+      alter table review_reports add column if not exists excel_error text;
       alter table review_reports add column if not exists normalized_data_url text;
       alter table review_reports add column if not exists diagnostics_url text;
       alter table review_reports add column if not exists job_key text;
+      alter table review_reports add column if not exists cancel_requested boolean not null default false;
+      alter table review_reports add column if not exists heartbeat_at timestamptz;
+      alter table review_reports add column if not exists progress_stage text;
+      alter table review_reports add column if not exists progress_text text;
+      alter table review_reports add column if not exists progress_percent integer not null default 0;
       alter table review_reports add column if not exists error_message text;
       alter table review_reports add column if not exists retry_payload_json jsonb not null default '{}'::jsonb;
       alter table review_reports add column if not exists started_at timestamptz;
       alter table review_reports add column if not exists finished_at timestamptz;
+      create table if not exists review_jobs (
+        id text primary key default gen_random_uuid()::text,
+        job_key text not null,
+        report_db_id text references review_reports(id) on delete cascade,
+        user_id text references users(id) on delete set null,
+        source_type text not null,
+        source_name text,
+        status text not null default 'running',
+        progress_stage text,
+        progress_text text,
+        progress_percent integer not null default 0,
+        cancel_requested boolean not null default false,
+        retry_payload_json jsonb not null default '{}'::jsonb,
+        error_message text,
+        started_at timestamptz not null default now(),
+        heartbeat_at timestamptz,
+        finished_at timestamptz,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      );
+      alter table review_jobs add column if not exists job_key text not null default '';
+      alter table review_jobs add column if not exists report_db_id text references review_reports(id) on delete cascade;
+      alter table review_jobs add column if not exists user_id text references users(id) on delete set null;
+      alter table review_jobs add column if not exists source_type text not null default 'unknown';
+      alter table review_jobs add column if not exists source_name text;
+      alter table review_jobs add column if not exists status text not null default 'running';
+      alter table review_jobs add column if not exists progress_stage text;
+      alter table review_jobs add column if not exists progress_text text;
+      alter table review_jobs add column if not exists progress_percent integer not null default 0;
+      alter table review_jobs add column if not exists cancel_requested boolean not null default false;
+      alter table review_jobs add column if not exists retry_payload_json jsonb not null default '{}'::jsonb;
+      alter table review_jobs add column if not exists error_message text;
+      alter table review_jobs add column if not exists started_at timestamptz not null default now();
+      alter table review_jobs add column if not exists heartbeat_at timestamptz;
+      alter table review_jobs add column if not exists finished_at timestamptz;
+      create table if not exists review_job_events (
+        id text primary key default gen_random_uuid()::text,
+        review_job_id text references review_jobs(id) on delete cascade,
+        report_db_id text references review_reports(id) on delete cascade,
+        user_id text references users(id) on delete set null,
+        job_key text,
+        event_type text not null,
+        status text,
+        progress_stage text,
+        progress_percent integer,
+        message text,
+        metadata_json jsonb not null default '{}'::jsonb,
+        created_at timestamptz not null default now()
+      );
       alter table ai_configs add column if not exists owner_user_id text references users(id) on delete cascade;
       alter table ai_review_uploads add column if not exists report_db_id text references review_reports(id) on delete set null;
       alter table ai_review_uploads add column if not exists error_message text;
@@ -737,10 +1626,26 @@ async function ensureDatabase() {
         updated_at timestamptz not null default now()
       );
       alter table monthly_marketing_recommendations add column if not exists error_message text;
+      drop trigger if exists trg_ai_review_uploads_apply_report_status on ai_review_uploads;
+      create trigger trg_ai_review_uploads_apply_report_status
+        before insert or update of report_db_id on ai_review_uploads
+        for each row execute function apply_report_status_to_ai_review_upload();
+      drop trigger if exists trg_review_reports_sync_uploads on review_reports;
+      create trigger trg_review_reports_sync_uploads
+        after update of status, error_message on review_reports
+        for each row execute function sync_ai_review_uploads_from_report();
       create index if not exists idx_review_reports_user_created on review_reports(user_id, created_at desc);
       create index if not exists idx_review_reports_created on review_reports(created_at desc);
       create index if not exists idx_review_reports_status_created on review_reports(status, created_at desc);
       create index if not exists idx_review_reports_job_key on review_reports(job_key);
+      create index if not exists idx_review_reports_running_heartbeat on review_reports(status, heartbeat_at desc);
+      create index if not exists idx_review_jobs_key_status_created on review_jobs(job_key, status, created_at desc);
+      create index if not exists idx_review_jobs_report on review_jobs(report_db_id);
+      create index if not exists idx_review_jobs_running_heartbeat on review_jobs(status, heartbeat_at desc);
+      create index if not exists idx_review_jobs_user_created on review_jobs(user_id, created_at desc);
+      create index if not exists idx_review_job_events_job_created on review_job_events(review_job_id, created_at desc);
+      create index if not exists idx_review_job_events_report_created on review_job_events(report_db_id, created_at desc);
+      create index if not exists idx_review_job_events_user_created on review_job_events(user_id, created_at desc);
       create index if not exists idx_system_settings_updated on system_settings(updated_at desc);
       update ai_configs set owner_user_id = updated_by where owner_user_id is null and updated_by is not null;
       create index if not exists idx_ai_configs_owner_updated on ai_configs(owner_user_id, updated_at desc);
@@ -803,6 +1708,20 @@ async function ensureDatabase() {
          or pg_column_size(report_json) > 4096
          or length(coalesce(markdown, '')) > 2048;
     `);
+    if (trigramReady) {
+      await activePool.query(`
+        create index if not exists idx_users_name_trgm on users using gin ((coalesce(name, '')) gin_trgm_ops);
+        create index if not exists idx_users_phone_trgm on users using gin ((coalesce(phone, '')) gin_trgm_ops);
+        create index if not exists idx_users_email_trgm on users using gin ((coalesce(email, '')) gin_trgm_ops);
+        create index if not exists idx_customer_profiles_company_trgm on customer_profiles using gin ((coalesce(company_name, '')) gin_trgm_ops);
+        create index if not exists idx_review_reports_title_trgm on review_reports using gin ((coalesce(report_title, '')) gin_trgm_ops);
+        create index if not exists idx_review_reports_source_name_trgm on review_reports using gin ((coalesce(source_name, '')) gin_trgm_ops);
+        create index if not exists idx_review_reports_report_id_trgm on review_reports using gin ((coalesce(report_id, '')) gin_trgm_ops);
+        create index if not exists idx_capability_submissions_name_trgm on capability_test_submissions using gin ((coalesce(name, '')) gin_trgm_ops);
+        create index if not exists idx_capability_submissions_department_trgm on capability_test_submissions using gin ((coalesce(department, '')) gin_trgm_ops);
+        create index if not exists idx_capability_submissions_test_date_trgm on capability_test_submissions using gin ((coalesce(test_date, '')) gin_trgm_ops);
+      `);
+    }
     dbReady = true;
     return true;
   } catch (error) {
@@ -1014,62 +1933,121 @@ function normalizeAdminUserRow(row) {
   };
 }
 
-async function listAdminUsers() {
+async function listAdminUsers(options = {}) {
+  const page = normalizePageNumber(options.page, 1);
+  const pageSize = normalizePageSize(options.pageSize, 20, 100);
+  const offset = (page - 1) * pageSize;
+  const roleFilter = normalizeOptionalEnumFilter(options.role, ["admin", "customer"]);
+  const statusFilter = normalizeOptionalEnumFilter(options.status, ["active", "disabled"]);
+  const keyword = normalizeOptionalTextFilter(options.keyword, 120);
   if (await isDbAvailable()) {
+    const statsResult = await queryDb("select * from user_account_stats_view");
+    const filters = [];
+    const params = [];
+    if (roleFilter) {
+      params.push(roleFilter);
+      filters.push(`role = $${params.length}`);
+    }
+    if (statusFilter) {
+      params.push(statusFilter);
+      filters.push(`status = $${params.length}`);
+    }
+    if (keyword) {
+      params.push(keyword);
+      const index = params.length;
+      filters.push(`(
+        coalesce(name, '') ilike '%' || $${index} || '%'
+        or coalesce(phone, '') ilike '%' || $${index} || '%'
+        or coalesce(email, '') ilike '%' || $${index} || '%'
+        or coalesce(company_name, '') ilike '%' || $${index} || '%'
+      )`);
+    }
+    const whereClause = filters.length ? `where ${filters.join(" and ")}` : "";
     const result = await queryDb(
-      `select
-         u.id, u.name, u.phone, u.email, u.password_hash, u.role, u.status, u.created_at, u.updated_at,
-         coalesce(cp.company_name, '') as company_name,
-         coalesce(rr.report_count, 0)::int as report_count,
-         coalesce(cd.dataset_count, 0)::int as dataset_count,
-         coalesce(ac.ai_config_count, 0)::int as ai_config_count,
-         al.last_login_at
-       from users u
-       left join (
-         select user_id, max(company_name) as company_name
-         from customer_profiles
-         group by user_id
-       ) cp on cp.user_id = u.id
-       left join (
-         select user_id, count(*)::int as report_count
-         from review_reports
-         group by user_id
-       ) rr on rr.user_id = u.id
-       left join (
-         select user_id, count(*)::int as dataset_count
-         from customer_datasets
-         group by user_id
-       ) cd on cd.user_id = u.id
-       left join (
-         select coalesce(owner_user_id, updated_by) as user_id, count(*)::int as ai_config_count
-         from ai_configs
-         group by coalesce(owner_user_id, updated_by)
-       ) ac on ac.user_id = u.id
-       left join (
-         select user_id, max(created_at) as last_login_at
-         from auth_operation_logs
-         where operation_type = 'login' and success = true
-         group by user_id
-       ) al on al.user_id = u.id
-       order by u.created_at desc`,
+      `with filtered as (
+         select *
+         from admin_user_overview_view
+         ${whereClause}
+       ),
+       counted as (
+         select count(*)::int as total_count from filtered
+       ),
+       page_rows as (
+         select *
+         from filtered
+         order by created_at desc
+         limit $${params.length + 1} offset $${params.length + 2}
+       )
+       select page_rows.*, counted.total_count
+       from counted
+       left join page_rows on true`,
+      [...params, pageSize, offset],
     );
-    return result.rows.map(normalizeAdminUserRow);
+    const statsRow = statsResult.rows[0] || {};
+    const pageRows = result.rows.filter((row) => row.id);
+    return {
+      items: pageRows.map(normalizeAdminUserRow),
+      total: Number(result.rows[0]?.total_count || 0),
+      page,
+      pageSize,
+      stats: {
+        totalUsers: Number(statsRow.total_users || 0),
+        adminUsers: Number(statsRow.admin_users || 0),
+        customerUsers: Number(statsRow.customer_users || 0),
+        disabledUsers: Number(statsRow.disabled_users || 0),
+      },
+    };
   }
 
   const data = readLocalData();
-  return data.users
+  const countByUser = (rows, getUserId) => {
+    const counts = new Map();
+    for (const row of rows || []) {
+      const userId = getUserId(row);
+      if (!userId) continue;
+      counts.set(userId, (counts.get(userId) || 0) + 1);
+    }
+    return counts;
+  };
+  const profilesByUser = new Map();
+  for (const profile of data.customerProfiles || []) {
+    const userId = profile.userId || profile.user_id;
+    if (userId && !profilesByUser.has(userId)) profilesByUser.set(userId, profile);
+  }
+  const reportCounts = countByUser(data.reviewReports, (item) => item.userId || item.user_id);
+  const datasetCounts = countByUser(data.customerDatasets, (item) => item.userId || item.user_id);
+  const aiConfigCounts = countByUser(data.aiConfigs, (item) => item.ownerUserId || item.updatedBy || item.owner_user_id || item.updated_by);
+  const items = data.users
     .map((user) => {
       const userId = user.id;
-      const profile = data.customerProfiles.find((item) => item.userId === userId || item.user_id === userId) || {};
-      return normalizeAdminUserRow({
+      const profile = profilesByUser.get(userId) || {};
+      return {
         ...user,
         companyName: profile.companyName || profile.company_name || "",
-        reportCount: data.reviewReports.filter((item) => item.userId === userId || item.user_id === userId).length,
-        datasetCount: data.customerDatasets.filter((item) => item.userId === userId || item.user_id === userId).length,
-        aiConfigCount: data.aiConfigs.filter((item) => item.ownerUserId === userId || item.updatedBy === userId || item.owner_user_id === userId || item.updated_by === userId).length,
-      });
+        reportCount: reportCounts.get(userId) || 0,
+        datasetCount: datasetCounts.get(userId) || 0,
+        aiConfigCount: aiConfigCounts.get(userId) || 0,
+      };
     })
-    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+    .filter((item) => !roleFilter || item.role === roleFilter)
+    .filter((item) => !statusFilter || item.status === statusFilter)
+    .filter((item) => {
+      if (!keyword) return true;
+      return [item.name, item.phone, item.email, item.companyName].some((value) => includesKeyword(value, keyword));
+    })
+    .sort((a, b) => String(b.createdAt || b.created_at || "").localeCompare(String(a.createdAt || a.created_at || "")));
+  return {
+    items: items.slice(offset, offset + pageSize).map(normalizeAdminUserRow),
+    total: items.length,
+    page,
+    pageSize,
+    stats: {
+      totalUsers: items.length,
+      adminUsers: items.filter((item) => item.role === "admin").length,
+      customerUsers: items.filter((item) => item.role !== "admin").length,
+      disabledUsers: items.filter((item) => item.status !== "active").length,
+    },
+  };
 }
 
 function normalizeAdminUserUpdate(body, current) {
@@ -1426,9 +2404,15 @@ function reviewReportDigest(summary, report) {
     rowCounts: summary.rowCounts || {},
     requestInfo: summary.requestInfo || {},
     windows: summary.windows || {},
+    sheetStatus: (summary.sheetStatus || []).map((sheet) => ({
+      name: sheet.name,
+      exists: Boolean(sheet.exists),
+      rows: Number(sheet.rows || sheet.rowCount || 0),
+    })),
     datasetFiles: (summary.datasetFiles || []).map((file) => ({
       name: file.name,
       label: file.label,
+      status: file.status || "",
       rowCount: file.rowCount || 0,
       metricCount: file.metricCount || 0,
       statusText: file.statusText || "",
@@ -1446,6 +2430,12 @@ function numericOrNull(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+function normalizeReviewProgressPercent(value, fallback = 0) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(0, Math.min(100, Math.round(number)));
+}
+
 function pendingReportId() {
   return `pending-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
 }
@@ -1459,15 +2449,264 @@ function reviewStatusLabel(status) {
   }[status] || status || "未知";
 }
 
+function normalizeReviewJobRow(row = {}) {
+  return {
+    id: row.id || "",
+    jobKey: row.job_key || row.jobKey || "",
+    reportDbId: row.report_db_id || row.reportDbId || "",
+    userId: row.user_id || row.userId || "",
+    sourceType: row.source_type || row.sourceType || "",
+    sourceName: row.source_name || row.sourceName || "",
+    status: row.status || "running",
+    progressStage: row.progress_stage || row.progressStage || "",
+    progressText: row.progress_text || row.progressText || "",
+    progressPercent: normalizeReviewProgressPercent(row.progress_percent ?? row.progressPercent ?? 0, 0),
+    cancelRequested: Boolean(row.cancel_requested ?? row.cancelRequested ?? false),
+    retryPayloadJson: row.retry_payload_json || row.retryPayloadJson || {},
+    errorMessage: row.error_message || row.errorMessage || "",
+    startedAt: row.started_at || row.startedAt || "",
+    heartbeatAt: row.heartbeat_at || row.heartbeatAt || "",
+    finishedAt: row.finished_at || row.finishedAt || "",
+    createdAt: row.created_at || row.createdAt || "",
+    updatedAt: row.updated_at || row.updatedAt || "",
+  };
+}
+
+function normalizeReviewJobEventRow(row = {}) {
+  return {
+    id: row.id || "",
+    reviewJobId: row.review_job_id || row.reviewJobId || "",
+    reportDbId: row.report_db_id || row.reportDbId || "",
+    userId: row.user_id || row.userId || "",
+    jobKey: row.job_key || row.jobKey || "",
+    eventType: row.event_type || row.eventType || "",
+    status: row.status || "",
+    progressStage: row.progress_stage || row.progressStage || "",
+    progressPercent: normalizeReviewProgressPercent(row.progress_percent ?? row.progressPercent ?? 0, 0),
+    message: row.message || "",
+    metadata: row.metadata_json || row.metadataJson || {},
+    createdAt: row.created_at || row.createdAt || "",
+  };
+}
+
+function appendLocalReviewJobEvent(data, job = {}, eventType = "progress", message = "", metadata = {}) {
+  if (disableLocalDataFallback || !data || !job) return;
+  data.reviewJobEvents = Array.isArray(data.reviewJobEvents) ? data.reviewJobEvents : [];
+  data.reviewJobEvents.push({
+    id: createId("jbe"),
+    reviewJobId: job.id || job.reviewJobId || "",
+    reportDbId: job.reportDbId || job.report_db_id || "",
+    userId: job.userId || job.user_id || "",
+    jobKey: job.jobKey || job.job_key || "",
+    eventType,
+    status: job.status || "",
+    progressStage: job.progressStage || job.progress_stage || "",
+    progressPercent: normalizeReviewProgressPercent(job.progressPercent ?? job.progress_percent ?? 0, 0),
+    message: String(message || job.errorMessage || job.error_message || job.progressText || job.progress_text || reviewStatusLabel(job.status)).slice(0, 2000),
+    metadataJson: { localFallback: true, ...metadata },
+    createdAt: new Date().toISOString(),
+  });
+}
+
+async function createReviewJobRecord(meta = {}) {
+  const nowIso = new Date().toISOString();
+  const record = {
+    id: createId("job"),
+    jobKey: meta.jobKey || meta.key || "",
+    reportDbId: meta.reportDbId || "",
+    userId: meta.userId || "",
+    sourceType: meta.sourceType || "unknown",
+    sourceName: meta.sourceName || "",
+    status: "running",
+    progressStage: meta.progressStage || "queued",
+    progressText: meta.progressText || "任务已创建，等待开始处理。",
+    progressPercent: normalizeReviewProgressPercent(meta.progressPercent ?? 2, 2),
+    cancelRequested: false,
+    retryPayloadJson: meta.retryPayload || {},
+    errorMessage: "",
+    startedAt: nowIso,
+    heartbeatAt: nowIso,
+    finishedAt: "",
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  };
+  if (await isDbAvailable()) {
+    const update = await queryDb(
+      `update review_jobs
+       set job_key=$2, user_id=$3, source_type=$4, source_name=$5, status='running',
+           progress_stage=$6, progress_text=$7, progress_percent=$8,
+           cancel_requested=false, retry_payload_json=$9::jsonb, error_message=null,
+           started_at=coalesce(started_at, now()), heartbeat_at=now(), finished_at=null, updated_at=now()
+       where report_db_id=$1
+       returning *`,
+      [
+        record.reportDbId,
+        record.jobKey,
+        record.userId || null,
+        record.sourceType,
+        record.sourceName,
+        record.progressStage,
+        record.progressText,
+        record.progressPercent,
+        jsonParam(record.retryPayloadJson, {}),
+      ],
+    );
+    if (update.rows[0]) return normalizeReviewJobRow(update.rows[0]);
+    const result = await queryDb(
+      `insert into review_jobs(
+        job_key, report_db_id, user_id, source_type, source_name, status, progress_stage,
+        progress_text, progress_percent, cancel_requested, retry_payload_json, heartbeat_at
+      )
+       values($1,$2,$3,$4,$5,'running',$6,$7,$8,false,$9::jsonb,now())
+       returning *`,
+      [
+        record.jobKey,
+        record.reportDbId || null,
+        record.userId || null,
+        record.sourceType,
+        record.sourceName,
+        record.progressStage,
+        record.progressText,
+        record.progressPercent,
+        jsonParam(record.retryPayloadJson, {}),
+      ],
+    );
+    return normalizeReviewJobRow(result.rows[0]);
+  }
+  const data = readLocalData();
+  const existing = data.reviewJobs.find((job) => job.reportDbId === record.reportDbId);
+  if (existing) {
+    Object.assign(existing, { ...record, id: existing.id, createdAt: existing.createdAt || record.createdAt });
+  } else {
+    data.reviewJobs.push(record);
+  }
+  appendLocalReviewJobEvent(data, existing || record, "created", record.progressText, {
+    sourceType: record.sourceType,
+    sourceName: record.sourceName,
+  });
+  writeLocalData(data);
+  return normalizeReviewJobRow(existing || record);
+}
+
+async function updateReviewJobProgress(reportDbId, stage = "", text = "", percent = null) {
+  if (!reportDbId) return;
+  const nextStage = String(stage || "").trim();
+  const nextText = String(text || "").trim();
+  const nextPercent = percent === null || percent === undefined ? null : normalizeReviewProgressPercent(percent, 0);
+  if (await isDbAvailable()) {
+    await queryDb(
+      `update review_jobs
+       set progress_stage = nullif($2, ''),
+           progress_text = nullif($3, ''),
+           progress_percent = case
+             when $4::int is null then progress_percent
+             else greatest(0, least(100, $4::int))
+           end,
+           heartbeat_at = now(),
+           updated_at = now()
+       where report_db_id = $1
+         and status = 'running'`,
+      [reportDbId, nextStage, nextText, nextPercent],
+    );
+    return;
+  }
+  const data = readLocalData();
+  const job = data.reviewJobs
+    .filter((item) => item.reportDbId === reportDbId)
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
+  if (!job) return;
+  const priorStage = job.progressStage || "";
+  const priorText = job.progressText || "";
+  const priorPercent = job.progressPercent ?? null;
+  job.progressStage = nextStage;
+  job.progressText = nextText;
+  if (nextPercent !== null) job.progressPercent = nextPercent;
+  job.heartbeatAt = new Date().toISOString();
+  job.updatedAt = new Date().toISOString();
+  if (priorStage !== job.progressStage || priorText !== job.progressText || (nextPercent !== null && priorPercent !== job.progressPercent)) {
+    appendLocalReviewJobEvent(data, job, "progress", job.progressText || "任务进度已更新。", {
+      previousStage: priorStage,
+      previousPercent: priorPercent,
+    });
+  }
+  writeLocalData(data);
+}
+
+async function markReviewJobStatus(reportDbId, status, errorMessage = "") {
+  if (!reportDbId) return;
+  const finalText = status === "completed"
+    ? "复盘报告已生成。"
+    : String(errorMessage || "").trim() || reviewStatusLabel(status);
+  if (await isDbAvailable()) {
+    await queryDb(
+      `update review_jobs
+       set status=$2,
+           error_message=nullif($3, ''),
+           cancel_requested=case
+             when $2='cancelled' then true
+             when $2 in ('failed','completed') then false
+             else cancel_requested
+           end,
+           heartbeat_at=case when $2='running' then now() else heartbeat_at end,
+           progress_stage=case
+             when $2 in ('completed','failed','cancelled') then $2
+             else progress_stage
+           end,
+           progress_text=case
+             when $2 in ('completed','failed','cancelled') then nullif($4, '')
+             else progress_text
+           end,
+           progress_percent=case
+             when $2='completed' then 100
+             else progress_percent
+           end,
+           finished_at=case when $2 in ('failed','cancelled','completed') then now() else finished_at end,
+           updated_at=now()
+       where report_db_id=$1`,
+      [reportDbId, status, String(errorMessage || "").slice(0, 2000), finalText],
+    );
+    return;
+  }
+  const data = readLocalData();
+  const jobs = data.reviewJobs.filter((item) => item.reportDbId === reportDbId);
+  if (!jobs.length) return;
+  const nowIso = new Date().toISOString();
+  for (const job of jobs) {
+    const previousStatus = job.status || "";
+    const previousCancelRequested = Boolean(job.cancelRequested);
+    job.status = status;
+    job.errorMessage = errorMessage || "";
+    job.cancelRequested = status === "cancelled" ? true : ["failed", "completed"].includes(status) ? false : job.cancelRequested;
+    if (["completed", "failed", "cancelled"].includes(status)) {
+      job.progressStage = status;
+      job.progressText = finalText;
+      job.finishedAt = nowIso;
+    }
+    if (status === "completed") job.progressPercent = 100;
+    if (status === "running") job.heartbeatAt = nowIso;
+    job.updatedAt = nowIso;
+    if (status === "cancelled" && !previousCancelRequested) {
+      appendLocalReviewJobEvent(data, job, "cancel_requested", finalText, { previousStatus });
+    }
+    if (previousStatus !== status) {
+      appendLocalReviewJobEvent(data, job, "status_changed", finalText, { previousStatus });
+    }
+  }
+  writeLocalData(data);
+}
+
 async function createRunningReviewReportRecord(userId, sourceType, sourceName, jobKey, retryPayload = {}) {
   const profile = await getCustomerProfile(userId);
   const reportTitle = `${sourceName || "AI复盘报告"}生成中`;
+  const initialStage = "queued";
+  const initialText = "任务已创建，等待开始处理。";
+  const initialPercent = 2;
   if (await isDbAvailable()) {
     const recent = await queryDb(
       `select id from review_reports
        where user_id=$1
          and source_type=$2
-         and status in ('running','failed')
+         and status = 'running'
          and coalesce(job_key, '')=$3
          and created_at > now() - interval '2 minutes'
        order by created_at desc
@@ -1478,9 +2717,10 @@ async function createRunningReviewReportRecord(userId, sourceType, sourceName, j
     const result = await queryDb(
       `insert into review_reports(
         user_id, customer_profile_id, source_type, source_name, status, report_title, row_counts_json,
-        summary_json, report_json, markdown, report_id, job_key, retry_payload_json, started_at
+        summary_json, report_json, markdown, report_id, job_key, cancel_requested, heartbeat_at,
+        progress_stage, progress_text, progress_percent, retry_payload_json, started_at
       )
-       values($1,$2,$3,$4,'running',$5,'{}'::jsonb,'{}'::jsonb,$6::jsonb,'',$7,$8,$9::jsonb,now())
+       values($1,$2,$3,$4,'running',$5,'{}'::jsonb,'{}'::jsonb,$6::jsonb,'',$7,$8,false,now(),$9,$10,$11,$12::jsonb,now())
        returning id`,
       [
         userId,
@@ -1491,6 +2731,9 @@ async function createRunningReviewReportRecord(userId, sourceType, sourceName, j
         jsonParam({ title: reportTitle, status: "running" }, {}),
         pendingReportId(),
         jobKey,
+        initialStage,
+        initialText,
+        initialPercent,
         jsonParam(retryPayload, {}),
       ],
     );
@@ -1506,11 +2749,13 @@ async function createRunningReviewReportRecord(userId, sourceType, sourceName, j
     status: "running",
     reportTitle,
     rowCountsJson: {},
-    summaryJson: {},
-    reportJson: { title: reportTitle, status: "running" },
-    markdown: "",
     reportId: pendingReportId(),
     jobKey,
+    cancelRequested: false,
+    heartbeatAt: new Date().toISOString(),
+    progressStage: initialStage,
+    progressText: initialText,
+    progressPercent: initialPercent,
     retryPayloadJson: retryPayload || {},
     errorMessage: "",
     startedAt: new Date().toISOString(),
@@ -1519,11 +2764,54 @@ async function createRunningReviewReportRecord(userId, sourceType, sourceName, j
   };
   data.reviewReports.push(record);
   writeLocalData(data);
+  saveLocalReviewPayload(record.id, {
+    summaryJson: {},
+    reportJson: { title: reportTitle, status: "running" },
+    markdown: "",
+  });
   return record.id;
+}
+
+async function updateReviewReportProgress(reportDbId, stage = "", text = "", percent = null) {
+  if (!reportDbId) return;
+  const nextStage = String(stage || "").trim();
+  const nextText = String(text || "").trim();
+  const nextPercent = percent === null || percent === undefined ? null : normalizeReviewProgressPercent(percent, 0);
+  if (await isDbAvailable()) {
+    await queryDb(
+      `update review_reports
+       set progress_stage = nullif($2, ''),
+           progress_text = nullif($3, ''),
+           progress_percent = case
+             when $4::int is null then progress_percent
+             else greatest(0, least(100, $4::int))
+           end,
+           heartbeat_at = now(),
+           updated_at = now()
+       where id = $1`,
+      [reportDbId, nextStage, nextText, nextPercent],
+    );
+    await updateReviewJobProgress(reportDbId, nextStage, nextText, nextPercent).catch(() => null);
+    return;
+  }
+  const data = readLocalData();
+  const record = data.reviewReports.find((item) => item.id === reportDbId);
+  if (!record) return;
+  record.progressStage = nextStage;
+  record.progressText = nextText;
+  if (nextPercent !== null) record.progressPercent = nextPercent;
+  record.heartbeatAt = new Date().toISOString();
+  record.updatedAt = new Date().toISOString();
+  writeLocalData(data);
+  await updateReviewJobProgress(reportDbId, nextStage, nextText, nextPercent).catch(() => null);
 }
 
 async function markReviewReportStatus(reportDbId, status, errorMessage = "") {
   if (!reportDbId) return;
+  const finalProgress = status === "completed" ? 100 : null;
+  const finalText = status === "completed"
+    ? "复盘报告已生成。"
+    : String(errorMessage || "").trim() || reviewStatusLabel(status);
   if (await isDbAvailable()) {
     await queryDb(
       `update review_reports
@@ -1532,11 +2820,32 @@ async function markReviewReportStatus(reportDbId, status, errorMessage = "") {
              when $2='cancelled' then '复盘报告已取消'
              else report_title
            end,
+           cancel_requested=case
+             when $2='cancelled' then true
+             when $2 in ('failed','completed') then false
+             else cancel_requested
+           end,
+           heartbeat_at=case when $2='running' then now() else heartbeat_at end,
+           progress_stage=case
+             when $2='completed' then 'completed'
+             when $2='failed' then 'failed'
+             when $2='cancelled' then 'cancelled'
+             else progress_stage
+           end,
+           progress_text=case
+             when $2 in ('completed','failed','cancelled') then nullif($4, '')
+             else progress_text
+           end,
+           progress_percent=case
+             when $2='completed' then 100
+             else progress_percent
+           end,
            finished_at=case when $2 in ('failed','cancelled','completed') then now() else finished_at end,
            updated_at=now()
        where id=$1`,
-      [reportDbId, status, String(errorMessage || "").slice(0, 2000)],
+      [reportDbId, status, String(errorMessage || "").slice(0, 2000), finalText],
     );
+    await markReviewJobStatus(reportDbId, status, errorMessage).catch(() => null);
     return;
   }
   const data = readLocalData();
@@ -1545,13 +2854,29 @@ async function markReviewReportStatus(reportDbId, status, errorMessage = "") {
   record.status = status;
   record.errorMessage = errorMessage || "";
   record.reportTitle = status === "failed" ? "复盘报告生成失败" : status === "cancelled" ? "复盘报告已取消" : record.reportTitle;
+  record.cancelRequested = status === "cancelled" ? true : ["failed", "completed"].includes(status) ? false : record.cancelRequested;
+  record.progressStage = ["completed", "failed", "cancelled"].includes(status) ? status : record.progressStage;
+  record.progressText = finalText;
+  if (finalProgress !== null) record.progressPercent = finalProgress;
   record.finishedAt = ["failed", "cancelled", "completed"].includes(status) ? new Date().toISOString() : record.finishedAt;
   record.updatedAt = new Date().toISOString();
   writeLocalData(data);
+  await markReviewJobStatus(reportDbId, status, errorMessage).catch(() => null);
+  const payload = getLocalReviewPayload(reportDbId) || {};
+  saveLocalReviewPayload(reportDbId, {
+    ...payload,
+    reportJson: {
+      ...(payload.reportJson || {}),
+      title: record.reportTitle || payload.reportJson?.title || "四季蝉AI复盘报告",
+      status,
+    },
+  });
 }
 
 async function saveReviewReportRecord(userId, sourceType, sourceName, summary, generated, options = {}) {
   const profile = await getCustomerProfile(userId);
+  const excelStatus = String(generated.excelStatus || (generated.excelUrl ? "ready" : "") || "").trim();
+  const excelError = String(generated.excelError || "").trim();
   if (await isDbAvailable()) {
     const activePool = await getPool();
     await ensureDatabase();
@@ -1567,9 +2892,11 @@ async function saveReviewReportRecord(userId, sourceType, sourceName, summary, g
            set customer_profile_id=$2, source_type=$3, source_name=$4, status='completed', report_title=$5,
                row_counts_json=$6::jsonb, health_score=$7, risk_level=$8, summary_json=$9::jsonb,
                report_json=$10::jsonb, markdown='', report_id=$11, share_url=$12, svg_url=$13,
-               qr_svg_url=$14, excel_url=$15, normalized_data_url=$16, diagnostics_url=$17,
-               error_message=null, finished_at=now(), updated_at=now()
-           where id=$1 and user_id=$18
+               qr_svg_url=$14, excel_url=$15, excel_status=coalesce(nullif($16, ''), excel_status),
+               excel_error=nullif($17, ''), normalized_data_url=$18, diagnostics_url=$19,
+               error_message=null, cancel_requested=false, heartbeat_at=now(), progress_stage='completed',
+               progress_text='复盘报告已生成。', progress_percent=100, finished_at=now(), updated_at=now()
+           where id=$1 and user_id=$20
            returning id`,
           [
             id,
@@ -1587,6 +2914,8 @@ async function saveReviewReportRecord(userId, sourceType, sourceName, summary, g
             generated.svgUrl,
             generated.qrSvgUrl,
             generated.excelUrl || "",
+            excelStatus,
+            excelError,
             generated.normalizedDataUrl || "",
             generated.diagnosticsUrl || "",
             userId,
@@ -1598,10 +2927,10 @@ async function saveReviewReportRecord(userId, sourceType, sourceName, summary, g
         const result = await client.query(
           `insert into review_reports(
             user_id, customer_profile_id, source_type, source_name, status, report_title, row_counts_json, health_score, risk_level,
-            summary_json, report_json, markdown, report_id, share_url, svg_url, qr_svg_url, excel_url, normalized_data_url, diagnostics_url,
-            job_key, finished_at
+            summary_json, report_json, markdown, report_id, share_url, svg_url, qr_svg_url, excel_url, excel_status, excel_error, normalized_data_url, diagnostics_url,
+            job_key, progress_stage, progress_text, progress_percent, finished_at
           )
-           values($1,$2,$3,$4,'completed',$5,$6::jsonb,$7,$8,$9::jsonb,$10::jsonb,'',$11,$12,$13,$14,$15,$16,$17,$18,now())
+           values($1,$2,$3,$4,'completed',$5,$6::jsonb,$7,$8,$9::jsonb,$10::jsonb,'',$11,$12,$13,$14,$15,coalesce(nullif($16, ''), case when coalesce($15, '') <> '' then 'ready' else '' end),nullif($17, ''),$18,$19,$20,'completed','复盘报告已生成。',100,now())
            returning id`,
           [
             userId,
@@ -1619,6 +2948,8 @@ async function saveReviewReportRecord(userId, sourceType, sourceName, summary, g
             generated.svgUrl,
             generated.qrSvgUrl,
             generated.excelUrl || "",
+            excelStatus,
+            excelError,
             generated.normalizedDataUrl || "",
             generated.diagnosticsUrl || "",
             options.jobKey || null,
@@ -1633,6 +2964,7 @@ async function saveReviewReportRecord(userId, sourceType, sourceName, summary, g
         [id, jsonParam(summary, {}), jsonParam(generated.report, {}), generated.markdown || ""],
       );
       await client.query("commit");
+      await markReviewJobStatus(id, "completed").catch(() => null);
       return id;
     } catch (error) {
       await client.query("rollback");
@@ -1649,18 +2981,23 @@ async function saveReviewReportRecord(userId, sourceType, sourceName, summary, g
     sourceType,
     sourceName,
     status: "completed",
-    summaryJson: summary,
-    reportJson: generated.report,
-    markdown: generated.markdown || "",
+    rowCountsJson: summary.rowCounts || {},
+    healthScore: numericOrNull(summary.operationInsights?.healthScore),
+    riskLevel: summary.operationInsights?.retentionRisk || "",
     reportId: generated.reportId,
     reportTitle: generated.report?.title || "四季蝉AI复盘报告",
     shareUrl: generated.shareUrl,
     svgUrl: generated.svgUrl,
     qrSvgUrl: generated.qrSvgUrl,
     excelUrl: generated.excelUrl,
+    excelStatus: excelStatus || (generated.excelUrl ? "ready" : ""),
+    excelError,
     normalizedDataUrl: generated.normalizedDataUrl,
     diagnosticsUrl: generated.diagnosticsUrl,
     jobKey: options.jobKey || "",
+    progressStage: "completed",
+    progressText: "复盘报告已生成。",
+    progressPercent: 100,
     errorMessage: "",
     finishedAt: new Date().toISOString(),
     createdAt: new Date().toISOString(),
@@ -1673,6 +3010,12 @@ async function saveReviewReportRecord(userId, sourceType, sourceName, summary, g
     data.reviewReports.push(record);
   }
   writeLocalData(data);
+  saveLocalReviewPayload(record.id, {
+    summaryJson: summary,
+    reportJson: generated.report,
+    markdown: generated.markdown || "",
+  });
+  await markReviewJobStatus(record.id, "completed").catch(() => null);
   return record.id;
 }
 
@@ -2105,6 +3448,22 @@ function normalizeMonthlyMarketingRow(row) {
   };
 }
 
+function normalizeMonthlyMarketingListRow(row) {
+  return {
+    id: row.id,
+    monthKey: row.month_key,
+    customerName: row.customer_name || "",
+    customerCode: row.customer_code || "",
+    status: row.status,
+    activityCount: Number(row.activity_count || 0),
+    productCount: Number(row.product_count || 0),
+    focusProducts: Array.isArray(row.focus_products_json) ? row.focus_products_json : [],
+    nextActions: Array.isArray(row.next_actions_json) ? row.next_actions_json : [],
+    errorMessage: row.error_message || "",
+    generatedAt: row.generated_at || row.created_at,
+  };
+}
+
 function uniqText(values, limit = 12) {
   return (values || [])
     .map((value) => String(value || "").trim())
@@ -2113,10 +3472,14 @@ function uniqText(values, limit = 12) {
     .slice(0, limit);
 }
 
+function normalizeTextArray(values, limit = 20) {
+  return uniqText(Array.isArray(values) ? values : [], limit);
+}
+
 function anonymizedMarketingCard(index, sourceItems, monthKey) {
   const monthLabel = monthKey ? `${Number(monthKey.slice(5, 7))}月` : "当月";
-  const allFocus = uniqText(sourceItems.flatMap((item) => item.recommendation?.focusProducts || []), 14);
-  const allActions = uniqText(sourceItems.flatMap((item) => item.recommendation?.nextActions || []), 8);
+  const allFocus = uniqText(sourceItems.flatMap((item) => item.focusProducts || item.recommendation?.focusProducts || []), 14);
+  const allActions = uniqText(sourceItems.flatMap((item) => item.nextActions || item.recommendation?.nextActions || []), 8);
   const totalActivity = sourceItems.reduce((sum, item) => sum + Number(item.activityCount || 0), 0);
   const totalProduct = sourceItems.reduce((sum, item) => sum + Number(item.productCount || 0), 0);
   const title = index === 0 ? `${monthLabel}重点品动销组合` : `${monthLabel}激励玩法建议`;
@@ -2168,7 +3531,7 @@ function aggregateMonthlyMarketingRecommendations(rows, monthKey) {
   const cards = [];
   if (completed.length) {
     cards.push(anonymizedMarketingCard(0, completed, monthKey));
-    if (uniqText(completed.flatMap((item) => item.recommendation?.nextActions || []), 6).length > 1) {
+    if (uniqText(completed.flatMap((item) => item.nextActions || item.recommendation?.nextActions || []), 6).length > 1) {
       cards.push(anonymizedMarketingCard(1, completed, monthKey));
     }
   }
@@ -2183,6 +3546,46 @@ function aggregateMonthlyMarketingRecommendations(rows, monthKey) {
   };
 }
 
+function buildMonthlyMarketingAggregateFromDbRow(row, monthKey) {
+  const monthLabel = monthKey ? `${Number(String(monthKey).slice(5, 7))}月` : "当月";
+  const focusProducts = normalizeTextArray(row?.focus_products_json || row?.focusProductsJson, 14);
+  const nextActions = normalizeTextArray(row?.next_actions_json || row?.nextActionsJson, 8);
+  const cards = [];
+  if (focusProducts.length || nextActions.length) {
+    cards.push({
+      id: `anonymized-${monthKey || "current"}-1`,
+      title: `${monthLabel}重点品动销组合`,
+      summary: "",
+      products: focusProducts.slice(0, 10),
+      actions: nextActions.slice(0, 3).length
+        ? nextActions.slice(0, 3)
+        : ["优先选择活动数据里同时具备销售、奖励和门店覆盖信号的品种，做单品突破与排行榜。"],
+      tags: ["合并分析", "重点品", "动销任务"],
+    });
+    if (nextActions.length > 1 || focusProducts.length > 6) {
+      cards.push({
+        id: `anonymized-${monthKey || "current"}-2`,
+        title: `${monthLabel}激励玩法建议`,
+        summary: "",
+        products: focusProducts.slice(4, 14),
+        actions: nextActions.slice(3, 6).length
+          ? nextActions.slice(3, 6)
+          : ["把奖励靠前的商品沉淀为店员卖点清单，配套培训考试、陈列晒单和周复盘。"],
+        tags: ["激励策略", "培训承接", "周复盘"],
+      });
+    }
+  }
+  return {
+    monthKey,
+    sourceCount: Number(row?.source_count || row?.sourceCount || 0),
+    failedCount: Number(row?.failed_count || row?.failedCount || 0),
+    activityCount: Number(row?.activity_count || row?.activityCount || 0),
+    productCount: Number(row?.product_count || row?.productCount || 0),
+    cards,
+    updatedAt: row?.updated_at || row?.updatedAt || null,
+  };
+}
+
 async function listMonthlyMarketingRecommendations(user, monthKey = monthKeyFromDate()) {
   if (!(await isDbAvailable())) return [];
   const params = [monthKey];
@@ -2192,10 +3595,23 @@ async function listMonthlyMarketingRecommendations(user, monthKey = monthKeyFrom
     where += ` and m.user_id = $${params.length}`;
   }
   const result = await queryDb(
-    `select m.* from monthly_marketing_recommendations m ${where} order by m.generated_at desc limit 100`,
+    `select m.* from monthly_marketing_list_view m ${where} order by m.generated_at desc limit 100`,
     params,
   );
-  return result.rows.map(normalizeMonthlyMarketingRow);
+  return result.rows.map(normalizeMonthlyMarketingListRow);
+}
+
+async function getMonthlyMarketingAggregate(user, monthKey = monthKeyFromDate()) {
+  if (await isDbAvailable()) {
+    const result = await queryDb(
+      `select *
+       from get_monthly_marketing_aggregate($1::text, $2::text, $3::boolean)`,
+      [monthKey, user.id, user.role === "admin"],
+    );
+    return buildMonthlyMarketingAggregateFromDbRow(result.rows[0] || {}, monthKey);
+  }
+  const recommendations = await listMonthlyMarketingRecommendations(user, monthKey);
+  return aggregateMonthlyMarketingRecommendations(recommendations, monthKey);
 }
 
 async function generateMonthlyMarketingBatch(user, monthKey = monthKeyFromDate()) {
@@ -2241,8 +3657,8 @@ function normalizeCapabilityAnswer(item, index) {
   };
 }
 
-function normalizeCapabilitySubmissionRow(row) {
-  return {
+function normalizeCapabilitySubmissionRow(row, options = {}) {
+  const next = {
     id: row.id,
     name: row.name,
     department: row.department || "",
@@ -2250,9 +3666,12 @@ function normalizeCapabilitySubmissionRow(row) {
     totalQuestions: Number(row.total_questions || row.totalQuestions || 0),
     answeredQuestions: Number(row.answered_questions || row.answeredQuestions || 0),
     completionRate: Number(row.completion_rate || row.completionRate || 0),
-    answers: row.answers_json || row.answersJson || [],
     createdAt: row.created_at || row.createdAt,
   };
+  if (options.includeAnswers !== false) {
+    next.answers = row.answers_json || row.answersJson || [];
+  }
+  return next;
 }
 
 async function saveCapabilitySubmission(body, req) {
@@ -2319,16 +3738,87 @@ async function saveCapabilitySubmission(body, req) {
   return normalizeCapabilitySubmissionRow(record);
 }
 
-async function listCapabilitySubmissions() {
+async function listCapabilitySubmissions(options = {}) {
+  const page = normalizePageNumber(options.page, 1);
+  const pageSize = normalizePageSize(options.pageSize, 20, 100);
+  const offset = (page - 1) * pageSize;
+  const completionBand = normalizeOptionalEnumFilter(options.completionBand, ["low", "medium", "high"]);
+  const keyword = normalizeOptionalTextFilter(options.keyword, 120);
   if (await isDbAvailable()) {
-    const result = await queryDb("select * from capability_test_submissions order by created_at desc limit 200");
-    return result.rows.map(normalizeCapabilitySubmissionRow);
+    const filters = [];
+    const params = [];
+    if (completionBand === "low") filters.push("completion_rate < 60");
+    if (completionBand === "medium") filters.push("completion_rate >= 60 and completion_rate < 90");
+    if (completionBand === "high") filters.push("completion_rate >= 90");
+    if (keyword) {
+      params.push(keyword);
+      const index = params.length;
+      filters.push(`(
+        coalesce(name, '') ilike '%' || $${index} || '%'
+        or coalesce(department, '') ilike '%' || $${index} || '%'
+        or coalesce(test_date, '') ilike '%' || $${index} || '%'
+      )`);
+    }
+    const whereClause = filters.length ? `where ${filters.join(" and ")}` : "";
+    const result = await queryDb(
+      `with filtered as (
+         select *
+         from capability_submission_list_view
+         ${whereClause}
+       ),
+       counted as (
+         select count(*)::int as total_count from filtered
+       ),
+       page_rows as (
+         select *
+         from filtered
+         order by created_at desc
+         limit $${params.length + 1} offset $${params.length + 2}
+       )
+       select page_rows.*, counted.total_count
+       from counted
+       left join page_rows on true`,
+      [...params, pageSize, offset],
+    );
+    const pageRows = result.rows.filter((row) => row.id);
+    return {
+      items: pageRows.map((row) => normalizeCapabilitySubmissionRow(row, { includeAnswers: false })),
+      total: Number(result.rows[0]?.total_count || 0),
+      page,
+      pageSize,
+    };
   }
-  return readLocalData().capabilityTestSubmissions
+  const filteredItems = readLocalData().capabilityTestSubmissions
     .slice()
-    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
-    .slice(0, 200)
-    .map(normalizeCapabilitySubmissionRow);
+    .filter((row) => {
+      if (completionBand === "low") return Number(row.completionRate || row.completion_rate || 0) < 60;
+      if (completionBand === "medium") {
+        const value = Number(row.completionRate || row.completion_rate || 0);
+        return value >= 60 && value < 90;
+      }
+      if (completionBand === "high") return Number(row.completionRate || row.completion_rate || 0) >= 90;
+      return true;
+    })
+    .filter((row) => {
+      if (!keyword) return true;
+      return [row.name, row.department, row.testDate || row.test_date].some((value) => includesKeyword(value, keyword));
+    })
+    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+  return {
+    items: filteredItems.slice(offset, offset + pageSize).map((row) => normalizeCapabilitySubmissionRow(row, { includeAnswers: false })),
+    total: filteredItems.length,
+    page,
+    pageSize,
+  };
+}
+
+async function getCapabilitySubmission(id) {
+  if (await isDbAvailable()) {
+    const result = await queryDb("select * from capability_test_submissions where id = $1 limit 1", [id]);
+    return result.rows[0] ? normalizeCapabilitySubmissionRow(result.rows[0]) : null;
+  }
+  const row = readLocalData().capabilityTestSubmissions.find((item) => item.id === id);
+  return row ? normalizeCapabilitySubmissionRow(row) : null;
 }
 
 function normalizePublicArtifactUrl(value) {
@@ -2348,11 +3838,17 @@ function reportArtifactUrl(shareUrl, filename) {
   return `${shareUrl.replace(/\/?$/, "/")}${filename}`;
 }
 
-function normalizeReviewReportRow(row) {
+function normalizeReviewReportRow(row, options = {}) {
   const shareUrl = normalizePublicArtifactUrl(row.share_url || row.shareUrl);
-  const report = row.payload_report_json || row.payloadReportJson || row.report_json || row.reportJson || null;
-  const summary = row.payload_summary_json || row.payloadSummaryJson || row.summary_json || row.summaryJson || null;
-  return {
+  const includePayload = options.includePayload !== false;
+  const report = includePayload ? (row.payload_report_json || row.payloadReportJson || row.report_json || row.reportJson || null) : null;
+  const summary = includePayload
+    ? (row.payload_summary_json || row.payloadSummaryJson || row.summary_json || row.summaryJson || row.summary || null)
+    : null;
+  const rawExcelStatus = String(row.excel_status || row.excelStatus || "").trim();
+  const excelUrl = normalizePublicArtifactUrl(row.excel_url || row.excelUrl || (!rawExcelStatus && shareUrl ? reportArtifactUrl(shareUrl, "review.xlsx") : ""));
+  const excelStatus = rawExcelStatus || (excelUrl ? "ready" : "");
+  const next = {
     id: row.id,
     userId: row.user_id || row.userId,
     sourceType: row.source_type || row.sourceType,
@@ -2362,42 +3858,187 @@ function normalizeReviewReportRow(row) {
     rowCounts: row.row_counts_json || row.rowCountsJson || null,
     healthScore: row.health_score ?? row.healthScore ?? null,
     riskLevel: row.risk_level || row.riskLevel || "",
-    report,
-    summary,
-    markdown: row.payload_markdown || row.payloadMarkdown || row.markdown || "",
     reportId: row.report_id || row.reportId,
     shareUrl,
     svgUrl: normalizePublicArtifactUrl(row.svg_url || row.svgUrl || reportArtifactUrl(shareUrl, "report.svg")),
     qrSvgUrl: normalizePublicArtifactUrl(row.qr_svg_url || row.qrSvgUrl || reportArtifactUrl(shareUrl, "qr.svg")),
-    excelUrl: normalizePublicArtifactUrl(row.excel_url || row.excelUrl || reportArtifactUrl(shareUrl, "review.xlsx")),
+    excelUrl,
+    excelStatus,
+    excelError: row.excel_error || row.excelError || "",
     normalizedDataUrl: normalizePublicArtifactUrl(row.normalized_data_url || row.normalizedDataUrl || reportArtifactUrl(shareUrl, encodeURIComponent("四季蝉登录获取标准化数据.json"))),
     diagnosticsUrl: normalizePublicArtifactUrl(row.diagnostics_url || row.diagnosticsUrl || reportArtifactUrl(shareUrl, encodeURIComponent("四季蝉接口诊断.json"))),
     jobKey: row.job_key || row.jobKey || "",
+    progressStage: row.progress_stage || row.progressStage || "",
+    progressText: row.progress_text || row.progressText || "",
+    progressPercent: normalizeReviewProgressPercent(row.progress_percent ?? row.progressPercent ?? (row.status === "completed" ? 100 : 0), row.status === "completed" ? 100 : 0),
     errorMessage: row.error_message || row.errorMessage || "",
     startedAt: row.started_at || row.startedAt || "",
+    heartbeatAt: row.heartbeat_at || row.heartbeatAt || "",
     finishedAt: row.finished_at || row.finishedAt || "",
+    cancelRequested: Boolean(row.cancel_requested ?? row.cancelRequested ?? false),
     createdAt: row.created_at || row.createdAt,
+  };
+  if (includePayload) {
+    next.report = report;
+    next.summary = summary;
+    next.markdown = row.payload_markdown || row.payloadMarkdown || row.markdown || "";
+  }
+  return next;
+}
+async function listReviewReports(user, options = {}) {
+  const page = normalizePageNumber(options.page, 1);
+  const pageSize = normalizePageSize(options.pageSize, 20, 100);
+  const offset = (page - 1) * pageSize;
+  const statusFilter = normalizeOptionalEnumFilter(options.status, ["running", "completed", "failed", "cancelled"]);
+  const sourceTypeFilter = normalizeOptionalEnumFilter(options.sourceType, ["excel", "login", "wecom_browser", "wecom_token"]);
+  const keyword = normalizeOptionalTextFilter(options.keyword, 120);
+  if (await isDbAvailable()) {
+    const filters = [];
+    const params = [];
+    if (user.role !== "admin") {
+      params.push(user.id);
+      filters.push(`user_id = $${params.length}`);
+    }
+    if (statusFilter) {
+      params.push(statusFilter);
+      filters.push(`status = $${params.length}`);
+    }
+    if (sourceTypeFilter) {
+      params.push(sourceTypeFilter);
+      filters.push(`source_type = $${params.length}`);
+    }
+    if (keyword) {
+      params.push(keyword);
+      const index = params.length;
+      filters.push(`(
+        coalesce(report_title, '') ilike '%' || $${index} || '%'
+        or coalesce(source_name, '') ilike '%' || $${index} || '%'
+        or coalesce(report_id, '') ilike '%' || $${index} || '%'
+      )`);
+    }
+    const whereClause = filters.length ? `where ${filters.join(" and ")}` : "";
+    const result = await queryDb(
+      `with filtered as (
+         select id, user_id, source_type, source_name, status, report_title, report_id, row_counts_json,
+                health_score, risk_level, share_url, svg_url, qr_svg_url, excel_url, excel_status, excel_error, normalized_data_url,
+                diagnostics_url, job_key, cancel_requested, heartbeat_at, progress_stage, progress_text, progress_percent,
+                error_message, started_at, finished_at, created_at
+         from review_report_list_view
+         ${whereClause}
+       ),
+       counted as (
+         select count(*)::int as total_count from filtered
+       ),
+       page_rows as (
+         select *
+         from filtered
+         order by created_at desc
+         limit $${params.length + 1} offset $${params.length + 2}
+       )
+       select page_rows.*, counted.total_count
+       from counted
+       left join page_rows on true`,
+      [...params, pageSize, offset],
+    );
+    const pageRows = result.rows.filter((row) => row.id);
+    return {
+      items: pageRows.map((row) => normalizeReviewReportRow(row, { includePayload: false })),
+      total: Number(result.rows[0]?.total_count || 0),
+      page,
+      pageSize,
+    };
+  }
+  const data = readLocalData();
+  const items = data.reviewReports
+    .map((row) => normalizeReviewReportRow(row, { includePayload: false }))
+    .filter((report) => user.role === "admin" || report.userId === user.id)
+    .filter((report) => !statusFilter || report.status === statusFilter)
+    .filter((report) => !sourceTypeFilter || report.sourceType === sourceTypeFilter)
+    .filter((report) => {
+      if (!keyword) return true;
+      return [report.reportTitle, report.sourceName, report.reportId].some((value) => includesKeyword(value, keyword));
+    })
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  return {
+    items: items.slice(offset, offset + pageSize),
+    total: items.length,
+    page,
+    pageSize,
   };
 }
 
-async function listReviewReports(user) {
+function reviewSourceTypesForGroup(sourceGroup = "") {
+  const group = String(sourceGroup || "").trim();
+  if (!group || group === "all") return [];
+  if (group === "excel") return ["excel"];
+  if (group === "sijichan") return ["login"];
+  if (group === "wecom") return ["wecom_browser", "wecom_token"];
+  return [group];
+}
+
+async function getLatestRunningReviewReport(user, sourceGroup = "") {
+  const sourceTypes = reviewSourceTypesForGroup(sourceGroup);
   if (await isDbAvailable()) {
-    const result = await queryDb("select * from get_review_report_list($1,$2,$3)", [user.id, user.role === "admin", 100]);
-    return result.rows.map(normalizeReviewReportRow);
+    const params = [user.id];
+    let typeSql = "";
+    if (sourceTypes.length) {
+      params.push(sourceTypes);
+      typeSql = ` and source_type = any($${params.length}::text[])`;
+    }
+    const result = await queryDb(
+      `select id, user_id, source_type, source_name, status, report_title, report_id, row_counts_json,
+              health_score, risk_level, share_url, svg_url, qr_svg_url, excel_url, excel_status, excel_error, normalized_data_url,
+              diagnostics_url, job_key, cancel_requested, heartbeat_at, progress_stage, progress_text, progress_percent,
+              error_message, started_at, finished_at, created_at
+       from running_review_report_view
+       where user_id = $1
+         ${typeSql ? typeSql.replace(/^ and /, "and ") : ""}
+       order by coalesce(heartbeat_at, started_at, created_at) desc, created_at desc
+       limit 1`,
+      params,
+    );
+    return result.rows[0] ? normalizeReviewReportRow(result.rows[0], { includePayload: false }) : null;
   }
-  const data = readLocalData();
-  return data.reviewReports
-    .filter((report) => user.role === "admin" || report.userId === user.id)
-    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
-    .slice(0, 100)
-    .map(normalizeReviewReportRow);
+  const items = readLocalData().reviewReports
+    .filter((report) => report.userId === user.id)
+    .map((row) => normalizeReviewReportRow(row, { includePayload: false }))
+    .filter((report) => report.status === "running" && (!sourceTypes.length || sourceTypes.includes(report.sourceType)))
+    .sort((a, b) => String(b.heartbeatAt || b.startedAt || b.createdAt).localeCompare(String(a.heartbeatAt || a.startedAt || a.createdAt)));
+  return items[0] || null;
 }
 
 async function getReviewReport(user, id) {
   if (await isDbAvailable()) {
     const columns = `
-      r.*,
-      p.summary_json as payload_summary_json,
+      r.id,
+      r.user_id,
+      r.source_type,
+      r.source_name,
+      r.status,
+      r.report_title,
+      r.report_id,
+      r.row_counts_json,
+      r.health_score,
+      r.risk_level,
+      r.share_url,
+      r.svg_url,
+      r.qr_svg_url,
+      r.excel_url,
+      r.excel_status,
+      r.excel_error,
+      r.normalized_data_url,
+      r.diagnostics_url,
+      r.job_key,
+      r.cancel_requested,
+      r.heartbeat_at,
+      r.progress_stage,
+      r.progress_text,
+      r.progress_percent,
+      r.error_message,
+      r.started_at,
+      r.finished_at,
+      r.created_at,
+      jsonb_build_object('source', coalesce(r.source_name, ''), 'rowCounts', coalesce(r.row_counts_json, '{}'::jsonb)) as summary_json,
       p.report_json as payload_report_json,
       p.markdown as payload_markdown
     `;
@@ -2405,13 +4046,144 @@ async function getReviewReport(user, id) {
       user.role === "admin"
         ? await queryDb(`select ${columns} from review_reports r left join review_report_payloads p on p.report_db_id = r.id where r.id = $1 limit 1`, [id])
         : await queryDb(`select ${columns} from review_reports r left join review_report_payloads p on p.report_db_id = r.id where r.id = $1 and r.user_id = $2 limit 1`, [id, user.id]);
+    if (!result.rows[0]) return null;
     return normalizeReviewReportRow(result.rows[0]);
   }
   const report = readLocalData().reviewReports.find((item) => item.id === id && (user.role === "admin" || item.userId === user.id));
-  return report ? normalizeReviewReportRow(report) : null;
+  if (!report) return null;
+  const payload = getLocalReviewPayload(report.id) || {};
+  return normalizeReviewReportRow({
+    ...report,
+    summaryJson: payload.summaryJson || payload.summary_json,
+    reportJson: payload.reportJson || payload.report_json,
+    markdown: payload.markdown || "",
+  });
+}
+
+async function getReviewReportMeta(user, id) {
+  if (await isDbAvailable()) {
+    const result =
+      user.role === "admin"
+        ? await queryDb(
+            `select id, user_id, source_type, source_name, status, report_title, report_id, row_counts_json,
+                    health_score, risk_level, share_url, svg_url, qr_svg_url, excel_url, excel_status, excel_error, normalized_data_url,
+                    diagnostics_url, job_key, cancel_requested, heartbeat_at, progress_stage, progress_text,
+                    progress_percent, error_message, started_at, finished_at, created_at
+             from review_report_list_view
+             where id = $1
+             limit 1`,
+            [id],
+          )
+        : await queryDb(
+            `select id, user_id, source_type, source_name, status, report_title, report_id, row_counts_json,
+                    health_score, risk_level, share_url, svg_url, qr_svg_url, excel_url, excel_status, excel_error, normalized_data_url,
+                    diagnostics_url, job_key, cancel_requested, heartbeat_at, progress_stage, progress_text,
+                    progress_percent, error_message, started_at, finished_at, created_at
+             from review_report_list_view
+             where id = $1 and user_id = $2
+             limit 1`,
+            [id, user.id],
+          );
+    return result.rows[0] ? normalizeReviewReportRow(result.rows[0], { includePayload: false }) : null;
+  }
+  const report = readLocalData().reviewReports.find((item) => item.id === id && (user.role === "admin" || item.userId === user.id));
+  return report ? normalizeReviewReportRow(report, { includePayload: false }) : null;
+}
+
+async function listReviewReportStatuses(user, ids = []) {
+  const uniqueIds = Array.from(new Set((ids || []).map((id) => String(id || "").trim()).filter(Boolean))).slice(0, 50);
+  if (!uniqueIds.length) return [];
+  if (await isDbAvailable()) {
+    const result =
+      user.role === "admin"
+        ? await queryDb(
+            `select id, user_id, source_type, source_name, status, report_title, report_id, row_counts_json,
+                    health_score, risk_level, share_url, svg_url, qr_svg_url, excel_url, excel_status, excel_error, normalized_data_url,
+                    diagnostics_url, job_key, cancel_requested, heartbeat_at, progress_stage, progress_text,
+                    progress_percent, error_message, started_at, finished_at, created_at
+             from review_report_list_view
+             where id = any($1::text[])`,
+            [uniqueIds],
+          )
+        : await queryDb(
+            `select id, user_id, source_type, source_name, status, report_title, report_id, row_counts_json,
+                    health_score, risk_level, share_url, svg_url, qr_svg_url, excel_url, excel_status, excel_error, normalized_data_url,
+                    diagnostics_url, job_key, cancel_requested, heartbeat_at, progress_stage, progress_text,
+                    progress_percent, error_message, started_at, finished_at, created_at
+             from review_report_list_view
+             where id = any($1::text[])
+               and user_id = $2`,
+            [uniqueIds, user.id],
+          );
+    const order = new Map(uniqueIds.map((id, index) => [id, index]));
+    return result.rows
+      .map((row) => normalizeReviewReportRow(row, { includePayload: false }))
+      .sort((a, b) => (order.get(a.id) ?? 9999) - (order.get(b.id) ?? 9999));
+  }
+  const idSet = new Set(uniqueIds);
+  const order = new Map(uniqueIds.map((id, index) => [id, index]));
+  return readLocalData().reviewReports
+    .filter((item) => idSet.has(item.id) && (user.role === "admin" || item.userId === user.id))
+    .map((row) => normalizeReviewReportRow(row, { includePayload: false }))
+    .sort((a, b) => (order.get(a.id) ?? 9999) - (order.get(b.id) ?? 9999));
+}
+
+async function listReviewJobEvents(user, reportDbId) {
+  const report = await getReviewReportMeta(user, reportDbId);
+  if (!report) return null;
+  if (await isDbAvailable()) {
+    const result = await queryDb(
+      `select *
+       from review_job_events
+       where report_db_id = $1
+          or (coalesce($2, '') <> '' and coalesce(job_key, '') = $2)
+       order by created_at asc, id asc
+       limit 300`,
+      [report.id, report.jobKey || ""],
+    );
+    return {
+      report,
+      events: result.rows.map(normalizeReviewJobEventRow),
+    };
+  }
+  const data = readLocalData();
+  const storedEvents = (data.reviewJobEvents || [])
+    .filter((event) => event.reportDbId === report.id || (report.jobKey && event.jobKey === report.jobKey))
+    .sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")))
+    .slice(0, 300)
+    .map(normalizeReviewJobEventRow);
+  if (storedEvents.length) {
+    return { report, events: storedEvents };
+  }
+  const jobs = (data.reviewJobs || [])
+    .filter((job) => job.reportDbId === report.id || (report.jobKey && job.jobKey === report.jobKey))
+    .sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
+  return {
+    report,
+    events: jobs.map((job) => normalizeReviewJobEventRow({
+      id: `${job.id || job.reportDbId || report.id}-current`,
+      reviewJobId: job.id || "",
+      reportDbId: job.reportDbId || report.id,
+      userId: job.userId || report.userId,
+      jobKey: job.jobKey || report.jobKey,
+      eventType: "current_state",
+      status: job.status || report.status,
+      progressStage: job.progressStage || report.progressStage,
+      progressPercent: job.progressPercent ?? report.progressPercent,
+      message: job.errorMessage || job.progressText || report.errorMessage || report.progressText || reviewStatusLabel(job.status || report.status),
+      metadataJson: {
+        sourceType: job.sourceType || report.sourceType,
+        sourceName: job.sourceName || report.sourceName,
+        localFallback: true,
+      },
+      createdAt: job.updatedAt || job.createdAt || report.createdAt,
+    })),
+  };
 }
 
 async function updateReviewReportByUser(user, id, changes) {
+  let updatedStatus = changes.status;
+  let updatedErrorMessage = changes.errorMessage;
   if (await isDbAvailable()) {
     const params = [id, user.id, user.role === "admin"];
     const assignments = [];
@@ -2423,6 +4195,23 @@ async function updateReviewReportByUser(user, id, changes) {
       params.push(changes.errorMessage || "");
       assignments.push(`error_message=nullif($${params.length}, '')`);
     }
+    if (changes.cancelRequested !== undefined) {
+      params.push(Boolean(changes.cancelRequested));
+      assignments.push(`cancel_requested=$${params.length}`);
+    }
+    if (changes.progressStage !== undefined) {
+      params.push(changes.progressStage || "");
+      assignments.push(`progress_stage=nullif($${params.length}, '')`);
+    }
+    if (changes.progressText !== undefined) {
+      params.push(changes.progressText || "");
+      assignments.push(`progress_text=nullif($${params.length}, '')`);
+    }
+    if (changes.progressPercent !== undefined) {
+      params.push(normalizeReviewProgressPercent(changes.progressPercent, 0));
+      assignments.push(`progress_percent=$${params.length}`);
+    }
+    if (changes.heartbeatNow) assignments.push("heartbeat_at=now()");
     if (changes.clearFinishedAt) assignments.push("finished_at=null");
     if (changes.finishNow) assignments.push("finished_at=now()");
     if (changes.startedNow) assignments.push("started_at=now()");
@@ -2433,19 +4222,31 @@ async function updateReviewReportByUser(user, id, changes) {
        returning *`,
       params,
     );
-    return normalizeReviewReportRow(result.rows[0]);
+    const row = result.rows[0];
+    if (row && updatedStatus !== undefined) {
+      await markReviewJobStatus(row.id, updatedStatus, updatedErrorMessage || "").catch(() => null);
+    }
+    return normalizeReviewReportRow(row, { includePayload: false });
   }
   const data = readLocalData();
   const report = data.reviewReports.find((item) => item.id === id && (user.role === "admin" || item.userId === user.id));
   if (!report) return null;
   if (changes.status !== undefined) report.status = changes.status;
   if (changes.errorMessage !== undefined) report.errorMessage = changes.errorMessage || "";
+  if (changes.cancelRequested !== undefined) report.cancelRequested = Boolean(changes.cancelRequested);
+  if (changes.progressStage !== undefined) report.progressStage = changes.progressStage || "";
+  if (changes.progressText !== undefined) report.progressText = changes.progressText || "";
+  if (changes.progressPercent !== undefined) report.progressPercent = normalizeReviewProgressPercent(changes.progressPercent, 0);
+  if (changes.heartbeatNow) report.heartbeatAt = new Date().toISOString();
   if (changes.clearFinishedAt) report.finishedAt = "";
   if (changes.finishNow) report.finishedAt = new Date().toISOString();
   if (changes.startedNow) report.startedAt = new Date().toISOString();
   report.updatedAt = new Date().toISOString();
   writeLocalData(data);
-  return normalizeReviewReportRow(report);
+  if (updatedStatus !== undefined) {
+    await markReviewJobStatus(report.id, updatedStatus, updatedErrorMessage || "").catch(() => null);
+  }
+  return normalizeReviewReportRow(report, { includePayload: false });
 }
 
 async function parseMultipartFile(req) {
@@ -2681,10 +4482,12 @@ async function parseWorkbook(buffer, filename) {
   const sharedStrings = await parseSharedStrings(zip);
   const rels = parseRelationships(relsXml);
   const workbookSheets = parseWorkbookSheets(workbookXml);
+  const expectedSheetSet = new Set(expectedSheets);
   const sheets = {};
   const sheetHeaders = {};
 
   for (const sheet of workbookSheets) {
+    if (!expectedSheetSet.has(sheet.name)) continue;
     const target = rels[sheet.relId];
     if (!target) continue;
     const targetPath = target.startsWith("xl/") ? target : `xl/${target}`;
@@ -2800,36 +4603,79 @@ function summaryForAi(summary) {
   return rest;
 }
 
+function compactText(value, maxLength = 240) {
+  const text = String(value ?? "").trim();
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function compactSheetStatusForResponse(sheet = {}) {
+  return {
+    name: compactText(sheet.name, 80),
+    exists: Boolean(sheet.exists),
+    rows: Number(sheet.rows || sheet.rowCount || 0),
+  };
+}
+
+function compactDatasetFileForResponse(file = {}) {
+  return {
+    name: compactText(file.name, 80),
+    label: compactText(file.label || file.name, 80),
+    status: compactText(file.status, 32),
+    statusText: compactText(file.statusText, 120),
+    rowCount: Number(file.rowCount || 0),
+    metricCount: Number(file.metricCount || 0),
+    note: compactText(file.note, 160),
+  };
+}
+
+function compactOperationInsightsForResponse(insights = {}) {
+  if (!insights || typeof insights !== "object") return undefined;
+  const metrics = insights.metrics || {};
+  return {
+    healthScore: insights.healthScore ?? null,
+    retentionRisk: insights.retentionRisk || "",
+    valueProofPoints: arrayOfText(insights.valueProofPoints).slice(0, 6),
+    recommendedActions: arrayOfText(insights.recommendedActions).slice(0, 6),
+    metrics: {
+      salesSkuCount: metrics.salesSkuCount ?? null,
+      joinedActivityCount: metrics.joinedActivityCount ?? null,
+      onlineActivityCount: metrics.onlineActivityCount ?? null,
+      activityCoverageRate: metrics.activityCoverageRate ?? null,
+      totalSalesAmount: metrics.totalSalesAmount ?? null,
+      activitySalesAmount: metrics.activitySalesAmount ?? null,
+      totalRewardAmount: metrics.totalRewardAmount ?? null,
+      rewardEfficiency: metrics.rewardEfficiency ?? null,
+      employeeCoverage: metrics.employeeCoverage ?? null,
+      totalWithdrawMoney: metrics.totalWithdrawMoney ?? null,
+      usedRewardPlayCount: metrics.usedRewardPlayCount ?? null,
+      shareRecordCount: metrics.shareRecordCount ?? null,
+      shareRewardAmount: metrics.shareRewardAmount ?? null,
+    },
+  };
+}
+
 function summaryForResponse(summary) {
   if (!summary || typeof summary !== "object") return summary;
-  const responseKeys = [
-    "source",
-    "requestInfo",
-    "windows",
-    "generatedAt",
-    "sheetStatus",
-    "datasetFiles",
-    "rowCounts",
-    "operationInsights",
-    "salesChange",
-    "activity",
-    "cashout",
-    "incentive",
-    "shareReward",
-  ];
-  const next = {};
-  for (const key of responseKeys) {
-    if (summary[key] !== undefined) next[key] = summary[key];
+  const next = {
+    source: compactText(summary.source, 80),
+    requestInfo: summary.requestInfo || {},
+    windows: summary.windows || {},
+    generatedAt: summary.generatedAt || "",
+    rowCounts: summary.rowCounts || {},
+  };
+  if (Array.isArray(summary.sheetStatus)) {
+    next.sheetStatus = summary.sheetStatus.map(compactSheetStatusForResponse);
   }
+  if (Array.isArray(summary.datasetFiles)) {
+    next.datasetFiles = summary.datasetFiles.map(compactDatasetFileForResponse);
+  }
+  const compactInsights = compactOperationInsightsForResponse(summary.operationInsights);
+  if (compactInsights) next.operationInsights = compactInsights;
   if (Array.isArray(summary.interfaceDiagnostics)) {
-    next.interfaceDiagnostics = summary.interfaceDiagnostics.slice(0, 80).map((item) => ({
-      module: item.module || item.label || item.name || "",
-      endpoint: item.endpoint || item.url || "",
-      status: item.status || item.statusText || "",
-      statusCode: item.statusCode || item.code || "",
-      rowCount: item.rowCount ?? item.rows ?? "",
-      error: item.error || item.message || "",
-    }));
+    next.diagnostics = {
+      total: summary.interfaceDiagnostics.length,
+      errorCount: summary.interfaceDiagnostics.filter((item) => String(item?.status || item?.statusText || "").toLowerCase().includes("error") || item?.error).length,
+    };
   }
   return next;
 }
@@ -3303,7 +5149,7 @@ function renderList(items = []) {
   return items.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
 }
 
-function renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUrl }) {
+function renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUrl, excelUrl = "", excelStatus = "", excelError = "" }) {
   report = normalizeReport(report);
   const sections = (report.sections || [])
     .map(
@@ -3318,7 +5164,13 @@ function renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUr
 
   const sourceName = summary?.source || summary?.filename || "四季蝉复盘数据";
   const generatedAt = new Date().toLocaleString("zh-CN", { hour12: false });
-  const excelUrl = reportArtifactEncodedUrl(shareUrl, reviewWorkbookFileName(summary));
+  const resolvedExcelUrl = String(excelUrl || "").trim();
+  const resolvedExcelStatus = String(excelStatus || (resolvedExcelUrl ? "ready" : "generating")).trim();
+  const excelActionHtml = resolvedExcelStatus === "ready" && resolvedExcelUrl
+    ? `<a class="button secondary" id="excelAction" data-excel-status="ready" href="${escapeHtml(resolvedExcelUrl)}" download>下载Excel汇总</a>`
+    : resolvedExcelStatus === "failed"
+      ? `<span class="button disabled danger" id="excelAction" data-excel-status="failed" title="${escapeHtml(excelError || "Excel汇总生成失败")}">Excel生成失败</span>`
+      : `<span class="button disabled" id="excelAction" data-excel-status="generating">Excel后台生成中</span>`;
   const diagnosticsUrl = `${shareUrl}${encodeURIComponent("四季蝉接口诊断.json")}`;
   const normalizedDataUrl = `${shareUrl}${encodeURIComponent("四季蝉登录获取标准化数据.json")}`;
 
@@ -3349,8 +5201,10 @@ function renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUr
     .report-section { margin-top:18px; padding:24px; }
     .actions { display:grid; grid-template-columns:1fr 190px; gap:18px; align-items:center; margin-top:22px; padding:22px; border-radius:18px; border:1px solid var(--line); background:#fff; }
     .buttons { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }
-    a.button { display:inline-flex; align-items:center; justify-content:center; min-height:40px; padding:0 16px; border-radius:10px; text-decoration:none; color:#fff; background:var(--blue); font-weight:800; }
-    a.button.secondary { color:var(--navy); background:#fff; border:1px solid var(--line); }
+    a.button, span.button { display:inline-flex; align-items:center; justify-content:center; min-height:40px; padding:0 16px; border-radius:10px; text-decoration:none; color:#fff; background:var(--blue); font-weight:800; }
+    a.button.secondary, span.button.secondary { color:var(--navy); background:#fff; border:1px solid var(--line); }
+    span.button.disabled { color:var(--muted); background:#f3f6ff; border:1px dashed var(--line); cursor:not-allowed; }
+    span.button.danger { color:#a34100; background:#fff4e8; border-color:#ffd4ae; }
     .qr-button { width:170px; padding:10px; border:1px solid var(--line); border-radius:16px; background:#fff; justify-self:end; cursor:pointer; box-shadow:0 12px 28px rgba(24,52,126,.08); }
     .qr-button img { display:block; width:100%; height:auto; }
     .qr-button span { display:block; margin-top:8px; color:var(--muted); font-size:13px; text-align:center; }
@@ -3385,7 +5239,7 @@ function renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUr
         <div class="buttons">
           <a class="button" href="${escapeHtml(svgUrl)}" download>下载SVG长图</a>
           <a class="button secondary" href="${escapeHtml(qrSvgUrl)}" download>下载二维码</a>
-          <a class="button secondary" href="${escapeHtml(excelUrl)}" download>下载Excel汇总</a>
+          ${excelActionHtml}
         </div>
       </div>
       <button class="qr-button" id="openQr" type="button" aria-label="查看报告二维码">
@@ -3406,6 +5260,43 @@ function renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUr
     const openQr = document.getElementById("openQr");
     const closeQr = document.getElementById("closeQr");
     const qrModal = document.getElementById("qrModal");
+    const excelAction = document.getElementById("excelAction");
+    function replaceExcelAction(status, url, error) {
+      if (!excelAction || status === "generating") return;
+      const next = status === "ready" && url
+        ? document.createElement("a")
+        : document.createElement("span");
+      next.id = "excelAction";
+      next.className = status === "ready" && url ? "button secondary" : "button disabled danger";
+      next.dataset.excelStatus = status;
+      if (status === "ready" && url) {
+        next.href = url;
+        next.setAttribute("download", "");
+        next.textContent = "下载Excel汇总";
+      } else {
+        next.title = error || "Excel汇总生成失败";
+        next.textContent = "Excel生成失败";
+      }
+      excelAction.replaceWith(next);
+    }
+    async function refreshExcelAction() {
+      try {
+        const response = await fetch("status.json?t=" + Date.now(), { cache: "no-store" });
+        if (!response.ok) return;
+        const data = await response.json();
+        replaceExcelAction(String(data.excelStatus || ""), data.excelUrl || "", data.excelError || "");
+      } catch (_error) {}
+    }
+    if (excelAction?.dataset.excelStatus === "generating") {
+      refreshExcelAction();
+      const excelTimer = window.setInterval(() => {
+        if (document.getElementById("excelAction")?.dataset.excelStatus !== "generating") {
+          window.clearInterval(excelTimer);
+          return;
+        }
+        refreshExcelAction();
+      }, 5000);
+    }
     openQr?.addEventListener("click", () => { qrModal.hidden = false; });
     closeQr?.addEventListener("click", () => { qrModal.hidden = true; });
     qrModal?.addEventListener("click", (event) => {
@@ -3643,6 +5534,9 @@ function sheetRowsFromObjects(rows) {
 
 function capWorkbookRows(rows, label, limit = workbookDetailRowLimit) {
   const list = Array.isArray(rows) ? rows : [];
+  if (list[0] && typeof list[0] === "object" && list[0].原始明细行数 !== undefined && list[0].Excel保留行数 !== undefined) {
+    return list;
+  }
   if (!limit || list.length <= limit) return list;
   return [
     {
@@ -3652,6 +5546,104 @@ function capWorkbookRows(rows, label, limit = workbookDetailRowLimit) {
     },
     ...list.slice(0, limit),
   ];
+}
+
+function capWorkbookInputRows(rows, label, limit = workbookDetailRowLimit) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (!limit || list.length <= limit) return list;
+  return [
+    {
+      说明: `${label}共 ${list.length} 行，Excel汇总仅保留前 ${limit} 行用于打开和分享；完整明细总量请查看接口诊断和标准化数据。`,
+      原始明细行数: list.length,
+      Excel保留行数: limit,
+    },
+    ...list.slice(0, limit),
+  ];
+}
+
+function compactWorkbookDiagnostics(items, limit = 1000) {
+  const list = Array.isArray(items) ? items : [];
+  if (!limit || list.length <= limit) return list;
+  return [
+    {
+      模块: "系统说明",
+      接口: "接口诊断",
+      类型: "裁剪提示",
+      状态: "已裁剪",
+      状态说明: `接口诊断共 ${list.length} 条，Excel汇总仅保留前 ${limit} 条；完整诊断请查看接口诊断JSON。`,
+      明细行数: list.length,
+    },
+    ...list.slice(0, Math.max(1, limit - 1)),
+  ];
+}
+
+function prepareReviewWorkbookInput(summary = {}, report = {}) {
+  const raw = summary.rawData || {};
+  const nextRawData = {
+    meta: raw.meta || {},
+    overview: raw.overview || {},
+    rewardStatistics: {
+      nearHalf: {
+        ...(raw.rewardStatistics?.nearHalf || {}),
+        rows: capWorkbookInputRows(raw.rewardStatistics?.nearHalf?.rows || [], "奖励统计-半年"),
+      },
+    },
+    sales: {
+      lastMonth_vs_priorTwoMonths: {
+        ...(raw.sales?.lastMonth_vs_priorTwoMonths || {}),
+        rows: capWorkbookInputRows(raw.sales?.lastMonth_vs_priorTwoMonths?.rows || [], "销售汇总-上月_vs_前两月"),
+      },
+      nearHalf_vs_previousHalf: {
+        ...(raw.sales?.nearHalf_vs_previousHalf || {}),
+        rows: capWorkbookInputRows(raw.sales?.nearHalf_vs_previousHalf?.rows || [], "销售汇总-近半年_vs_上期"),
+      },
+    },
+    activitySummary: {
+      lastMonth: {
+        ...(raw.activitySummary?.lastMonth || {}),
+        rows: capWorkbookInputRows(raw.activitySummary?.lastMonth?.rows || [], "活动汇总-上月"),
+      },
+      previousMonth: {
+        ...(raw.activitySummary?.previousMonth || {}),
+        rows: capWorkbookInputRows(raw.activitySummary?.previousMonth?.rows || [], "活动汇总-上上月"),
+      },
+    },
+    activityCatalog: {
+      joined: capWorkbookInputRows(raw.activityCatalog?.joined || [], "我的活动列表"),
+    },
+    training: {
+      courseOverview: raw.training?.courseOverview || {},
+      resourceOverview: raw.training?.resourceOverview || {},
+      roleLearning: capWorkbookInputRows(raw.training?.roleLearning || [], "角色学习明细"),
+      storeLearning: capWorkbookInputRows(raw.training?.storeLearning || [], "门店学习明细"),
+      employeeLearning: capWorkbookInputRows(raw.training?.employeeLearning || [], "员工学习明细"),
+      courseLearning: capWorkbookInputRows(raw.training?.courseLearning || [], "课程学习明细"),
+    },
+    manufacturerTips: {
+      summary: raw.manufacturerTips?.summary || {},
+      rows: capWorkbookInputRows(raw.manufacturerTips?.rows || [], "厂家打赏"),
+    },
+    rewardDistribution: {
+      nearHalf: {
+        ...(raw.rewardDistribution?.nearHalf || {}),
+        rows: capWorkbookInputRows(raw.rewardDistribution?.nearHalf?.rows || [], "奖励发放明细"),
+      },
+    },
+    employeeAccount: {
+      accountSummary: raw.employeeAccount?.accountSummary || {},
+      withdrawSummary: raw.employeeAccount?.withdrawSummary || {},
+      settleSummary: raw.employeeAccount?.settleSummary || {},
+      withdrawRows: capWorkbookInputRows(raw.employeeAccount?.withdrawRows || [], "提现明细"),
+      writeOffRows: capWorkbookInputRows(raw.employeeAccount?.writeOffRows || [], "延时豆核销明细"),
+      settleRows: capWorkbookInputRows(raw.employeeAccount?.settleRows || [], "结算明细"),
+    },
+  };
+  const nextSummary = {
+    ...summary,
+    interfaceDiagnostics: compactWorkbookDiagnostics(summary.interfaceDiagnostics || []),
+    rawData: nextRawData,
+  };
+  return { summary: nextSummary, report };
 }
 
 function workbookColumnWidth(header, index) {
@@ -3920,6 +5912,242 @@ function reportArtifactEncodedUrl(shareUrl, filename) {
   return `${String(shareUrl || "").replace(/\/?$/, "/")}${encodeURIComponent(filename)}`;
 }
 
+function reportArtifactDir(reportId) {
+  const safeId = String(reportId || "").trim();
+  if (!/^[a-zA-Z0-9_-]+$/.test(safeId)) throw new Error("报告ID不合法，无法写入报告产物。");
+  return path.join(reportsDir, safeId);
+}
+
+function reportArtifactStatusPayload(artifact = {}, overrides = {}) {
+  return {
+    reportId: overrides.reportId || artifact.reportId || "",
+    shareUrl: overrides.shareUrl || artifact.shareUrl || "",
+    svgUrl: overrides.svgUrl || artifact.svgUrl || "",
+    qrSvgUrl: overrides.qrSvgUrl || artifact.qrSvgUrl || "",
+    excelUrl: overrides.excelUrl || artifact.excelUrl || "",
+    excelStatus: overrides.excelStatus || artifact.excelStatus || "",
+    excelError: overrides.excelError || artifact.excelError || "",
+    normalizedDataUrl: overrides.normalizedDataUrl || artifact.normalizedDataUrl || "",
+    diagnosticsUrl: overrides.diagnosticsUrl || artifact.diagnosticsUrl || "",
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function reportArtifactJsonPayload({ report, markdown, summary, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl = "", excelStatus = "", excelError = "", excelFileName = "", normalizedDataUrl = "", diagnosticsUrl = "" }) {
+  return {
+    report,
+    markdown: markdown || "",
+    summary: summaryForResponse(summary),
+    reportId,
+    shareUrl,
+    svgUrl,
+    qrSvgUrl,
+    excelUrl,
+    excelStatus,
+    excelError,
+    excelFileName,
+    normalizedDataUrl,
+    diagnosticsUrl,
+  };
+}
+
+function writeReportArtifactStatus(reportDir, artifact = {}, overrides = {}) {
+  fs.writeFileSync(
+    path.join(reportDir, "status.json"),
+    JSON.stringify(reportArtifactStatusPayload(artifact, overrides), null, 2),
+    "utf8",
+  );
+}
+
+function updateReportArtifactExcelState(artifact, summary, report, markdown, excelStatus, excelUrl = "", excelError = "") {
+  if (!artifact?.reportId) return;
+  const reportDir = reportArtifactDir(artifact.reportId);
+  fs.mkdirSync(reportDir, { recursive: true });
+  const resolvedExcelStatus = String(excelStatus || artifact.excelStatus || "").trim();
+  const resolvedExcelUrl = resolvedExcelStatus === "ready"
+    ? (excelUrl || artifact.excelUrl || "")
+    : "";
+  const next = {
+    ...artifact,
+    reportId: artifact.reportId,
+    shareUrl: artifact.shareUrl || "",
+    svgUrl: artifact.svgUrl || "",
+    qrSvgUrl: artifact.qrSvgUrl || "",
+    excelUrl: resolvedExcelUrl,
+    excelStatus: resolvedExcelStatus,
+    excelError: excelError || "",
+    normalizedDataUrl: artifact.normalizedDataUrl || "",
+    diagnosticsUrl: artifact.diagnosticsUrl || "",
+  };
+  writeReportArtifactStatus(reportDir, next);
+  if (report && next.shareUrl) {
+    fs.writeFileSync(
+      path.join(reportDir, "index.html"),
+      renderReportHtml({
+        report,
+        markdown: markdown || "",
+        summary: summary || {},
+        shareUrl: next.shareUrl,
+        svgUrl: next.svgUrl,
+        qrSvgUrl: next.qrSvgUrl,
+        excelUrl: next.excelUrl,
+        excelStatus: next.excelStatus,
+        excelError: next.excelError,
+      }),
+      "utf8",
+    );
+  }
+}
+
+function runReviewWorkbookWorker(workerOptions) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(__filename, {
+      workerData: {
+        type: "review-workbook",
+        ...workerOptions,
+      },
+    });
+    let settled = false;
+    let timeout = null;
+    const settle = (error, value) => {
+      if (settled) return;
+      settled = true;
+      if (timeout) clearTimeout(timeout);
+      if (error) reject(error);
+      else resolve(value);
+    };
+    if (reviewWorkbookTimeoutMs > 0) {
+      timeout = setTimeout(() => {
+        worker.terminate().catch(() => null);
+        settle(new Error(`Excel汇总生成超过${Math.ceil(reviewWorkbookTimeoutMs / 60000)}分钟未完成，已转为后台失败状态。`));
+      }, reviewWorkbookTimeoutMs);
+    }
+    worker.once("message", (message) => {
+      if (message?.ok) settle(null, message);
+      else settle(new Error(message?.error || "Excel汇总生成线程处理失败。"));
+    });
+    worker.once("error", (error) => settle(error));
+    worker.once("exit", (code) => {
+      if (code !== 0) settle(new Error(`Excel汇总生成线程异常退出：${code}`));
+    });
+  });
+}
+
+async function handleReviewWorkbookWorker() {
+  const options = workerData || {};
+  const workbookInputPath = String(options.workbookInputPath || "");
+  const reportJsonPath = String(options.reportJsonPath || "");
+  const workbookPath = String(options.workbookPath || "");
+  const legacyWorkbookPath = String(options.legacyWorkbookPath || "");
+  if ((!workbookInputPath && !reportJsonPath) || !workbookPath) {
+    throw new Error("Excel汇总生成参数不完整。");
+  }
+  const saved = JSON.parse(fs.readFileSync(workbookInputPath || reportJsonPath, "utf8"));
+  await writeReviewWorkbook(workbookPath, saved.summary || {}, saved.report || {});
+  if (legacyWorkbookPath && path.resolve(legacyWorkbookPath) !== path.resolve(workbookPath)) {
+    fs.copyFileSync(workbookPath, legacyWorkbookPath);
+  }
+}
+
+async function updateReviewWorkbookStatus(reportDbId, excelStatus, excelUrl = "", excelError = "") {
+  if (!reportDbId) return;
+  const status = String(excelStatus || "").trim();
+  const url = String(excelUrl || "").trim();
+  const errorText = String(excelError || "").trim().slice(0, 2000);
+  if (await isDbAvailable()) {
+    await queryDb(
+      `update review_reports
+       set excel_status=$2,
+           excel_url=case
+             when $2 = 'ready' and coalesce($3, '') <> '' then $3
+             when $2 in ('generating', 'failed') then ''
+             else excel_url
+           end,
+           excel_error=nullif($4, ''),
+           updated_at=now()
+       where id=$1`,
+      [reportDbId, status, url, errorText],
+    );
+    await queryDb(
+      `insert into review_job_events(report_db_id, event_type, status, progress_stage, progress_percent, message, metadata_json)
+       values($1,'excel_status','completed',$2,100,$3,$4::jsonb)`,
+      [
+        reportDbId,
+        status === "ready" ? "excel_ready" : status === "failed" ? "excel_failed" : "excel_generating",
+        status === "ready" ? "Excel汇总已生成，可下载。" : status === "failed" ? `Excel汇总生成失败：${errorText || "未知错误"}` : "Excel汇总正在后台生成。",
+        jsonParam({ excelStatus: status, excelUrl: url, excelError: errorText }, {}),
+      ],
+    ).catch(() => null);
+    return;
+  }
+  const data = readLocalData();
+  const record = data.reviewReports.find((item) => item.id === reportDbId);
+  if (!record) return;
+  record.excelStatus = status;
+  if (url) record.excelUrl = url;
+  if (!url && ["generating", "failed"].includes(status)) record.excelUrl = "";
+  record.excelError = errorText;
+  record.updatedAt = new Date().toISOString();
+  appendLocalReviewJobEvent(data, {
+    reportDbId,
+    userId: record.userId,
+    jobKey: record.jobKey,
+    status: "completed",
+    progressStage: status === "ready" ? "excel_ready" : status === "failed" ? "excel_failed" : "excel_generating",
+    progressPercent: 100,
+  }, "excel_status", status === "ready" ? "Excel汇总已生成，可下载。" : status === "failed" ? `Excel汇总生成失败：${errorText || "未知错误"}` : "Excel汇总正在后台生成。", {
+    excelStatus: status,
+    excelUrl: url,
+    excelError: errorText,
+  });
+  writeLocalData(data);
+}
+
+function queueReviewWorkbookGeneration(reportDbId, summary, report, markdown, artifact) {
+  if (!reportDbId || !artifact?.reportId) return;
+  const jobKey = `${reportDbId}:${artifact.reportId}`;
+  if (activeWorkbookJobs.has(jobKey)) return;
+  activeWorkbookJobs.add(jobKey);
+  let workbookInputPath = "";
+  setImmediate(async () => {
+    try {
+      const lightweightSummary = summaryForResponse(summary) || {};
+      artifact.excelStatus = "generating";
+      artifact.excelUrl = "";
+      updateReportArtifactExcelState(artifact, lightweightSummary, report, markdown, "generating", "", "");
+      await updateReviewWorkbookStatus(reportDbId, "generating", "", "");
+      const reportDir = reportArtifactDir(artifact.reportId);
+      fs.mkdirSync(reportDir, { recursive: true });
+      const excelFileName = artifact.excelFileName || reviewWorkbookFileName(summary);
+      const workbookPath = path.join(reportDir, excelFileName);
+      workbookInputPath = path.join(reportDir, "workbook-input.json");
+      fs.writeFileSync(workbookInputPath, JSON.stringify(prepareReviewWorkbookInput(summary, report)), "utf8");
+      summary = lightweightSummary;
+      await runReviewWorkbookWorker({
+        workbookInputPath,
+        workbookPath,
+        legacyWorkbookPath: path.join(reportDir, "review.xlsx"),
+      });
+      const readyExcelUrl = reportArtifactEncodedUrl(artifact.shareUrl, excelFileName);
+      artifact.excelStatus = "ready";
+      artifact.excelUrl = readyExcelUrl;
+      updateReportArtifactExcelState(artifact, lightweightSummary, report, markdown, "ready", readyExcelUrl, "");
+      await updateReviewWorkbookStatus(reportDbId, "ready", readyExcelUrl, "");
+      console.log(`[workbook] ready ${reportDbId} ${artifact.reportId}`);
+    } catch (error) {
+      const message = error?.message || "Excel汇总生成失败。";
+      artifact.excelStatus = "failed";
+      artifact.excelUrl = "";
+      updateReportArtifactExcelState(artifact, summaryForResponse(summary) || {}, report, markdown, "failed", "", message);
+      await updateReviewWorkbookStatus(reportDbId, "failed", "", message).catch(() => null);
+      console.error(`[workbook] failed ${reportDbId}:`, error);
+    } finally {
+      if (workbookInputPath) fs.rmSync(workbookInputPath, { force: true });
+      activeWorkbookJobs.delete(jobKey);
+    }
+  });
+}
+
 async function persistReportArtifact({ report, markdown, summary }) {
   ensureServerDir();
   fs.mkdirSync(reportsDir, { recursive: true });
@@ -3931,7 +6159,9 @@ async function persistReportArtifact({ report, markdown, summary }) {
   const svgUrl = `${shareUrl}report.svg`;
   const qrSvgUrl = `${shareUrl}qr.svg`;
   const excelFileName = reviewWorkbookFileName(summary);
-  const excelUrl = reportArtifactEncodedUrl(shareUrl, excelFileName);
+  const excelUrl = "";
+  const excelStatus = "generating";
+  const excelError = "";
   const normalizedDataUrl = `${shareUrl}${encodeURIComponent("四季蝉登录获取标准化数据.json")}`;
   const diagnosticsUrl = `${shareUrl}${encodeURIComponent("四季蝉接口诊断.json")}`;
   const qrSvg = await QRCode.toString(shareUrl, {
@@ -3941,20 +6171,17 @@ async function persistReportArtifact({ report, markdown, summary }) {
     color: { dark: "#1f3f95", light: "#ffffff" },
   });
   const reportSvg = renderReportSvg({ report, summary, shareUrl, qrSvg });
-  const html = renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUrl });
+  const html = renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError });
 
-  fs.writeFileSync(path.join(reportDir, "report.json"), JSON.stringify({ report, markdown, summary, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl }, null, 2), "utf8");
+  fs.writeFileSync(path.join(reportDir, "report.json"), JSON.stringify(reportArtifactJsonPayload({ report, markdown, summary, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl }), null, 2), "utf8");
+  writeReportArtifactStatus(reportDir, { reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError, normalizedDataUrl, diagnosticsUrl });
   fs.writeFileSync(path.join(reportDir, "四季蝉登录获取标准化数据.json"), JSON.stringify(summary.rawData || {}, null, 2), "utf8");
   fs.writeFileSync(path.join(reportDir, "四季蝉接口诊断.json"), JSON.stringify(summary.interfaceDiagnostics || [], null, 2), "utf8");
   fs.writeFileSync(path.join(reportDir, "index.html"), html, "utf8");
   fs.writeFileSync(path.join(reportDir, "report.svg"), reportSvg, "utf8");
   fs.writeFileSync(path.join(reportDir, "qr.svg"), qrSvg, "utf8");
-  await writeReviewWorkbook(path.join(reportDir, excelFileName), summary, report);
-  if (excelFileName !== "review.xlsx") {
-    fs.copyFileSync(path.join(reportDir, excelFileName), path.join(reportDir, "review.xlsx"));
-  }
 
-  return { reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl };
+  return { reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl };
 }
 
 async function refreshExistingReportArtifacts(targetReportId = "") {
@@ -3979,8 +6206,14 @@ async function refreshExistingReportArtifacts(targetReportId = "") {
       });
       const svgUrl = saved.svgUrl || `${saved.shareUrl.replace(/\/+$/, "")}/report.svg`;
       const qrSvgUrl = saved.qrSvgUrl || `${saved.shareUrl.replace(/\/+$/, "")}/qr.svg`;
-      const excelFileName = reviewWorkbookFileName(saved.summary || {});
-      const excelUrl = reportArtifactEncodedUrl(saved.shareUrl, excelFileName);
+      const excelFileName = saved.excelFileName || reviewWorkbookFileName(saved.summary || {});
+      const namedWorkbookPath = path.join(reportDir, excelFileName);
+      const legacyWorkbookPath = path.join(reportDir, "review.xlsx");
+      const workbookExists = fs.existsSync(namedWorkbookPath) || fs.existsSync(legacyWorkbookPath);
+      const savedExcelStatus = String(saved.excelStatus || saved.excel_status || "").trim();
+      const excelStatus = savedExcelStatus || (workbookExists ? "ready" : "generating");
+      const excelUrl = saved.excelUrl || saved.excel_url || (workbookExists ? reportArtifactEncodedUrl(saved.shareUrl, excelFileName) : "");
+      const excelError = saved.excelError || saved.excel_error || "";
       const reportSvg = renderReportSvg({ report, summary: saved.summary, shareUrl: saved.shareUrl, qrSvg });
       const html = renderReportHtml({
         report,
@@ -3989,16 +6222,24 @@ async function refreshExistingReportArtifacts(targetReportId = "") {
         shareUrl: saved.shareUrl,
         svgUrl,
         qrSvgUrl,
+        excelUrl,
+        excelStatus,
+        excelError,
       });
-      fs.writeFileSync(path.join(reportDir, "report.json"), JSON.stringify({ ...saved, report, markdown, svgUrl, qrSvgUrl, excelUrl }, null, 2), "utf8");
+      const reportId = saved.reportId || entry.name;
+      const normalizedDataUrl = saved.normalizedDataUrl || `${saved.shareUrl}${encodeURIComponent("四季蝉登录获取标准化数据.json")}`;
+      const diagnosticsUrl = saved.diagnosticsUrl || `${saved.shareUrl}${encodeURIComponent("四季蝉接口诊断.json")}`;
+      const refreshed = { ...saved, report, markdown, reportId, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl };
+      fs.writeFileSync(path.join(reportDir, "report.json"), JSON.stringify(reportArtifactJsonPayload({ report, markdown, summary: saved.summary || {}, reportId, shareUrl: saved.shareUrl, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl }), null, 2), "utf8");
+      writeReportArtifactStatus(reportDir, refreshed);
       fs.writeFileSync(path.join(reportDir, "index.html"), html, "utf8");
       fs.writeFileSync(path.join(reportDir, "report.svg"), reportSvg, "utf8");
       fs.writeFileSync(path.join(reportDir, "qr.svg"), qrSvg, "utf8");
-      fs.writeFileSync(path.join(reportDir, "四季蝉登录获取标准化数据.json"), JSON.stringify(saved.summary?.rawData || {}, null, 2), "utf8");
-      fs.writeFileSync(path.join(reportDir, "四季蝉接口诊断.json"), JSON.stringify(saved.summary?.interfaceDiagnostics || [], null, 2), "utf8");
-      await writeReviewWorkbook(path.join(reportDir, excelFileName), saved.summary || {}, report);
-      if (excelFileName !== "review.xlsx") {
-        fs.copyFileSync(path.join(reportDir, excelFileName), path.join(reportDir, "review.xlsx"));
+      if (saved.summary?.rawData) {
+        fs.writeFileSync(path.join(reportDir, "四季蝉登录获取标准化数据.json"), JSON.stringify(saved.summary.rawData || {}, null, 2), "utf8");
+      }
+      if (saved.summary?.interfaceDiagnostics) {
+        fs.writeFileSync(path.join(reportDir, "四季蝉接口诊断.json"), JSON.stringify(saved.summary.interfaceDiagnostics || [], null, 2), "utf8");
       }
     } catch (error) {
       console.warn(`Refresh report artifact failed for ${entry.name}: ${error.message}`);
@@ -4128,6 +6369,25 @@ function extractSijichanTokenFromText(text) {
   return "";
 }
 
+function clampWeComTokenScanText(value) {
+  const text = String(value || "");
+  return text.length > weComTokenScanTextLimit ? text.slice(0, weComTokenScanTextLimit) : text;
+}
+
+function shouldScanWeComTokenBody({ contentType = "", contentLength = "", url = "", allowSsoJump = false } = {}) {
+  const type = String(contentType || "");
+  if (!/json|text|html/i.test(type)) return false;
+  const length = Number(contentLength || 0);
+  if (Number.isFinite(length) && length > weComTokenBodyLimitBytes) return false;
+  const href = String(url || "");
+  if (allowSsoJump && isWeComSsoJumpUrl(href)) return true;
+  if (/industryOrder|imActivityReward|orderShareMoment|report\/(course|activityReward|account|order_share)|queryStatistics|query.*List|summary\/page|rewardTypeStatistics/i.test(href)) {
+    return false;
+  }
+  if (/login|auth|token|sso|app-jump|ewx|wwlogin|super-admin-login|acc\/_login|authorization|session/i.test(href)) return true;
+  return Boolean(length && length <= Math.min(32 * 1024, weComTokenBodyLimitBytes));
+}
+
 function renderWeComHandoffHelperScript({ endpoint, handoffToken, merCode }) {
   const helperSource = String.raw`
 (function(){
@@ -4140,14 +6400,25 @@ function renderWeComHandoffHelperScript({ endpoint, handoffToken, merCode }) {
   }
   window.__sop4chanTokenHelper = true;
   const sent = new Set();
+  const CAPTURE_BODY_LIMIT = 131072;
+  const CAPTURE_TEXT_LIMIT = 262144;
   const tokenPattern = /(?:Authorization|authorization)\s*[:=]\s*["']?(?:Bearer\s+)?([A-Za-z0-9._\-]{20,})|(?:token|access_token|merchant_token|accessToken)\s*["']?\s*[:=]\s*["']([A-Za-z0-9._\-]{20,})["']/i;
   const pick = (value) => String(value || "").replace(/^authorization\s*:\s*/i, "").replace(/^Bearer\s+/i, "").trim();
   const looksLikeToken = (value) => {
     const token = pick(value);
     return token.length >= 20 && /^[A-Za-z0-9._\-]+$/.test(token);
   };
+  const isBusinessDataUrl = (url) => /industryOrder|imActivityReward|orderShareMoment|report\/(course|activityReward|account|order_share)|queryStatistics|query.*List|summary\/page|rewardTypeStatistics/i.test(String(url || ""));
+  const isAuthLikeUrl = (url) => /login|auth|token|sso|app-jump|ewx|wwlogin|super-admin-login|acc\/_login|authorization|session/i.test(String(url || ""));
+  const shouldScanBody = (url, contentType, contentLength) => {
+    if (!/json|text|html/i.test(String(contentType || ""))) return false;
+    const length = Number(contentLength || 0);
+    if (Number.isFinite(length) && length > CAPTURE_BODY_LIMIT) return false;
+    if (isBusinessDataUrl(url)) return false;
+    return isAuthLikeUrl(url) || Boolean(length && length <= 32768);
+  };
   const tokenFromText = (text) => {
-    const match = String(text || "").match(tokenPattern);
+    const match = String(text || "").slice(0, CAPTURE_TEXT_LIMIT).match(tokenPattern);
     return match ? pick(match[1] || match[2] || "") : "";
   };
   async function send(raw, from) {
@@ -4231,7 +6502,9 @@ function renderWeComHandoffHelperScript({ endpoint, handoffToken, merCode }) {
         try {
           scanHeaders(response && response.headers, "fetch-response");
           const contentType = response.headers && response.headers.get && response.headers.get("content-type");
-          if (/json|text|javascript/i.test(contentType || "")) {
+          const contentLength = response.headers && response.headers.get && response.headers.get("content-length");
+          const responseUrl = response.url || (input && input.url) || (typeof input === "string" ? input : "");
+          if (shouldScanBody(responseUrl, contentType, contentLength)) {
             response.clone().text().then((text) => scanText(text, "fetch-body")).catch(() => {});
           }
         } catch (error) {}
@@ -4264,7 +6537,9 @@ function renderWeComHandoffHelperScript({ endpoint, handoffToken, merCode }) {
       this.addEventListener("load", function() {
         try {
           send(this.getResponseHeader("Authorization"), "xhr-response:authorization");
-          scanText(this.responseText, "xhr-response-body");
+          if (shouldScanBody(this.responseURL || this.__sop4chanUrl, this.getResponseHeader("content-type"), this.getResponseHeader("content-length"))) {
+            scanText(this.responseText, "xhr-response-body");
+          }
         } catch (error) {}
       });
       return originalSend.apply(this, arguments);
@@ -4348,11 +6623,18 @@ async function markSijichanHandoffCapturedById(handoffId, userId, token, details
   return normalizeSijichanTokenHandoff(result.rows[0]);
 }
 
-function getWeComBrowserSessionPublic(session) {
-  const merchantReady = Boolean(session.currentUrl && canProbeMerchantBusiness(session.currentUrl));
-  const openPages = Array.isArray(session.openPages) ? session.openPages.slice(-8) : [];
-  const loginPageReady = Boolean(session.currentUrl && /merchants\.hydee\.cn\/app-login/i.test(session.currentUrl));
+function getWeComBrowserSessionDebug(session) {
   return {
+    exportProbeDetails: Array.isArray(session?.exportProbeDetails) ? session.exportProbeDetails.slice(0, 8) : [],
+    ssoDiagnostics: Array.isArray(session?.ssoDiagnostics) ? session.ssoDiagnostics.slice(-8) : [],
+    openPages: Array.isArray(session?.openPages) ? session.openPages.slice(-8) : [],
+  };
+}
+
+function getWeComBrowserSessionPublic(session, options = {}) {
+  const merchantReady = Boolean(session.currentUrl && canProbeMerchantBusiness(session.currentUrl));
+  const loginPageReady = Boolean(session.currentUrl && /merchants\.hydee\.cn\/app-login/i.test(session.currentUrl));
+  const next = {
     id: session.id,
     handoffId: session.handoff?.id || "",
     status: session.status,
@@ -4363,8 +6645,6 @@ function getWeComBrowserSessionPublic(session) {
     exportReady: Boolean(session.exportReady),
     exportProbeAt: session.exportProbeAt || "",
     exportProbeError: session.exportProbeError || "",
-    exportProbeDetails: Array.isArray(session.exportProbeDetails) ? session.exportProbeDetails.slice(0, 8) : [],
-    ssoDiagnostics: Array.isArray(session.ssoDiagnostics) ? session.ssoDiagnostics.slice(-8) : [],
     autoReport: session.autoReport || null,
     merCodeFilled: Boolean(session.merCodeFilled),
     merCodeSubmitTried: Boolean(session.merCodeSubmitTried),
@@ -4375,7 +6655,6 @@ function getWeComBrowserSessionPublic(session) {
     qrImage: session.qrImage || "",
     currentUrl: session.currentUrl || "",
     lastRequestUrl: session.lastRequestUrl || "",
-    openPages,
     pageTitle: session.pageTitle || "",
     screenshotUrl: session.id ? `/api/wecom-browser-session/${encodeURIComponent(session.id)}/screenshot` : "",
     lastError: session.lastError || "",
@@ -4383,6 +6662,8 @@ function getWeComBrowserSessionPublic(session) {
     updatedAt: session.updatedAt,
     expiresAt: session.handoff?.expiresAt || session.expiresAt || "",
   };
+  if (options.includeDebug) Object.assign(next, getWeComBrowserSessionDebug(session));
+  return next;
 }
 
 function logWeComSessionState(session, reason = "state") {
@@ -4832,7 +7113,7 @@ async function createWeComBrowserSession(user, body = {}) {
     const allowSsoJump = Boolean(options.allowSsoJump);
     const allowMerchantHost = Boolean(options.allowMerchantHost);
     if (!isMerchantRuntimeUrl(runtimeUrl) && !(allowSsoJump && isWeComSsoJumpUrl(runtimeUrl)) && !(allowMerchantHost && isMerchantHostUrl(runtimeUrl))) return;
-    const sourceText = String(raw || "");
+    const sourceText = clampWeComTokenScanText(raw);
     const match = sourceText.match(tokenPattern);
     if (!match && !options.explicitToken) return;
     const token = normalizeSijichanToken(match ? (match[1] || match[2] || "") : raw);
@@ -4908,19 +7189,20 @@ async function createWeComBrowserSession(user, body = {}) {
       message: headerCandidateToken ? "检测到企微 SSO 跳转响应，发现候选授权，正在验证" : "检测到企微 SSO 跳转响应",
     });
     await maybeCapture(`${location}\n${headerText}`, `server-browser-sso-${from}-headers`, url, { allowSsoJump: true });
-    if (/json|text|javascript|html/i.test(contentType)) {
+    if (shouldScanWeComTokenBody({ contentType, contentLength: headers["content-length"], url, allowSsoJump: true })) {
       const text = await response.text().catch(() => "");
       if (text) {
-        const bodyCandidateToken = extractSijichanTokenFromText(text);
+        const scanText = clampWeComTokenScanText(text);
+        const bodyCandidateToken = extractSijichanTokenFromText(scanText);
         addSsoDiagnostic({
           from: `${from}-body`,
           status,
           path: parsed ? parsed.pathname : "/app-jump/super-admin-login",
           codeSeen: Boolean(parsed?.searchParams?.get("code")),
           tokenFound: Boolean(bodyCandidateToken),
-          message: `${bodyCandidateToken ? "发现候选授权，正在验证；" : ""}${text.slice(0, 180).replace(/\s+/g, " ")}`,
+          message: `${bodyCandidateToken ? "发现候选授权，正在验证；" : ""}${scanText.slice(0, 180).replace(/\s+/g, " ")}`,
         });
-        await maybeCapture(text, `server-browser-sso-${from}-body`, url, { allowSsoJump: true });
+        await maybeCapture(scanText, `server-browser-sso-${from}-body`, url, { allowSsoJump: true });
       }
     }
   };
@@ -5240,8 +7522,8 @@ async function createWeComBrowserSession(user, body = {}) {
         const headers = response.headers();
         maybeCapture(headers.authorization || headers.Authorization, "server-browser-response-header", response.url(), { explicitToken: true });
         const contentType = headers["content-type"] || "";
-        if (/json|text|javascript/i.test(contentType)) {
-          response.text().then((text) => maybeCapture(text, "server-browser-response-body", response.url())).catch(() => null);
+        if (shouldScanWeComTokenBody({ contentType, contentLength: headers["content-length"], url: response.url() })) {
+          response.text().then((text) => maybeCapture(clampWeComTokenScanText(text), "server-browser-response-body", response.url())).catch(() => null);
         }
       });
       nextPage.on("framenavigated", (frame) => {
@@ -5284,13 +7566,24 @@ async function createWeComBrowserSession(user, body = {}) {
     await context.addInitScript(() => {
       if (window.__sop4chanServerHookInstalled) return;
       window.__sop4chanServerHookInstalled = true;
+      const CAPTURE_BODY_LIMIT = 131072;
+      const CAPTURE_TEXT_LIMIT = 262144;
       const tokenPattern = /(?:Authorization|authorization)\s*[:=]\s*["']?(?:Bearer\s+)?([A-Za-z0-9._\-]{20,})|(?:token|access_token|merchant_token|accessToken)\s*["']?\s*[:=]\s*["']([A-Za-z0-9._\-]{20,})["']/i;
       const pushToken = (value, from) => {
-        const text = typeof value === "string" ? value : JSON.stringify(value || "");
+        const text = (typeof value === "string" ? value : JSON.stringify(value || "")).slice(0, CAPTURE_TEXT_LIMIT);
         const match = text.match(tokenPattern);
         const token = match ? (match[1] || match[2] || "") : text;
         if (!token || token.length < 20 || !window.sop4chanCaptureToken) return;
         window.sop4chanCaptureToken({ token, from, href: location.href }).catch(() => null);
+      };
+      const isBusinessDataUrl = (url) => /industryOrder|imActivityReward|orderShareMoment|report\/(course|activityReward|account|order_share)|queryStatistics|query.*List|summary\/page|rewardTypeStatistics/i.test(String(url || ""));
+      const isAuthLikeUrl = (url) => /login|auth|token|sso|app-jump|ewx|wwlogin|super-admin-login|acc\/_login|authorization|session/i.test(String(url || ""));
+      const shouldScanBody = (url, contentType, contentLength) => {
+        if (!/json|text|html/i.test(String(contentType || ""))) return false;
+        const length = Number(contentLength || 0);
+        if (Number.isFinite(length) && length > CAPTURE_BODY_LIMIT) return false;
+        if (isBusinessDataUrl(url)) return false;
+        return isAuthLikeUrl(url) || Boolean(length && length <= 32768);
       };
       const headersToText = (headers) => {
         try {
@@ -5314,7 +7607,9 @@ async function createWeComBrowserSession(user, body = {}) {
           try {
             pushToken(headersToText(response.headers), "fetch-response-headers");
             const contentType = response.headers?.get?.("content-type") || "";
-            if (/json|text|javascript/i.test(contentType)) {
+            const contentLength = response.headers?.get?.("content-length") || "";
+            const responseUrl = response.url || input?.url || (typeof input === "string" ? input : "");
+            if (shouldScanBody(responseUrl, contentType, contentLength)) {
               response.clone().text().then((text) => pushToken(text, "fetch-response-body")).catch(() => null);
             }
           } catch {}
@@ -5341,7 +7636,9 @@ async function createWeComBrowserSession(user, body = {}) {
         this.addEventListener("load", () => {
           try {
             pushToken(this.getAllResponseHeaders(), "xhr-response-headers");
-            pushToken(this.responseText || "", "xhr-response-body");
+            if (shouldScanBody(this.responseURL || this.__sop4chanUrl, this.getResponseHeader("content-type"), this.getResponseHeader("content-length"))) {
+              pushToken(this.responseText || "", "xhr-response-body");
+            }
           } catch {}
         });
         return originalSend.apply(this, arguments);
@@ -5384,8 +7681,8 @@ async function createWeComBrowserSession(user, body = {}) {
       const headers = response.headers();
       maybeCapture(headers.authorization || headers.Authorization, "server-browser-response-header", response.url(), { explicitToken: true });
       const contentType = headers["content-type"] || "";
-      if (/json|text|javascript/i.test(contentType)) {
-        response.text().then((text) => maybeCapture(text, "server-browser-response-body", response.url())).catch(() => null);
+      if (shouldScanWeComTokenBody({ contentType, contentLength: headers["content-length"], url: response.url() })) {
+        response.text().then((text) => maybeCapture(clampWeComTokenScanText(text), "server-browser-response-body", response.url())).catch(() => null);
       }
     });
     page.on("framenavigated", (frame) => {
@@ -5493,6 +7790,7 @@ async function createWeComBrowserSession(user, body = {}) {
         // keep session alive until expiry
       }
     }, 3000);
+    session.pollTimer.unref?.();
     session.expireTimer = setTimeout(async () => {
       if (session.status !== "expired") {
         session.status = "expired";
@@ -5501,6 +7799,7 @@ async function createWeComBrowserSession(user, body = {}) {
         await closeWeComBrowserSession(session, "expired");
       }
     }, session.profileReuse ? 6 * 60 * 60 * 1000 : 30 * 60 * 1000);
+    session.expireTimer.unref?.();
     return getWeComBrowserSessionPublic(session);
   } catch (error) {
     session.status = "error";
@@ -6699,36 +8998,311 @@ async function handleSaveReviewPrompt(req, res) {
 }
 
 const reviewJobTtlMs = Number(process.env.REVIEW_JOB_TTL_MS || 30 * 60 * 1000);
+const reviewMaintenanceIntervalMs = Number(process.env.REVIEW_MAINTENANCE_INTERVAL_MS || 10 * 60 * 1000);
+const reviewJobEventRetentionDays = Number(process.env.REVIEW_JOB_EVENT_RETENTION_DAYS || 90);
+const reviewJobEventMaxPerJob = Number(process.env.REVIEW_JOB_EVENT_MAX_PER_JOB || 80);
+const reviewWorkbookTtlMs = Number(process.env.REVIEW_WORKBOOK_TTL_MS || Math.max(reviewWorkbookTimeoutMs + 2 * 60 * 1000, 12 * 60 * 1000));
+const authLogSuccessRetentionDays = Number(process.env.AUTH_LOG_SUCCESS_RETENTION_DAYS || 90);
+const authLogFailureRetentionDays = Number(process.env.AUTH_LOG_FAILURE_RETENTION_DAYS || 180);
+const reviewJobTimeoutMessage = "任务超过30分钟未完成，系统已自动清理。请确认账号权限和网络后重试。";
+const reviewWorkbookTimeoutMessage = "Excel汇总生成超过预计时间，系统已自动停止该下载文件生成。AI复盘报告不受影响，可在历史报告中重新生成。";
+let reviewMaintenanceTimer = null;
 
 async function cleanupExpiredReviewJobs() {
   const now = Date.now();
+  if (await isDbAvailable()) {
+    const result = await queryDb(
+      `select job_key, report_db_id, source_table
+       from expire_stale_review_jobs($1::bigint, $2::text)`,
+      [reviewJobTtlMs, reviewJobTimeoutMessage],
+    ).catch(() => ({ rows: [] }));
+    for (const row of result.rows || []) {
+      if (row?.job_key) activeReviewJobs.delete(row.job_key);
+      console.warn(`[review] timeout ${row?.job_key || row?.report_db_id || ""}`.trim());
+    }
+  } else {
+    const data = readLocalData();
+    let changed = false;
+    for (const job of data.reviewJobs || []) {
+      if ((job.status || "running") !== "running" || job.cancelRequested) continue;
+      const touchedAt = Date.parse(job.heartbeatAt || job.startedAt || job.createdAt || "");
+      if (!Number.isFinite(touchedAt) || now - touchedAt <= reviewJobTtlMs) continue;
+      job.status = "failed";
+      job.cancelRequested = false;
+      job.errorMessage = reviewJobTimeoutMessage;
+      job.progressStage = "failed";
+      job.progressText = reviewJobTimeoutMessage;
+      job.finishedAt = new Date(now).toISOString();
+      job.updatedAt = job.finishedAt;
+      appendLocalReviewJobEvent(data, job, "status_changed", reviewJobTimeoutMessage, {
+        previousStatus: "running",
+        timeout: true,
+      });
+      if (job.jobKey) activeReviewJobs.delete(job.jobKey);
+      const report = data.reviewReports.find((item) => item.id === job.reportDbId);
+      if (report && report.status === "running") {
+        report.status = "failed";
+        report.reportTitle = "复盘报告生成失败";
+        report.errorMessage = reviewJobTimeoutMessage;
+        report.cancelRequested = false;
+        report.progressStage = "failed";
+        report.progressText = reviewJobTimeoutMessage;
+        report.finishedAt = job.finishedAt;
+        report.updatedAt = job.finishedAt;
+      }
+      changed = true;
+      console.warn(`[review] timeout ${job.jobKey || job.reportDbId || ""}`.trim());
+    }
+    for (const report of data.reviewReports || []) {
+      if ((report.status || "completed") !== "running" || report.cancelRequested) continue;
+      const touchedAt = Date.parse(report.heartbeatAt || report.startedAt || report.createdAt || "");
+      if (!Number.isFinite(touchedAt) || now - touchedAt <= reviewJobTtlMs) continue;
+      report.status = "failed";
+      report.reportTitle = "复盘报告生成失败";
+      report.errorMessage = reviewJobTimeoutMessage;
+      report.cancelRequested = false;
+      report.progressStage = "failed";
+      report.progressText = reviewJobTimeoutMessage;
+      report.finishedAt = new Date(now).toISOString();
+      report.updatedAt = report.finishedAt;
+      appendLocalReviewJobEvent(data, {
+        reportDbId: report.id,
+        userId: report.userId,
+        jobKey: report.jobKey,
+        status: report.status,
+        progressStage: report.progressStage,
+        progressText: report.progressText,
+        progressPercent: report.progressPercent,
+      }, "status_changed", reviewJobTimeoutMessage, {
+        previousStatus: "running",
+        timeout: true,
+      });
+      if (report.jobKey) activeReviewJobs.delete(report.jobKey);
+      changed = true;
+      console.warn(`[review] timeout ${report.jobKey || report.id || ""}`.trim());
+    }
+    if (changed) writeLocalData(data);
+  }
   for (const [key, job] of activeReviewJobs.entries()) {
     if (!job?.startedAt || now - job.startedAt <= reviewJobTtlMs) continue;
     activeReviewJobs.delete(key);
-    await markReviewReportStatus(job.reportDbId, "failed", "任务超过30分钟未完成，系统已自动清理。请确认账号权限和网络后重试。").catch(() => null);
+    await markReviewReportStatus(job.reportDbId, "failed", reviewJobTimeoutMessage).catch(() => null);
     console.warn(`[review] timeout ${key}`);
   }
 }
 
+async function cleanupExpiredReviewWorkbooks() {
+  const now = Date.now();
+  if (await isDbAvailable()) {
+    const result = await queryDb(
+      `select expired_report_db_id as report_db_id
+       from expire_stale_review_workbooks($1::bigint, $2::text)`,
+      [reviewWorkbookTtlMs, reviewWorkbookTimeoutMessage],
+    ).catch(() => ({ rows: [] }));
+    for (const row of result.rows || []) {
+      console.warn(`[workbook] timeout ${row?.report_db_id || ""}`.trim());
+    }
+    return;
+  }
+
+  const data = readLocalData();
+  let changed = false;
+  for (const report of data.reviewReports || []) {
+    if (String(report.excelStatus || report.excel_status || "") !== "generating") continue;
+    const touchedAt = Date.parse(report.updatedAt || report.finishedAt || report.createdAt || "");
+    if (!Number.isFinite(touchedAt) || now - touchedAt <= reviewWorkbookTtlMs) continue;
+    report.excelStatus = "failed";
+    report.excelUrl = "";
+    report.excelError = reviewWorkbookTimeoutMessage;
+    report.updatedAt = new Date(now).toISOString();
+    appendLocalReviewJobEvent(data, {
+      reportDbId: report.id,
+      userId: report.userId,
+      jobKey: report.jobKey,
+      status: "completed",
+      progressStage: "excel_failed",
+      progressPercent: 100,
+    }, "excel_status", reviewWorkbookTimeoutMessage, { timeout: true });
+    changed = true;
+    console.warn(`[workbook] timeout ${report.id || ""}`.trim());
+  }
+  if (changed) writeLocalData(data);
+}
+
+async function cleanupReviewJobEvents() {
+  if (!(await isDbAvailable())) {
+    const data = readLocalData();
+    const events = Array.isArray(data.reviewJobEvents) ? data.reviewJobEvents : [];
+    if (!events.length) return;
+    let nextEvents = events;
+    const retentionDays = Math.max(1, Math.round(reviewJobEventRetentionDays));
+    if (reviewJobEventRetentionDays > 0) {
+      const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+      nextEvents = nextEvents.filter((event) => {
+        const createdAt = Date.parse(event.createdAt || "");
+        return !Number.isFinite(createdAt) || createdAt >= cutoff;
+      });
+    }
+    if (reviewJobEventMaxPerJob > 0) {
+      const maxPerJob = Math.max(1, Math.round(reviewJobEventMaxPerJob));
+      const grouped = new Map();
+      for (const event of nextEvents) {
+        const key = event.reviewJobId || event.reportDbId || event.jobKey || event.id;
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key).push(event);
+      }
+      const keepIds = new Set();
+      for (const group of grouped.values()) {
+        group
+          .slice()
+          .sort((a, b) => {
+            const at = Date.parse(a.createdAt || "") || 0;
+            const bt = Date.parse(b.createdAt || "") || 0;
+            if (bt !== at) return bt - at;
+            return String(b.id || "").localeCompare(String(a.id || ""));
+          })
+          .slice(0, maxPerJob)
+          .forEach((event) => keepIds.add(event.id));
+      }
+      nextEvents = nextEvents.filter((event) => keepIds.has(event.id));
+    }
+    if (nextEvents.length !== events.length) {
+      data.reviewJobEvents = nextEvents;
+      writeLocalData(data);
+      console.warn(`[review] cleaned ${events.length - nextEvents.length} local job events`);
+    }
+    return;
+  }
+  const result = await queryDb(
+    `select cleanup_review_job_events($1::int, $2::int) as removed`,
+    [
+      Math.max(0, Math.round(reviewJobEventRetentionDays)),
+      Math.max(0, Math.round(reviewJobEventMaxPerJob)),
+    ],
+  ).catch(() => ({ rows: [] }));
+  const removed = Number(result.rows?.[0]?.removed || 0);
+  if (removed) console.warn(`[review] cleaned ${removed} job events`);
+}
+
+async function cleanupAuthOperationLogs() {
+  if (!(await isDbAvailable())) return;
+  const result = await queryDb(
+    `select cleanup_auth_operation_logs($1::int, $2::int) as removed`,
+    [
+      Math.max(1, Math.round(authLogSuccessRetentionDays)),
+      Math.max(1, Math.round(authLogFailureRetentionDays)),
+    ],
+  ).catch(() => ({ rows: [] }));
+  const removed = Number(result.rows?.[0]?.removed || 0);
+  if (removed) console.warn(`[auth] cleaned ${removed} operation logs`);
+}
+
+async function runReviewMaintenance() {
+  await cleanupExpiredReviewJobs().catch((error) => {
+    console.warn(`[review] cleanup jobs skipped: ${error.message}`);
+  });
+  await cleanupExpiredReviewWorkbooks().catch((error) => {
+    console.warn(`[workbook] cleanup skipped: ${error.message}`);
+  });
+  await cleanupReviewJobEvents().catch((error) => {
+    console.warn(`[review] cleanup events skipped: ${error.message}`);
+  });
+  await cleanupAuthOperationLogs().catch((error) => {
+    console.warn(`[auth] cleanup logs skipped: ${error.message}`);
+  });
+}
+
+function startReviewMaintenanceLoop() {
+  if (reviewMaintenanceTimer || reviewMaintenanceIntervalMs <= 0) return;
+  runReviewMaintenance().catch((error) => {
+    console.warn(`[review] maintenance skipped: ${error.message}`);
+  });
+  reviewMaintenanceTimer = setInterval(() => {
+    runReviewMaintenance().catch((error) => {
+      console.warn(`[review] maintenance skipped: ${error.message}`);
+    });
+  }, reviewMaintenanceIntervalMs);
+  if (typeof reviewMaintenanceTimer.unref === "function") {
+    reviewMaintenanceTimer.unref();
+  }
+}
+
+function stopReviewMaintenanceLoop() {
+  if (!reviewMaintenanceTimer) return;
+  clearInterval(reviewMaintenanceTimer);
+  reviewMaintenanceTimer = null;
+}
+
+async function findBlockingRunningReviewJob(key) {
+  if (await isDbAvailable()) {
+    const result = await queryDb(
+      `select
+         coalesce(report_db_id, id) as id,
+         job_key
+       from review_jobs
+       where coalesce(job_key, '') = $1
+         and status = 'running'
+         and coalesce(cancel_requested, false) = false
+       order by coalesce(heartbeat_at, started_at, created_at) desc, created_at desc
+       limit 1`,
+      [key],
+    ).catch(() => ({ rows: [] }));
+    if (result.rows[0]) return result.rows[0];
+    const fallback = await queryDb(
+      `select id, job_key
+       from review_reports
+       where coalesce(job_key, '') = $1
+         and status = 'running'
+         and coalesce(cancel_requested, false) = false
+       order by coalesce(heartbeat_at, started_at, created_at) desc, created_at desc
+       limit 1`,
+      [key],
+    ).catch(() => ({ rows: [] }));
+    return fallback.rows[0] || null;
+  }
+  const active = activeReviewJobs.get(key);
+  if (active) return { id: active.reportDbId, job_key: key };
+  const data = readLocalData();
+  const localJob = (data.reviewJobs || [])
+    .filter((job) => job.jobKey === key && (job.status || "running") === "running" && !job.cancelRequested)
+    .sort((a, b) => String(b.heartbeatAt || b.startedAt || b.createdAt || "").localeCompare(String(a.heartbeatAt || a.startedAt || a.createdAt || "")))[0];
+  if (localJob) return { id: localJob.reportDbId || localJob.id, job_key: localJob.jobKey };
+  const localReport = (data.reviewReports || [])
+    .filter((report) => report.jobKey === key && (report.status || "completed") === "running" && !report.cancelRequested)
+    .sort((a, b) => String(b.heartbeatAt || b.startedAt || b.createdAt || "").localeCompare(String(a.heartbeatAt || a.startedAt || a.createdAt || "")))[0];
+  return localReport ? { id: localReport.id, job_key: localReport.jobKey } : null;
+}
+
 async function beginReviewJob(key, meta = {}) {
   await cleanupExpiredReviewJobs();
-  if (activeReviewJobs.has(key)) {
+  const blockingJob = await findBlockingRunningReviewJob(key);
+  if (blockingJob) {
     const error = new Error("已有复盘报告正在生成，请稍后刷新历史报告，或等待当前任务完成后再试。");
     error.statusCode = 429;
     throw error;
   }
+  activeReviewJobs.delete(key);
   const startedAt = Date.now();
   const reportDbId = await createRunningReviewReportRecord(meta.userId, meta.sourceType, meta.sourceName, key, meta.retryPayload || {});
+  const persistentJob = await createReviewJobRecord({
+    ...meta,
+    jobKey: key,
+    reportDbId,
+    progressStage: "queued",
+    progressText: "任务已创建，等待开始处理。",
+    progressPercent: 2,
+  });
   activeReviewJobs.set(key, {
     key,
     startedAt,
+    jobId: persistentJob.id,
     reportDbId,
     userId: meta.userId,
     sourceType: meta.sourceType,
     sourceName: meta.sourceName,
     cancelRequested: false,
   });
-  return { startedAt, reportDbId };
+  return { key, startedAt, reportDbId };
 }
 
 function getActiveReviewJob(key) {
@@ -6743,13 +9317,68 @@ async function failReviewJob(key, error, fallbackReportDbId = "") {
   await markReviewReportStatus(reportDbId, status, error?.message || String(error || "复盘报告生成失败。")).catch(() => null);
 }
 
-function assertReviewJobNotCancelled(job) {
-  if (!job || job.cancelRequested) {
+async function assertReviewJobStillActive(job) {
+  if (!job) {
     const error = new Error("复盘报告任务已取消或已超时清理。");
     error.statusCode = 409;
     error.isCancelled = true;
     throw error;
   }
+  if (await isDbAvailable()) {
+    const reportResult = await queryDb(
+      `update review_reports
+       set heartbeat_at = now(),
+           updated_at = now()
+       where id = $1
+         and status = 'running'
+         and coalesce(cancel_requested, false) = false
+       returning id`,
+      [job.reportDbId],
+    ).catch(() => ({ rows: [] }));
+    const jobResult = await queryDb(
+      `update review_jobs
+       set heartbeat_at = now(),
+           updated_at = now()
+       where report_db_id = $1
+         and status = 'running'
+         and coalesce(cancel_requested, false) = false
+       returning id`,
+      [job.reportDbId],
+    ).catch(() => ({ rows: [] }));
+    const jobState = await queryDb(
+      `select status, coalesce(cancel_requested, false) as cancel_requested, error_message
+       from review_jobs
+       where report_db_id = $1
+       order by created_at desc
+       limit 1`,
+      [job.reportDbId],
+    ).catch(() => ({ rows: [] }));
+    if (reportResult.rows[0]?.id && (jobResult.rows[0]?.id || !jobState.rows[0])) return true;
+    const state = await queryDb(
+      `select status, coalesce(cancel_requested, false) as cancel_requested, error_message
+       from review_reports
+       where id = $1
+       limit 1`,
+      [job.reportDbId],
+    ).catch(() => ({ rows: [] }));
+    const row = jobState.rows[0] || state.rows[0] || {};
+    const error = new Error(
+      row.cancel_requested || row.status === "cancelled"
+        ? "复盘报告任务已取消。"
+        : row.error_message || "复盘报告任务已取消或已超时清理。",
+    );
+    error.statusCode = 409;
+    error.isCancelled = Boolean(row.cancel_requested) || row.status === "cancelled";
+    throw error;
+  }
+  const active = getActiveReviewJob(job.key || "");
+  if (!active || active.cancelRequested) {
+    const error = new Error("复盘报告任务已取消或已超时清理。");
+    error.statusCode = 409;
+    error.isCancelled = true;
+    throw error;
+  }
+  return true;
 }
 
 function finishReviewJob(key, startedAt, detail = "") {
@@ -6764,6 +9393,23 @@ function finishReviewJob(key, startedAt, detail = "") {
   const elapsed = startMs ? `${Math.round((Date.now() - startMs) / 1000)}s` : "";
   console.log(`[review] finish ${key} ${elapsed} ${detail}`.trim());
   return true;
+}
+
+function buildGeneratedReviewResponse(id, summary, generated) {
+  return {
+    ok: true,
+    id,
+    summary: summaryForResponse(summary),
+    reportId: generated.reportId,
+    shareUrl: generated.shareUrl,
+    svgUrl: generated.svgUrl,
+    qrSvgUrl: generated.qrSvgUrl,
+    excelUrl: generated.excelUrl,
+    excelStatus: generated.excelStatus || "",
+    excelError: generated.excelError || "",
+    normalizedDataUrl: generated.normalizedDataUrl,
+    diagnosticsUrl: generated.diagnosticsUrl,
+  };
 }
 
 async function handleReviewReport(req, res) {
@@ -6786,27 +9432,19 @@ async function handleReviewReport(req, res) {
   let datasetId = "";
   console.log(`[review] start ${jobKey} ${filename}`);
   try {
+    await updateReviewReportProgress(job.reportDbId, "template_validated", "Excel模板校验完成，正在整理上传数据。", 12);
     datasetId = await saveDatasetRecord(user.id, "excel", summary, filename);
-    assertReviewJobNotCancelled(getActiveReviewJob(jobKey));
-    const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary, user);
-    assertReviewJobNotCancelled(getActiveReviewJob(jobKey));
-    const dbReportId = await saveReviewReportRecord(user.id, "excel", filename, summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl }, { reportDbId: job.reportDbId, jobKey });
+    await assertReviewJobStillActive(job);
+    await updateReviewReportProgress(job.reportDbId, "ai_generating", "客户数据已整理完成，正在生成AI复盘报告。", 58);
+    const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary, user);
+    await assertReviewJobStillActive(job);
+    await updateReviewReportProgress(job.reportDbId, "publishing", "AI分析已完成，正在写入历史记录并生成分享产物；Excel汇总将在后台生成。", 88);
+    const generated = { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl };
+    const dbReportId = await saveReviewReportRecord(user.id, "excel", filename, summary, generated, { reportDbId: job.reportDbId, jobKey });
+    queueReviewWorkbookGeneration(dbReportId, summary, report, markdown, generated);
     await linkDatasetToReviewReport(datasetId, dbReportId, "completed");
     finishReviewJob(jobKey, job.startedAt, reportId);
-    sendJson(res, 200, {
-      ok: true,
-      id: dbReportId,
-      summary: summaryForResponse(summary),
-      report,
-      markdown,
-      reportId,
-      shareUrl,
-      svgUrl,
-      qrSvgUrl,
-      excelUrl,
-      normalizedDataUrl,
-      diagnosticsUrl,
-    });
+    sendJson(res, 200, buildGeneratedReviewResponse(dbReportId, summary, generated));
   } catch (error) {
     await failReviewJob(jobKey, error, job.reportDbId);
     await linkDatasetToReviewReport(datasetId, null, "failed", error.message);
@@ -6830,8 +9468,9 @@ async function handleSijichanReviewReport(req, res) {
   let datasetId = "";
   console.log(`[review] start ${jobKey} ${body.username || ""}`);
   try {
+    await updateReviewReportProgress(job.reportDbId, "collecting", "正在登录四季蝉并读取销售、活动、培训等业务数据。", 12);
     const summary = await runSijichanExport(body);
-    assertReviewJobNotCancelled(getActiveReviewJob(jobKey));
+    await assertReviewJobStillActive(job);
     const files = summary.datasetFiles || [];
     if (!files.some((file) => file.rowCount > 0)) {
       sendJson(res, 422, { error: "接口成功返回，但该账号/客户在当前口径无可复盘明细数据。", summary: summaryForResponse(summary) });
@@ -6839,17 +9478,22 @@ async function handleSijichanReviewReport(req, res) {
       finishReviewJob(jobKey, job.startedAt, "empty");
       return;
     }
+    await updateReviewReportProgress(job.reportDbId, "dataset_ready", "接口数据已返回，正在整理可复盘明细。", 42);
     datasetId = await saveDatasetRecord(user.id, "login", summary, summary.source || "登录获取");
-    assertReviewJobNotCancelled(getActiveReviewJob(jobKey));
-    const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary, user);
-    assertReviewJobNotCancelled(getActiveReviewJob(jobKey));
-    const dbReportId = await saveReviewReportRecord(user.id, "login", "登录获取", summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl }, { reportDbId: job.reportDbId, jobKey });
+    await assertReviewJobStillActive(job);
+    await updateReviewReportProgress(job.reportDbId, "ai_generating", "明细数据已整理完成，正在生成AI复盘报告。", 62);
+    const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary, user);
+    await assertReviewJobStillActive(job);
+    await updateReviewReportProgress(job.reportDbId, "publishing", "AI分析已完成，正在生成分享页、SVG和二维码；Excel汇总将在后台生成。", 88);
+    const generated = { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl };
+    const dbReportId = await saveReviewReportRecord(user.id, "login", "登录获取", summary, generated, { reportDbId: job.reportDbId, jobKey });
+    queueReviewWorkbookGeneration(dbReportId, summary, report, markdown, generated);
     await upsertSijichanAuthorization(user.id, body, summary, dbReportId).catch((error) => {
       console.warn(`Sijichan authorization save skipped: ${error.message}`);
     });
     await linkDatasetToReviewReport(datasetId, dbReportId, "completed");
     finishReviewJob(jobKey, job.startedAt, reportId);
-    sendJson(res, 200, { ok: true, id: dbReportId, summary: summaryForResponse(summary), report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl });
+    sendJson(res, 200, buildGeneratedReviewResponse(dbReportId, summary, generated));
   } catch (error) {
     await failReviewJob(jobKey, error, job.reportDbId);
     await linkDatasetToReviewReport(datasetId, null, "failed", error.message);
@@ -6885,8 +9529,9 @@ async function buildWeComTokenReportForUser(user, body) {
   let datasetId = "";
   console.log(`[review] start ${jobKey} ${String(body.merCode || "").trim()}`);
   try {
+    await updateReviewReportProgress(job.reportDbId, "collecting", "正在通过企微授权读取销售、活动、培训与奖励数据。", 12);
     const summary = await runSijichanTokenExport({ ...body, token });
-    assertReviewJobNotCancelled(getActiveReviewJob(jobKey));
+    await assertReviewJobStillActive(job);
     const files = summary.datasetFiles || [];
     if (!files.some((file) => file.rowCount > 0)) {
       await markReviewReportStatus(job.reportDbId, "failed", "授权token可访问接口，但当前账号/客户在当前口径无可复盘明细数据。");
@@ -6896,17 +9541,22 @@ async function buildWeComTokenReportForUser(user, body) {
       error.summary = summaryForResponse(summary);
       throw error;
     }
+    await updateReviewReportProgress(job.reportDbId, "dataset_ready", "企微授权数据已返回，正在整理可复盘明细。", 42);
     datasetId = await saveDatasetRecord(user.id, "wecom_token", summary, summary.source || "企微扫码授权");
-    assertReviewJobNotCancelled(getActiveReviewJob(jobKey));
-    const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary, user);
-    assertReviewJobNotCancelled(getActiveReviewJob(jobKey));
-    const dbReportId = await saveReviewReportRecord(user.id, "wecom_token", "企微扫码授权", summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl }, { reportDbId: job.reportDbId, jobKey });
+    await assertReviewJobStillActive(job);
+    await updateReviewReportProgress(job.reportDbId, "ai_generating", "明细数据已整理完成，正在生成AI复盘报告。", 62);
+    const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary, user);
+    await assertReviewJobStillActive(job);
+    await updateReviewReportProgress(job.reportDbId, "publishing", "AI分析已完成，正在生成分享页、SVG和二维码；Excel汇总将在后台生成。", 88);
+    const generated = { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl };
+    const dbReportId = await saveReviewReportRecord(user.id, "wecom_token", "企微扫码授权", summary, generated, { reportDbId: job.reportDbId, jobKey });
+    queueReviewWorkbookGeneration(dbReportId, summary, report, markdown, generated);
     await upsertSijichanTokenAuthorization(user.id, { ...body, token }, summary, dbReportId).catch((error) => {
       console.warn(`Sijichan token authorization save skipped: ${error.message}`);
     });
     await linkDatasetToReviewReport(datasetId, dbReportId, "completed");
     finishReviewJob(jobKey, job.startedAt, reportId);
-    return { ok: true, id: dbReportId, summary: summaryForResponse(summary), report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl };
+    return buildGeneratedReviewResponse(dbReportId, summary, generated);
   } catch (error) {
     await failReviewJob(jobKey, error, job.reportDbId);
     await linkDatasetToReviewReport(datasetId, null, "failed", error.message);
@@ -6971,7 +9621,7 @@ async function handleCreateWeComBrowserSession(req, res) {
   const body = await readJsonBody(req, 1024 * 64).catch(() => ({}));
   try {
     const session = await createWeComBrowserSession(user, body);
-    sendJson(res, 200, { ok: true, session });
+    sendJson(res, 200, { ok: true, session: getWeComBrowserSessionPublic(session) });
   } catch (error) {
     sendJson(res, 500, { error: error.message || "服务器扫码会话创建失败。" });
   }
@@ -6983,10 +9633,21 @@ async function handleCreateWeComBrowserProfileSession(req, res) {
   const body = await readJsonBody(req, 1024 * 64).catch(() => ({}));
   try {
     const session = await createWeComBrowserProfileSession(user, body);
-    sendJson(res, 200, { ok: true, session });
+    sendJson(res, 200, { ok: true, session: getWeComBrowserSessionPublic(session) });
   } catch (error) {
     sendJson(res, 500, { error: error.message || "服务器登录态检测会话创建失败。" });
   }
+}
+
+async function handleGetWeComBrowserSessionDebug(req, res, id) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const session = activeWeComBrowserSessions.get(id);
+  if (!session || (user.role !== "admin" && session.userId !== user.id)) {
+    sendJson(res, 404, { error: "服务器扫码会话不存在或已过期。" });
+    return;
+  }
+  sendJson(res, 200, { ok: true, debug: getWeComBrowserSessionDebug(session) });
 }
 
 async function handleGetWeComBrowserSession(req, res, id) {
@@ -7182,13 +9843,14 @@ async function buildWeComBrowserSessionReportForUser(user, session, body = {}) {
   let datasetId = "";
   console.log(`[review] start ${jobKey} ${String(body.merCode || session.handoff?.merCode || "").trim()}`);
   try {
+    await updateReviewReportProgress(job.reportDbId, "collecting", "服务器浏览器已接管登录，正在读取销售、活动与培训数据。", 12);
     const raw = await collectSijichanDataWithBrowserSession(session, {
       merCode: body.merCode || session.handoff?.merCode,
       merName: body.merName || session.handoff?.merName,
       source: "企微扫码服务器登录",
       asOf: body.asOf,
     });
-    assertReviewJobNotCancelled(getActiveReviewJob(jobKey));
+    await assertReviewJobStillActive(job);
     const summary = summarizeSijichanRaw(raw);
     const files = summary.datasetFiles || [];
     if (!files.some((file) => file.rowCount > 0)) {
@@ -7199,14 +9861,19 @@ async function buildWeComBrowserSessionReportForUser(user, session, body = {}) {
       error.summary = summaryForResponse(summary);
       throw error;
     }
+    await updateReviewReportProgress(job.reportDbId, "dataset_ready", "服务器浏览器数据已返回，正在整理可复盘明细。", 42);
     datasetId = await saveDatasetRecord(user.id, "wecom_browser", summary, summary.source || "企微扫码服务器登录");
-    assertReviewJobNotCancelled(getActiveReviewJob(jobKey));
-    const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary, user);
-    assertReviewJobNotCancelled(getActiveReviewJob(jobKey));
-    const dbReportId = await saveReviewReportRecord(user.id, "wecom_browser", "企微扫码服务器登录", summary, { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl }, { reportDbId: job.reportDbId, jobKey });
+    await assertReviewJobStillActive(job);
+    await updateReviewReportProgress(job.reportDbId, "ai_generating", "明细数据已整理完成，正在生成AI复盘报告。", 62);
+    const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary, user);
+    await assertReviewJobStillActive(job);
+    await updateReviewReportProgress(job.reportDbId, "publishing", "AI分析已完成，正在生成分享页、SVG和二维码；Excel汇总将在后台生成。", 88);
+    const generated = { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl };
+    const dbReportId = await saveReviewReportRecord(user.id, "wecom_browser", "企微扫码服务器登录", summary, generated, { reportDbId: job.reportDbId, jobKey });
+    queueReviewWorkbookGeneration(dbReportId, summary, report, markdown, generated);
     await linkDatasetToReviewReport(datasetId, dbReportId, "completed");
     finishReviewJob(jobKey, job.startedAt, reportId);
-    return { ok: true, id: dbReportId, summary: summaryForResponse(summary), report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, normalizedDataUrl, diagnosticsUrl };
+    return buildGeneratedReviewResponse(dbReportId, summary, generated);
   } catch (error) {
     await failReviewJob(jobKey, error, job.reportDbId);
     await linkDatasetToReviewReport(datasetId, null, "failed", error.message);
@@ -7315,8 +9982,8 @@ async function handleListMonthlyMarketing(req, res) {
   if (!user) return;
   const url = new URL(req.url, "http://localhost");
   const monthKey = url.searchParams.get("month") || monthKeyFromDate();
-  const recommendations = await listMonthlyMarketingRecommendations(user, monthKey);
-  sendJson(res, 200, { ok: true, monthKey, aggregate: aggregateMonthlyMarketingRecommendations(recommendations, monthKey) });
+  const aggregate = await getMonthlyMarketingAggregate(user, monthKey);
+  sendJson(res, 200, { ok: true, monthKey, aggregate });
 }
 
 async function handleGenerateMonthlyMarketing(req, res) {
@@ -7412,14 +10079,41 @@ async function handleSaveProfile(req, res) {
 async function handleListReports(req, res) {
   const user = await requireUser(req, res);
   if (!user) return;
-  const reports = await listReviewReports(user);
-  sendJson(res, 200, { reports });
+  const url = new URL(req.url, "http://localhost");
+  const options = parseReviewReportListOptions(url);
+  const result = await listReviewReports(user, options);
+  sendJson(res, 200, {
+    reports: result.items,
+    items: result.items,
+    total: result.total,
+    page: result.page,
+    pageSize: result.pageSize,
+  });
+}
+
+async function handleGetRunningReport(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const url = new URL(req.url, "http://localhost");
+  const sourceGroup = url.searchParams.get("sourceGroup") || "";
+  const report = await getLatestRunningReviewReport(user, sourceGroup);
+  sendJson(res, 200, { ok: true, report });
 }
 
 async function handleAdminListUsers(req, res) {
   const user = await requireAdmin(req, res);
   if (!user) return;
-  sendJson(res, 200, { users: await listAdminUsers() });
+  const url = new URL(req.url, "http://localhost");
+  const options = parseAdminUserListOptions(url);
+  const result = await listAdminUsers(options);
+  sendJson(res, 200, {
+    users: result.items,
+    items: result.items,
+    total: result.total,
+    page: result.page,
+    pageSize: result.pageSize,
+    stats: result.stats,
+  });
 }
 
 async function handleAdminUpdateUser(req, res, id) {
@@ -7442,7 +10136,70 @@ async function handleGetReport(req, res, id) {
     sendJson(res, 404, { error: "报告不存在或无权查看。" });
     return;
   }
-  sendJson(res, 200, { report });
+  sendJson(res, 200, {
+    report: {
+      ...report,
+      summary: summaryForResponse(report.summary),
+    },
+  });
+}
+
+async function handleGetReportStatus(req, res, id) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const report = await getReviewReportMeta(user, id);
+  if (!report) {
+    sendJson(res, 404, { error: "报告不存在或无权查看。" });
+    return;
+  }
+  sendJson(res, 200, {
+    ok: true,
+    report: {
+      id: report.id,
+      reportId: report.reportId,
+      status: report.status,
+      shareUrl: report.shareUrl,
+      svgUrl: report.svgUrl,
+      qrSvgUrl: report.qrSvgUrl,
+      excelUrl: report.excelUrl,
+      excelStatus: report.excelStatus,
+      excelError: report.excelError,
+      normalizedDataUrl: report.normalizedDataUrl,
+      diagnosticsUrl: report.diagnosticsUrl,
+      progressStage: report.progressStage,
+      progressText: report.progressText,
+      progressPercent: report.progressPercent,
+      errorMessage: report.errorMessage,
+      updatedAt: new Date().toISOString(),
+    },
+  });
+}
+
+async function handleListReportStatuses(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const url = new URL(req.url, "http://localhost");
+  const ids = (url.searchParams.get("ids") || "")
+    .split(",")
+    .map((id) => decodeURIComponent(id).trim())
+    .filter(Boolean);
+  const reports = await listReviewReportStatuses(user, ids);
+  sendJson(res, 200, { ok: true, reports, items: reports });
+}
+
+async function handleGetReviewJobEvents(req, res, id) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const result = await listReviewJobEvents(user, id);
+  if (!result) {
+    sendJson(res, 404, { error: "报告不存在或无权查看任务流水。" });
+    return;
+  }
+  sendJson(res, 200, {
+    ok: true,
+    report: result.report,
+    events: result.events,
+  });
 }
 
 async function handleCancelReviewJob(req, res, id) {
@@ -7464,6 +10221,7 @@ async function handleCancelReviewJob(req, res, id) {
   }
   const updated = await updateReviewReportByUser(user, id, {
     status: "cancelled",
+    cancelRequested: true,
     errorMessage: "用户已取消该复盘任务。",
     finishNow: true,
   });
@@ -7509,7 +10267,51 @@ async function handleSubmitCapabilityTest(req, res) {
 async function handleListCapabilityTests(req, res) {
   const user = await requireAdmin(req, res);
   if (!user) return;
-  sendJson(res, 200, { submissions: await listCapabilitySubmissions() });
+  const url = new URL(req.url, "http://localhost");
+  const options = parseCapabilitySubmissionListOptions(url);
+  const result = await listCapabilitySubmissions(options);
+  sendJson(res, 200, {
+    submissions: result.items,
+    items: result.items,
+    total: result.total,
+    page: result.page,
+    pageSize: result.pageSize,
+  });
+}
+
+async function handleGetCapabilityTest(req, res, id) {
+  const user = await requireAdmin(req, res);
+  if (!user) return;
+  const submission = await getCapabilitySubmission(id);
+  if (!submission) {
+    sendJson(res, 404, { error: "测评提交记录不存在。" });
+    return;
+  }
+  sendJson(res, 200, { ok: true, submission });
+}
+
+function streamStaticFile(res, filePath, notFoundMessage = "Not found") {
+  fs.stat(filePath, (statError, stats) => {
+    if (statError || !stats.isFile()) {
+      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end(notFoundMessage);
+      return;
+    }
+    const stream = fs.createReadStream(filePath);
+    stream.on("error", (error) => {
+      if (!res.headersSent) {
+        res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end("File stream error");
+      } else {
+        res.destroy(error);
+      }
+    });
+    res.writeHead(200, {
+      "Content-Type": mime[path.extname(filePath).toLowerCase()] || "application/octet-stream",
+      "Content-Length": stats.size,
+    });
+    stream.pipe(res);
+  });
 }
 
 function serveStatic(req, res) {
@@ -7526,15 +10328,7 @@ function serveStatic(req, res) {
     if (fs.existsSync(reportPath) && fs.statSync(reportPath).isDirectory()) {
       reportPath = path.join(reportPath, "index.html");
     }
-    fs.readFile(reportPath, (err, data) => {
-      if (err) {
-        res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-        res.end("Report not found");
-        return;
-      }
-      res.writeHead(200, { "Content-Type": mime[path.extname(reportPath).toLowerCase()] || "application/octet-stream" });
-      res.end(data);
-    });
+    streamStaticFile(res, reportPath, "Report not found");
     return;
   }
 
@@ -7552,15 +10346,7 @@ function serveStatic(req, res) {
     filePath = path.join(filePath, "index.html");
   }
 
-  fs.readFile(filePath, (err, data) => {
-    if (err) {
-      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-      res.end("Not found");
-      return;
-    }
-    res.writeHead(200, { "Content-Type": mime[path.extname(filePath).toLowerCase()] || "application/octet-stream" });
-    res.end(data);
-  });
+  streamStaticFile(res, filePath, "Not found");
 }
 
 function createServer() {
@@ -7592,19 +10378,29 @@ function createServer() {
       if (url.pathname === "/api/monthly-marketing-recommendations" && req.method === "GET") return await handleListMonthlyMarketing(req, res);
       if (url.pathname === "/api/monthly-marketing-recommendations/generate" && req.method === "POST") return await handleGenerateMonthlyMarketing(req, res);
       if (url.pathname === "/api/review-reports" && req.method === "GET") return await handleListReports(req, res);
+      if (url.pathname === "/api/review-reports/running" && req.method === "GET") return await handleGetRunningReport(req, res);
       if (url.pathname === "/api/admin/users" && req.method === "GET") return await handleAdminListUsers(req, res);
       if (url.pathname === "/api/capability-test-submissions" && req.method === "POST") return await handleSubmitCapabilityTest(req, res);
       if (url.pathname === "/api/capability-test-submissions" && req.method === "GET") return await handleListCapabilityTests(req, res);
+      const capabilitySubmissionMatch = url.pathname.match(/^\/api\/capability-test-submissions\/([^/]+)$/);
+      if (capabilitySubmissionMatch && req.method === "GET") return await handleGetCapabilityTest(req, res, decodeURIComponent(capabilitySubmissionMatch[1]));
       const adminUserMatch = url.pathname.match(/^\/api\/admin\/users\/([^/]+)$/);
       if (adminUserMatch && req.method === "PATCH") return await handleAdminUpdateUser(req, res, decodeURIComponent(adminUserMatch[1]));
       const handoffMatch = url.pathname.match(/^\/api\/wecom-handoff\/([^/]+)$/);
       if (handoffMatch && req.method === "GET") return await handleGetWeComHandoff(req, res, decodeURIComponent(handoffMatch[1]));
       const browserSessionScreenshotMatch = url.pathname.match(/^\/api\/wecom-browser-session\/([^/]+)\/screenshot$/);
       if (browserSessionScreenshotMatch && req.method === "GET") return await handleGetWeComBrowserSessionScreenshot(req, res, decodeURIComponent(browserSessionScreenshotMatch[1]));
+      const browserSessionDebugMatch = url.pathname.match(/^\/api\/wecom-browser-session\/([^/]+)\/debug$/);
+      if (browserSessionDebugMatch && req.method === "GET") return await handleGetWeComBrowserSessionDebug(req, res, decodeURIComponent(browserSessionDebugMatch[1]));
       const browserSessionFillCodeMatch = url.pathname.match(/^\/api\/wecom-browser-session\/([^/]+)\/merchant-code$/);
       if (browserSessionFillCodeMatch && req.method === "POST") return await handleFillWeComBrowserMerchantCode(req, res, decodeURIComponent(browserSessionFillCodeMatch[1]));
       const browserSessionMatch = url.pathname.match(/^\/api\/wecom-browser-session\/([^/]+)$/);
       if (browserSessionMatch && req.method === "GET") return await handleGetWeComBrowserSession(req, res, decodeURIComponent(browserSessionMatch[1]));
+      const reportEventsMatch = url.pathname.match(/^\/api\/review-reports\/([^/]+)\/events$/);
+      if (reportEventsMatch && req.method === "GET") return await handleGetReviewJobEvents(req, res, decodeURIComponent(reportEventsMatch[1]));
+      if (url.pathname === "/api/review-reports/status" && req.method === "GET") return await handleListReportStatuses(req, res);
+      const reportStatusMatch = url.pathname.match(/^\/api\/review-reports\/([^/]+)\/status$/);
+      if (reportStatusMatch && req.method === "GET") return await handleGetReportStatus(req, res, decodeURIComponent(reportStatusMatch[1]));
       const reportMatch = url.pathname.match(/^\/api\/review-reports\/([^/]+)$/);
       if (reportMatch && req.method === "GET") return await handleGetReport(req, res, decodeURIComponent(reportMatch[1]));
       const cancelReviewJobMatch = url.pathname.match(/^\/api\/review-reports\/([^/]+)\/cancel$/);
@@ -7635,6 +10431,7 @@ function listenOn(portIndex = 0) {
     } catch (error) {
       console.warn(`Preview URL file write skipped: ${error.message}`);
     }
+    startReviewMaintenanceLoop();
     console.log(`Preview: http://localhost:${port}/?v=preview-server`);
   });
 }
@@ -7650,6 +10447,7 @@ function installShutdownHandlers() {
     if (shutdownStarted) return;
     shutdownStarted = true;
     try {
+      stopReviewMaintenanceLoop();
       await closeActiveWeComBrowserSessions();
     } finally {
       process.exit(signal === "SIGTERM" ? 0 : 1);
@@ -7659,31 +10457,39 @@ function installShutdownHandlers() {
   process.once("SIGINT", () => shutdown("SIGINT"));
 }
 
-installShutdownHandlers();
-
-if (process.env.REFRESH_ONLY === "true") {
-  refreshExistingReportArtifacts(process.env.REFRESH_REPORT_ID || "")
-    .then(() => process.exit(0))
+if (!isMainThread && workerData?.type === "review-workbook") {
+  handleReviewWorkbookWorker()
+    .then(() => parentPort?.postMessage({ ok: true }))
     .catch((error) => {
-      console.error(`Refresh existing reports failed: ${error.message}`);
-      process.exit(1);
-    });
-} else if (process.env.MONTHLY_MARKETING_ONLY === "true") {
-  generateMonthlyMarketingBatch({ id: "system", role: "admin" }, process.env.MONTHLY_MARKETING_MONTH || monthKeyFromDate())
-    .then((results) => {
-      console.log(JSON.stringify({ ok: true, total: results.length, success: results.filter((item) => item.ok).length, failed: results.filter((item) => !item.ok).length }, null, 2));
-      process.exit(0);
-    })
-    .catch((error) => {
-      console.error(`Monthly marketing generation failed: ${error.message}`);
-      process.exit(1);
+      parentPort?.postMessage({ ok: false, error: error?.message || "Excel汇总生成失败。" });
+      process.exitCode = 1;
     });
 } else {
-  if (process.env.REFRESH_EXISTING_REPORTS === "true" || process.env.REFRESH_REPORT_ID) {
-    refreshExistingReportArtifacts(process.env.REFRESH_REPORT_ID || "").catch((error) => {
-      console.warn(`Refresh existing reports failed: ${error.message}`);
-    });
-  }
-  listenOn();
-}
+  installShutdownHandlers();
 
+  if (process.env.REFRESH_ONLY === "true") {
+    refreshExistingReportArtifacts(process.env.REFRESH_REPORT_ID || "")
+      .then(() => process.exit(0))
+      .catch((error) => {
+        console.error(`Refresh existing reports failed: ${error.message}`);
+        process.exit(1);
+      });
+  } else if (process.env.MONTHLY_MARKETING_ONLY === "true") {
+    generateMonthlyMarketingBatch({ id: "system", role: "admin" }, process.env.MONTHLY_MARKETING_MONTH || monthKeyFromDate())
+      .then((results) => {
+        console.log(JSON.stringify({ ok: true, total: results.length, success: results.filter((item) => item.ok).length, failed: results.filter((item) => !item.ok).length }, null, 2));
+        process.exit(0);
+      })
+      .catch((error) => {
+        console.error(`Monthly marketing generation failed: ${error.message}`);
+        process.exit(1);
+      });
+  } else {
+    if (process.env.REFRESH_EXISTING_REPORTS === "true" || process.env.REFRESH_REPORT_ID) {
+      refreshExistingReportArtifacts(process.env.REFRESH_REPORT_ID || "").catch((error) => {
+        console.warn(`Refresh existing reports failed: ${error.message}`);
+      });
+    }
+    listenOn();
+  }
+}

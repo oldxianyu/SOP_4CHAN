@@ -1,0 +1,197 @@
+{
+  "rows": [
+    {
+      "key": 1,
+      "index": 1,
+      "project": "汇付账户开通",
+      "property": "一次性",
+      "propertyColor": "gold",
+      "content": "填写两份协议，用于申请开通汇付账户。",
+      "tasks": [
+        "《汇付-斗拱平台综合支付协议》",
+        "《药店与店员激励协议》"
+      ],
+      "notes": {
+        "kind": "group",
+        "children": [
+          {
+            "kind": "heading",
+            "text": "斗拱平台协议："
+          },
+          {
+            "kind": "list",
+            "items": [
+              "02斗拱平台协议：打印两份。",
+              "第三页合同日期：__RANGE__。",
+              "盖章、签字，日期手写为__TODAY__。",
+              "额外侧面加盖骑缝章，最后扫描成A4大小的PDF文件。"
+            ]
+          },
+          {
+            "kind": "heading",
+            "text": "药店与店员激励协议："
+          },
+          {
+            "kind": "list",
+            "items": [
+              "03药店与店员激励协议：打印一份。",
+              "签字、盖章，乙方按手印，日期手写为__TODAY__。",
+              "最后扫描成A4大小的PDF文件。"
+            ]
+          },
+          {
+            "kind": "paragraph",
+            "text": "按文档说明操作。法人和联系人身份证可以直接上传身份证原件；如使用复印件，需要盖公章。"
+          }
+        ]
+      },
+      "materialItems": [
+        {
+          "label": "斗拱平台综合支付服务协议",
+          "href": "协议文件/02%20斗拱平台综合支付服务协议（四季蝉）20260113.docx"
+        },
+        {
+          "label": "药店与店员激励协议",
+          "href": "协议文件/03%20药店与店员激励协议.doc"
+        }
+      ],
+      "people": [
+        "财务",
+        "信息"
+      ]
+    },
+    {
+      "key": 2,
+      "index": 2,
+      "project": "基础信息维护",
+      "property": "一次性",
+      "propertyColor": "gold",
+      "content": "维护员工信息、门店信息。",
+      "tasks": [
+        "Excel表格维护至新零售后台。"
+      ],
+      "notes": {
+        "kind": "plain",
+        "text": "暂无"
+      },
+      "materialItems": [
+        {
+          "label": "门店地址批量更新模板",
+          "href": "协议文件/门店地址批量更新模板.xlsx"
+        },
+        {
+          "label": "员工账号批量更新模板",
+          "href": "协议文件/员工账号批量更新模板.xlsx"
+        }
+      ],
+      "people": [
+        "信息"
+      ]
+    },
+    {
+      "key": 3,
+      "index": 3,
+      "project": "工业信息收集",
+      "property": "及时更新",
+      "propertyColor": "cyan",
+      "content": "收集厂家信息，开通厂家账号，用于充值及建活动。",
+      "tasks": [
+        "按模板填写《四季蝉供应商信息收集表》。"
+      ],
+      "notes": {
+        "kind": "plain",
+        "text": "暂无"
+      },
+      "materialItems": [
+        {
+          "label": "四季蝉厂家&品种政策收集表",
+          "href": "协议文件/四季蝉厂家%26品种政策收集表.xlsx"
+        }
+      ],
+      "people": [
+        "运营",
+        "采购"
+      ]
+    },
+    {
+      "key": 4,
+      "index": 4,
+      "project": "活动商品创建",
+      "property": "每月更新",
+      "propertyColor": "cyan",
+      "content": "确认活动品种和活动政策。",
+      "tasks": [
+        "按模板填写《品种政策收集模板表》。"
+      ],
+      "notes": {
+        "kind": "plain",
+        "text": "暂无"
+      },
+      "materialItems": [],
+      "people": [
+        "运营",
+        "采购"
+      ]
+    },
+    {
+      "key": 5,
+      "index": 5,
+      "project": "操作培训",
+      "property": "一次性",
+      "propertyColor": "gold",
+      "content": "连锁培训。",
+      "tasks": [
+        "参与在线会议。"
+      ],
+      "notes": {
+        "kind": "plain",
+        "text": "暂无"
+      },
+      "materialItems": [],
+      "people": [
+        "运营",
+        "采购",
+        "财务",
+        "信息"
+      ]
+    },
+    {
+      "key": 6,
+      "index": 6,
+      "project": "订单测试",
+      "property": "一次性",
+      "propertyColor": "gold",
+      "content": "完成正向、逆向订单的奖励生成收回测试。",
+      "tasks": [
+        "零售测试。"
+      ],
+      "notes": {
+        "kind": "plain",
+        "text": "暂无"
+      },
+      "materialItems": [],
+      "people": [
+        "信息"
+      ]
+    },
+    {
+      "key": 7,
+      "index": 7,
+      "project": "店员培训上线",
+      "property": "一次性",
+      "propertyColor": "gold",
+      "content": "员工手机端培训：登录、认证；如何确认销售与奖励获得情况。",
+      "tasks": [
+        "发送视频操作说明，可给店员集中线上培训。"
+      ],
+      "notes": {
+        "kind": "plain",
+        "text": "暂无"
+      },
+      "materialItems": [],
+      "people": [
+        "店员"
+      ]
+    }
+  ]
+}
