@@ -64,6 +64,18 @@ https://sijichan.top
 - 分享产物进一步瘦身：`report.json` 只保留报告、链接和轻量摘要，完整接口诊断与标准化数据拆到独立 JSON 文件，旧本地报告产物也已刷新为轻量结构。
 - 新增自动检查脚本：`npm run check` 会同时执行语法检查、架构边界断言和 HTTP 烟测，防止历史报告列表、大对象载荷、分享产物和 Excel 生成链路回退。
 
+## 本次架构优化改了什么
+
+这次优化的核心目标是把“前端缓存大数据、Node 主线程扛重活、历史列表加载完整报告”的压力拆开，让门户更像一个可长期运行的生产系统。
+
+- **前端瘦身**：把首页、行事历、激励玩法、选品思路、当月营销推荐等静态大内容拆到 `content/*.json`，前端按需加载并缓存去重；页签切换时销毁非活跃页面树，历史报告改为分页展示。
+- **历史报告轻量化**：历史列表只读取 `review_reports` 主表和轻量视图，不再返回完整 `summary_json/report_json/markdown`；用户点进详情时才读取 `review_report_payloads`。
+- **报告产物轻量化**：分享目录里的 `report.json` 只保留报告索引、链接和轻量摘要；接口诊断、标准化数据拆成独立 JSON，避免打开分享页时把大对象一次性加载进浏览器。
+- **Excel 后台生成**：AI 报告和分享页优先生成并返回，Excel 汇总交给 Worker 线程后台处理；Worker 只读取裁剪后的 `workbook-input.json`，生成完成后更新状态并清理临时输入。
+- **数据库承担更多工作**：生产库使用本地 PostgreSQL，历史报告采用“轻量主表 + 完整载荷表”，并通过 SQL 视图、函数和索引承接列表查询、登录审计、载荷完整性检查和卡住任务清理。
+- **运行检查自动化**：新增 `scripts/assert-architecture.js`、`scripts/smoke-test.js`、`scripts/prepare-release.js`，`npm run check` 会同时检查语法、架构边界和 HTTP 访问链路。
+- **发布更稳**：新增白名单发布包脚本，部署时明确包含 `content/`、`links/`、`oms/`、`assets/`、`vendor/`、`scripts/`，并排除 `.server`、备份、录屏帧、企微调试图和 `node_modules`。
+
 ## AI 复盘数据来源
 
 AI 复盘报告支持两种来源。
@@ -141,6 +153,39 @@ npm run monthly:marketing
 这些链接会按当前访问域名拼接。例如通过 `https://sijichan.top` 访问时，复制和下载链接都会使用 `https://sijichan.top/reports/...`。
 
 ## 技术架构
+
+```mermaid
+flowchart TB
+  User["客户 / 运营 / 管理员<br/>浏览器、手机、微信"] --> Tunnel["Cloudflare Tunnel<br/>https://sijichan.top"]
+  Tunnel --> App["Node.js 门户服务<br/>preview-server.js :8765"]
+
+  App --> UI["React 单页前端<br/>index.html + Ant Design"]
+  UI --> Content["content/*.json<br/>首页、行事历、玩法、选品、当月推荐"]
+  UI --> Links["友链资料<br/>links/、oms/"]
+
+  App --> Auth["认证与权限<br/>Session Cookie + 用户角色"]
+  App --> Admin["系统维护<br/>AI配置、用户管理、测评数据、复盘AI指令"]
+  App --> Review["AI复盘 API<br/>Excel上传、登录获取、企微授权"]
+  App --> History["历史报告 API<br/>分页列表、详情按需加载、任务状态"]
+
+  Review --> ExcelParse["Excel 模板解析<br/>xlsx 标准页签"]
+  Review --> Sijichan["四季蝉取数器<br/>merchants.hydee.cn"]
+  Review --> AI["AI 调用层<br/>DeepSeek / OpenAI Compatible"]
+  Review --> Worker["Excel Worker<br/>后台生成汇总工作簿"]
+
+  AI --> Artifact["报告产物生成<br/>HTML、SVG、二维码、轻量 report.json"]
+  Worker --> Artifact
+
+  App --> PG[("本地 PostgreSQL<br/>用户、AI配置、报告主表、报告载荷、测评、营销推荐")]
+  History --> PG
+  Admin --> PG
+  Artifact --> FS[".server/reports/{reportId}/<br/>分享页、长图、二维码、Excel、诊断JSON"]
+
+  Sijichan -.-> Review
+  PG -.-> History
+  TokenNote["临时 token / 授权取数<br/>不写入 GitHub 和报告产物"] -.-> Sijichan
+  PayloadNote["轻量主表 + 大对象载荷表<br/>列表快，详情按需读"] -.-> PG
+```
 
 - **前端**：单文件 React 应用，入口为 `index.html`。
 - **组件风格**：Ant Design 组件 + Ant Design/X 风格，整体偏蓝紫、清爽、适合经营看板和客户演示。
