@@ -89,7 +89,7 @@ const defaultReviewPromptInstruction = [
   "固定业务口径：AAA品种是销售额、毛利额、客流量都进入核心贡献区间的主力赚钱品种。",
   "四季蝉不是单纯红包工具，而是把厂家、连锁总部、门店店员、顾客连接起来，围绕重点品完成选品、培训、激励、销售、提现、统计、复盘的数字化运营平台。",
   "不要加入与客户数据无关的营销节点、季节场景或泛化品类建议。",
-  "请关注：品种增长/下滑、活动商品销售与奖励闭环、激励方式使用/未使用价值、店员提现参与、厂家晒单打赏、下一步动作。",
+  "请关注：品种增长/下滑、上月与去年同月同比、近半年与去年同期同比、活动商品销售与奖励闭环、激励方式使用/未使用价值、店员提现参与、厂家晒单打赏、下一步动作。",
   "新增复盘目标：通过数据证明四季蝉价值，引导客户持续使用。必须使用 operationInsights 中的健康度、价值证明点和建议动作，但不要设置或输出独立风险模块。",
   "请明确输出：1）客户继续使用四季蝉的价值证据；2）当前运营中需要补强的环节；3）下月应推动客户多用哪些模块或玩法；4）总部、门店、厂家三方各自的跟进动作。",
   "报告面向中国医药连锁客户阅读，所有可见文字必须使用中文。不要在报告正文中出现 role、actions、bullets、headquarters、stores、factories 等英文键名；下一步动作请写成“总部：……”“门店：……”“厂家：……”这类中文句子。",
@@ -5703,9 +5703,17 @@ function prepareReviewWorkbookInput(summary = {}, report = {}) {
         ...(raw.sales?.lastMonth_vs_priorTwoMonths || {}),
         rows: capWorkbookInputRows(raw.sales?.lastMonth_vs_priorTwoMonths?.rows || [], "销售汇总-上月_vs_前两月"),
       },
+      lastMonth_vs_sameMonthLastYear: {
+        ...(raw.sales?.lastMonth_vs_sameMonthLastYear || {}),
+        rows: capWorkbookInputRows(raw.sales?.lastMonth_vs_sameMonthLastYear?.rows || [], "销售汇总-上月_vs_去年同月"),
+      },
       nearHalf_vs_previousHalf: {
         ...(raw.sales?.nearHalf_vs_previousHalf || {}),
         rows: capWorkbookInputRows(raw.sales?.nearHalf_vs_previousHalf?.rows || [], "销售汇总-近半年_vs_上期"),
+      },
+      nearHalf_vs_sameNearHalfLastYear: {
+        ...(raw.sales?.nearHalf_vs_sameNearHalfLastYear || {}),
+        rows: capWorkbookInputRows(raw.sales?.nearHalf_vs_sameNearHalfLastYear?.rows || [], "销售汇总-近半年_vs_去年同期"),
       },
     },
     activitySummary: {
@@ -5716,6 +5724,18 @@ function prepareReviewWorkbookInput(summary = {}, report = {}) {
       previousMonth: {
         ...(raw.activitySummary?.previousMonth || {}),
         rows: capWorkbookInputRows(raw.activitySummary?.previousMonth?.rows || [], "活动汇总-上上月"),
+      },
+      sameMonthLastYear: {
+        ...(raw.activitySummary?.sameMonthLastYear || {}),
+        rows: capWorkbookInputRows(raw.activitySummary?.sameMonthLastYear?.rows || [], "活动汇总-去年同月"),
+      },
+      nearHalf: {
+        ...(raw.activitySummary?.nearHalf || {}),
+        rows: capWorkbookInputRows(raw.activitySummary?.nearHalf?.rows || [], "活动汇总-近半年"),
+      },
+      sameNearHalfLastYear: {
+        ...(raw.activitySummary?.sameNearHalfLastYear || {}),
+        rows: capWorkbookInputRows(raw.activitySummary?.sameNearHalfLastYear?.rows || [], "活动汇总-去年同期近半年"),
       },
     },
     activityCatalog: {
@@ -5913,8 +5933,10 @@ function workbookSheets(summary, report) {
       { 项目: "客户编码", 内容: summary.requestInfo?.merCode || raw.meta?.merCode || "" },
       { 项目: "上月", 内容: `${windows.lastMonth?.start || ""} 至 ${windows.lastMonth?.end || ""}` },
       { 项目: "上上月", 内容: `${windows.previousMonth?.start || ""} 至 ${windows.previousMonth?.end || ""}` },
+      { 项目: "去年同月", 内容: `${windows.sameMonthLastYear?.start || ""} 至 ${windows.sameMonthLastYear?.end || ""}` },
       { 项目: "前两月对比期", 内容: `${windows.priorTwoMonths?.start || ""} 至 ${windows.priorTwoMonths?.end || ""}` },
       { 项目: "近半年", 内容: `${windows.nearHalf?.start || ""} 至 ${windows.nearHalf?.end || ""}` },
+      { 项目: "去年同期近半年", 内容: `${windows.sameNearHalfLastYear?.start || ""} 至 ${windows.sameNearHalfLastYear?.end || ""}` },
       { 项目: "上期半年", 内容: `${windows.previousHalf?.start || ""} 至 ${windows.previousHalf?.end || ""}` },
     ] },
     { name: "接口诊断", rows: (summary.interfaceDiagnostics || []).map((item) => ({
@@ -5938,8 +5960,12 @@ function workbookSheets(summary, report) {
     { name: "奖励发放明细", rows: rewardDistributionRows.length ? capWorkbookRows(rewardDistributionRows, "奖励发放明细") : [{ 类型: "奖励发放", 说明: "当前口径未识别到奖励发放明细或指标，请查看接口诊断。" }] },
     { name: "员工豆豆账户与提现", rows: employeeAccountRows.length ? capWorkbookRows(employeeAccountRows, "员工豆豆账户与提现") : [{ 类型: "员工收益闭环", 说明: "当前口径未识别到员工账户、提现、核销或结算数据，请查看接口诊断。" }] },
     { name: "销售汇总-上月_vs_前两月", rows: capWorkbookRows(raw.sales?.lastMonth_vs_priorTwoMonths?.rows || [], "销售汇总-上月_vs_前两月") },
+    { name: "销售汇总-上月_vs_去年同月", rows: capWorkbookRows(raw.sales?.lastMonth_vs_sameMonthLastYear?.rows || [], "销售汇总-上月_vs_去年同月") },
     { name: "销售汇总-近半年_vs_上期", rows: capWorkbookRows(raw.sales?.nearHalf_vs_previousHalf?.rows || [], "销售汇总-近半年_vs_上期") },
+    { name: "销售汇总-近半年_vs_去年同期", rows: capWorkbookRows(raw.sales?.nearHalf_vs_sameNearHalfLastYear?.rows || [], "销售汇总-近半年_vs_去年同期") },
     { name: "活动汇总-5月_vs_4月", rows: capWorkbookRows([...(raw.activitySummary?.lastMonth?.rows || []), ...(raw.activitySummary?.previousMonth?.rows || [])], "活动汇总-5月_vs_4月") },
+    { name: "活动汇总-上月_vs_去年同月", rows: capWorkbookRows([...(raw.activitySummary?.lastMonth?.rows || []), ...(raw.activitySummary?.sameMonthLastYear?.rows || [])], "活动汇总-上月_vs_去年同月") },
+    { name: "活动汇总-近半年_vs_去年同期", rows: capWorkbookRows([...(raw.activitySummary?.nearHalf?.rows || []), ...(raw.activitySummary?.sameNearHalfLastYear?.rows || [])], "活动汇总-近半年_vs_去年同期") },
     { name: "培训情况", rows: capWorkbookRows(trainingRows, "培训情况") },
     { name: "厂家打赏", rows: manufacturerTipRows.length ? capWorkbookRows(manufacturerTipRows, "厂家打赏") : [{ 类型: "厂家打赏汇总", 指标: "当前口径厂家打赏", 指标值: 0, 说明: "接口成功返回，但无打赏金额和明细记录" }] },
   ];
@@ -6438,17 +6464,25 @@ function monthWindow(date) {
   };
 }
 
-function buildSijichanWindows(asOfText = "2026-06-06") {
-  const asOf = new Date(`${asOfText || "2026-06-06"}T12:00:00`);
+function currentSijichanAsOfDate() {
+  return dateOnly(new Date());
+}
+
+function buildSijichanWindows(asOfText = "") {
+  const asOf = new Date(`${asOfText || currentSijichanAsOfDate()}T12:00:00`);
   const last = addMonths(asOf, -1);
   const prev = addMonths(asOf, -2);
   const priorTwoStart = addMonths(asOf, -3);
   const nearStart = addMonths(asOf, -6);
   const prevHalfStart = addMonths(asOf, -12);
   const prevHalfEnd = addMonths(asOf, -7);
+  const sameMonthLastYear = addMonths(last, -12);
+  const sameNearHalfStart = addMonths(nearStart, -12);
+  const sameNearHalfEnd = addMonths(last, -12);
   return {
     lastMonth: { label: "上月", ...monthWindow(last) },
     previousMonth: { label: "上上月", ...monthWindow(prev) },
+    sameMonthLastYear: { label: "去年同月", ...monthWindow(sameMonthLastYear) },
     priorTwoMonths: {
       label: "前两月对比期",
       start: atStart(dateOnly(monthStart(priorTwoStart))),
@@ -6458,6 +6492,11 @@ function buildSijichanWindows(asOfText = "2026-06-06") {
       label: "近半年",
       start: atStart(dateOnly(monthStart(nearStart))),
       end: atEnd(dateOnly(monthEnd(last))),
+    },
+    sameNearHalfLastYear: {
+      label: "去年同期近半年",
+      start: atStart(dateOnly(monthStart(sameNearHalfStart))),
+      end: atEnd(dateOnly(monthEnd(sameNearHalfEnd))),
     },
     previousHalf: {
       label: "上期半年",
@@ -8804,15 +8843,20 @@ async function collectSijichanDataWithBrowserSession(session, { merCode: inputMe
 }
 
 async function collectSijichanDataWithClient({ client, diagnostics, merCode = "", merName = "", loginUserName = "", loginSystem = "", source = "企微扫码授权", asOf = "" } = {}) {
-  const windows = buildSijichanWindows(asOf || "2026-06-06");
+  const effectiveAsOf = asOf || currentSijichanAsOfDate();
+  const windows = buildSijichanWindows(effectiveAsOf);
   const withMerCode = (payload = {}) => (merCode ? { merCode, ...payload } : payload);
 
   const salesPeriods = {
     lastMonth_vs_priorTwoMonths: [windows.lastMonth, windows.priorTwoMonths],
+    lastMonth_vs_sameMonthLastYear: [windows.lastMonth, windows.sameMonthLastYear],
     previousMonth: [windows.previousMonth, null],
+    sameMonthLastYear: [windows.sameMonthLastYear, null],
     priorTwoMonths: [windows.priorTwoMonths, null],
     nearHalf_vs_previousHalf: [windows.nearHalf, windows.previousHalf],
+    nearHalf_vs_sameNearHalfLastYear: [windows.nearHalf, windows.sameNearHalfLastYear],
     previousHalf: [windows.previousHalf, null],
+    sameNearHalfLastYear: [windows.sameNearHalfLastYear, null],
   };
   const sales = {};
   for (const [name, [window, comparison]] of Object.entries(salesPeriods)) {
@@ -8848,6 +8892,7 @@ async function collectSijichanDataWithClient({ client, diagnostics, merCode = ""
       merCode,
       merName,
       generatedAt: new Date().toISOString(),
+      asOf: effectiveAsOf,
       windows,
       loginUserName,
       loginSystem,
@@ -8877,9 +8922,17 @@ async function collectSijichanDataWithClient({ client, diagnostics, merCode = ""
         rows: await client.paged("活动汇总-4月", "imActivityReward/summary/page", activityBody(windows.previousMonth)),
         sum: await client.post("活动汇总合计-4月", "imActivityReward/summary/sum", activityBody(windows.previousMonth)),
       },
+      sameMonthLastYear: {
+        rows: await client.paged("活动汇总-去年同月", "imActivityReward/summary/page", activityBody(windows.sameMonthLastYear)),
+        sum: await client.post("活动汇总合计-去年同月", "imActivityReward/summary/sum", activityBody(windows.sameMonthLastYear)),
+      },
       nearHalf: {
         rows: await client.paged("活动汇总-近半年", "imActivityReward/summary/page", activityBody(windows.nearHalf)),
         sum: await client.post("活动汇总合计-近半年", "imActivityReward/summary/sum", activityBody(windows.nearHalf)),
+      },
+      sameNearHalfLastYear: {
+        rows: await client.paged("活动汇总-去年同期近半年", "imActivityReward/summary/page", activityBody(windows.sameNearHalfLastYear)),
+        sum: await client.post("活动汇总合计-去年同期近半年", "imActivityReward/summary/sum", activityBody(windows.sameNearHalfLastYear)),
       },
     },
     training: {
@@ -8918,15 +8971,21 @@ function withDataMeta(rows, fileName, dataPath) {
 function summarizeSijichanRaw(raw) {
   const salesRows = [
     ...withDataMeta(rowsFromPaged(raw.sales.lastMonth_vs_priorTwoMonths.products), "sales.json", "lastMonth_vs_priorTwoMonths.products"),
+    ...withDataMeta(rowsFromPaged(raw.sales.lastMonth_vs_sameMonthLastYear?.products), "sales.json", "lastMonth_vs_sameMonthLastYear.products"),
     ...withDataMeta(rowsFromPaged(raw.sales.previousMonth.products), "sales.json", "previousMonth.products"),
+    ...withDataMeta(rowsFromPaged(raw.sales.sameMonthLastYear?.products), "sales.json", "sameMonthLastYear.products"),
     ...withDataMeta(rowsFromPaged(raw.sales.priorTwoMonths.products), "sales.json", "priorTwoMonths.products"),
     ...withDataMeta(rowsFromPaged(raw.sales.nearHalf_vs_previousHalf.products), "sales.json", "nearHalf_vs_previousHalf.products"),
+    ...withDataMeta(rowsFromPaged(raw.sales.nearHalf_vs_sameNearHalfLastYear?.products), "sales.json", "nearHalf_vs_sameNearHalfLastYear.products"),
     ...withDataMeta(rowsFromPaged(raw.sales.previousHalf.products), "sales.json", "previousHalf.products"),
+    ...withDataMeta(rowsFromPaged(raw.sales.sameNearHalfLastYear?.products), "sales.json", "sameNearHalfLastYear.products"),
   ];
   const activityRows = [
     ...withDataMeta(rowsFromPaged(raw.activitySummary.lastMonth.rows), "activity_summary.json", "lastMonth.rows"),
     ...withDataMeta(rowsFromPaged(raw.activitySummary.previousMonth.rows), "activity_summary.json", "previousMonth.rows"),
+    ...withDataMeta(rowsFromPaged(raw.activitySummary.sameMonthLastYear?.rows), "activity_summary.json", "sameMonthLastYear.rows"),
     ...withDataMeta(rowsFromPaged(raw.activitySummary.nearHalf.rows), "activity_summary.json", "nearHalf.rows"),
+    ...withDataMeta(rowsFromPaged(raw.activitySummary.sameNearHalfLastYear?.rows), "activity_summary.json", "sameNearHalfLastYear.rows"),
   ];
   const activityCatalogRows = withDataMeta(rowsFromPaged(raw.activityCatalog?.joined), "activity_catalog.json", "joined");
   const rewardRows = withDataMeta(rowsFromPaged(raw.rewardStatistics.nearHalf.rows), "reward_statistics.json", "nearHalf.rows");
@@ -9018,7 +9077,7 @@ function summarizeSijichanRaw(raw) {
   return {
     source: raw.meta.source || "登录获取",
     requestInfo: {
-      asOf: "2026-06-06",
+      asOf: raw.meta.asOf || currentSijichanAsOfDate(),
       merCode: raw.meta.merCode || "",
       merName: raw.meta.merName || "",
     },
