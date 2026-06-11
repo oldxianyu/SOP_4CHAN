@@ -4390,6 +4390,15 @@ function uniqueCountCandidates(rows, candidates) {
   return values.size;
 }
 
+function uniqueValuesByCandidates(rows, candidates) {
+  const values = new Set();
+  for (const row of rows || []) {
+    const value = pickField(row, candidates);
+    if (hasValue(value)) values.add(String(value).trim());
+  }
+  return values;
+}
+
 function countRowsWithPositiveCandidate(rows, candidates) {
   return (rows || []).filter((row) => candidates.some((candidate) => toNumber(row?.[candidate]) > 0)).length;
 }
@@ -5997,6 +6006,21 @@ function workbookSheets(summary, report) {
     提现参与率: summary.employeeParticipationComparison?.withdrawParticipationRate === undefined ? "" : `${summary.employeeParticipationComparison.withdrawParticipationRate}%`,
     说明: summary.employeeParticipationComparison?.note || "",
   }];
+  const movingRateRows = [
+    ["门店动销率", summary.monthlyComparison?.movingRateDetails?.current?.storeMoving, summary.monthlyComparison?.movingRateDetails?.previous?.storeMoving],
+    ["人员动销率", summary.monthlyComparison?.movingRateDetails?.current?.employeeMoving, summary.monthlyComparison?.movingRateDetails?.previous?.employeeMoving],
+    ["商品动销率", summary.monthlyComparison?.movingRateDetails?.current?.productMoving, summary.monthlyComparison?.movingRateDetails?.previous?.productMoving],
+  ].map(([name, current, previous]) => ({
+    指标: name,
+    当月分子: current?.numerator ?? "",
+    当月分母: current?.denominator ?? "",
+    当月比例: current?.rate === undefined ? "" : `${current.rate}%`,
+    上月同期分子: previous?.numerator ?? "",
+    上月同期分母: previous?.denominator ?? "",
+    上月同期比例: previous?.rate === undefined ? "" : `${previous.rate}%`,
+    分子来源: current?.source || "",
+    分母来源: current?.denominatorSource || "",
+  }));
   const insightRows = [
     { 重点标注: "重点：运营健康度", 模块: "客户运营健康度", 指标: "健康度评分", 数值: insights.healthScore ?? "", 结论: "", 建议动作: "用于判断客户是否已经把四季蝉用成持续运营工具，而不是一次性红包活动。" },
     ...((insights.scoreItems || []).map((item) => ({
@@ -6063,6 +6087,7 @@ function workbookSheets(summary, report) {
     { name: "当月_vs_上月同期经营对比", rows: monthlyComparisonRows.length ? monthlyComparisonRows : [{ 对比模块: "当月与上月同期经营对比", 指标: "暂无可计算指标", 当月: "", 上月同期: "", 差额: "", 变化率: "" }] },
     { name: "同品种同比对比", rows: comparableProductRows },
     { name: "店员认证与提现对比", rows: employeeParticipationRows },
+    { name: "动销率口径", rows: movingRateRows },
     { name: "数据口径说明", rows: [
       { 项目: "数据来源", 内容: summary.source || "登录获取" },
       { 项目: "客户名称", 内容: summary.requestInfo?.merName || raw.meta?.merName || "" },
@@ -8776,6 +8801,7 @@ function deriveOperationInsights({
   employeeAccountRows = [],
   rewardDistributionRows = [],
   metricRows = {},
+  operationBase = null,
 } = {}) {
   const productCodeCandidates = ["commodityCode", "wareIspCode", "erpCode", "productCode", "goodsCode", "skuCode", "商品编码"];
   const productNameCandidates = ["commodityName", "productName", "goodsName", "skuName", "商品名称"];
@@ -8835,8 +8861,9 @@ function deriveOperationInsights({
   const inputOutputRatio = totalRewardAmount ? money(activitySalesAmount / totalRewardAmount) : 0;
   const feeEfficiencyRate = activitySalesAmount ? money((totalRewardAmount / activitySalesAmount) * 100) : 0;
   const activityCoverageRate = ratioPercent(activeSkuCount || rewardSkuCount, salesSkuCount || activeSkuCount || rewardSkuCount);
-  const storeCoverage = uniqueCountCandidates([...salesRows, ...activityRows], storeCandidates);
-  const employeeCoverage = uniqueCountCandidates([...activityRows, ...cashoutRows, ...shareRewardRows, ...employeeAccountRows, ...rewardDistributionRows], employeeCandidates);
+  const movingRates = buildMovingRateMetrics(activityRows, rewardRows, salesRows, operationBase);
+  const storeCoverage = movingRates.storeMoving.numerator || uniqueCountCandidates([...salesRows, ...activityRows], storeCandidates);
+  const employeeCoverage = movingRates.employeeMoving.numerator || uniqueCountCandidates([...activityRows, ...cashoutRows, ...shareRewardRows, ...employeeAccountRows, ...rewardDistributionRows], employeeCandidates);
   const trainingMetricRows = metricRows.training || [];
   const trainingHasSignal = trainingRows.length > 0 || hasNonZeroMetric(trainingMetricRows);
   const shareRecordCount = (tipsRows.length || shareRewardRows.length);
@@ -8863,7 +8890,7 @@ function deriveOperationInsights({
 
   const scoreItems = [
     { key: "activitySustainability", label: "活动持续运营", value: joinedActivityCount, level: onlineActivityCount ? "healthy" : joinedActivityCount ? "watch" : "risk", explanation: joinedActivityCount ? `已识别 ${joinedActivityCount} 个已参加/已配置活动，其中当前上架/发布约 ${onlineActivityCount} 个，活动销售额约 ${activityCatalogSalesAmount}。` : "未识别到已参加活动列表，客户可能还没有形成持续活动运营池。" },
-    { key: "activityCoverage", label: "活动覆盖", value: activityCoverageRate, level: rateLevel(activityCoverageRate, 35, 15), explanation: `活动覆盖约 ${activityCoverageRate}% 的动销品种；覆盖越低，客户越容易把四季蝉理解成少数单品红包。` },
+    { key: "activityCoverage", label: "活动覆盖", value: movingRates.productMoving.rate || activityCoverageRate, level: rateLevel(movingRates.productMoving.rate || activityCoverageRate, 35, 15), explanation: `门店动销率 ${movingRates.storeMoving.rate}%（${movingRates.storeMoving.numerator}/${movingRates.storeMoving.denominator}），人员动销率 ${movingRates.employeeMoving.rate}%（${movingRates.employeeMoving.numerator}/${movingRates.employeeMoving.denominator}），商品动销率 ${movingRates.productMoving.rate}%（${movingRates.productMoving.numerator}/${movingRates.productMoving.denominator}）。` },
     { key: "rewardClosure", label: "激励闭环", value: feeEfficiencyRate, level: activitySalesAmount ? rateLevel(Math.min(feeEfficiencyRate, 100), 8, 2) : "risk", explanation: activitySalesAmount ? `每100元活动销售对应约 ${feeEfficiencyRate} 元奖励；投入产出比约 ${inputOutputRatio}，即每1元奖励带动约 ${inputOutputRatio} 元活动销售。` : "当前没有识别到活动销售额，难以证明奖励带动销售。" },
     { key: "employeeParticipation", label: "员工参与", value: employeeParticipationSignal, level: employeeParticipationSignal ? (totalWithdrawMoney || employeeCoverage ? "healthy" : "watch") : "risk", explanation: employeeParticipationSignal ? `识别到店员参与和提现闭环信号，可结合店员认证人数、提现人数和提现参与率评估激励触达。` : "缺少员工参与或提现信号，店员感知会变弱。" },
     { key: "trainingConversion", label: "培训承接", value: trainingRows.length || trainingMetricRows.length, level: trainingHasSignal ? "watch" : "risk", explanation: trainingHasSignal ? "已有培训或学习指标，可进一步与销售结果绑定。" : "培训数据为空，建议把重点品培训、考试和激励任务连成闭环。" },
@@ -8879,6 +8906,9 @@ function deriveOperationInsights({
     joinedActivityCount ? `已参加/配置活动 ${joinedActivityCount} 个，当前上架/发布约 ${onlineActivityCount} 个，可证明客户已有活动运营资产。` : "",
     activityBudgetAmount || activityUsedBudgetAmount ? `活动预算约 ${activityBudgetAmount}，已发/已用约 ${activityUsedBudgetAmount}，剩余约 ${activityRemainBudgetAmount}，可用于推动客户做费用复盘。` : "",
     activitySalesAmount ? `活动商品销售额约 ${activitySalesAmount}，奖励金额约 ${totalRewardAmount}，可沉淀为“费用换动销”的投入产出证据。` : "",
+    movingRates.storeMoving.denominator ? `门店动销率 ${movingRates.storeMoving.rate}%：动销门店 ${movingRates.storeMoving.numerator} 家，启用且非仓库门店 ${movingRates.storeMoving.denominator} 家。` : "",
+    movingRates.employeeMoving.denominator ? `人员动销率 ${movingRates.employeeMoving.rate}%：动销员工 ${movingRates.employeeMoving.numerator} 人，符合随心看条件员工 ${movingRates.employeeMoving.denominator} 人。` : "",
+    movingRates.productMoving.denominator ? `商品动销率 ${movingRates.productMoving.rate}%：动销商品 ${movingRates.productMoving.numerator} 个，四季蝉商品总数 ${movingRates.productMoving.denominator} 个。` : "",
     employeeParticipationSignal ? "店员收益闭环已有可复盘信号，可用认证人数、提现人数和提现参与率证明激励触达。" : "",
     rewardDistributionHasSignal ? "奖励发放明细已接入，可向客户展示“销售产生奖励、奖励触达店员”的执行证据。" : "",
     usedRewardPlays.length ? `已使用 ${usedRewardPlays.length} 类激励玩法：${usedRewardPlays.map((item) => item.name).join("、")}。` : "",
@@ -8924,6 +8954,16 @@ function deriveOperationInsights({
       feeEfficiencyFormula: "费效比 = 奖励金额 ÷ 活动销售额 × 100%",
       storeCoverage,
       employeeCoverage,
+      movingRates,
+      storeMovingRate: movingRates.storeMoving.rate,
+      storeMovingNumerator: movingRates.storeMoving.numerator,
+      storeMovingDenominator: movingRates.storeMoving.denominator,
+      employeeMovingRate: movingRates.employeeMoving.rate,
+      employeeMovingNumerator: movingRates.employeeMoving.numerator,
+      employeeMovingDenominator: movingRates.employeeMoving.denominator,
+      productMovingRate: movingRates.productMoving.rate,
+      productMovingNumerator: movingRates.productMoving.numerator,
+      productMovingDenominator: movingRates.productMoving.denominator,
       employeeParticipationSignal,
       cashoutRate,
       availableMoney,
@@ -9127,6 +9167,15 @@ async function collectSijichanDataWithClient({ client, diagnostics, merCode = ""
       rewardStat: await client.post("概览-员工奖励提现指标", "report/account/emp/overview/queryRewardStat", withMerCode({ startTime: windows.nearHalf.start, endTime: windows.nearHalf.end, timeType: 1 })),
       orderShareSummary: await client.post("概览-店员圈指标", "report/order_share/orderShareMomentSummary", withMerCode({ startTime: windows.nearHalf.start, endTime: windows.nearHalf.end })),
     },
+    operationBase: {
+      stores: {
+        rows: await client.paged("基础档案-启用门店机构", "memberDefend/chooseStoreList", withMerCode({}), 1000, { maxPages: 20 }),
+      },
+      employees: {
+        rows: await client.paged("基础档案-随心看员工", "csd-staff/_searchEmployee", withMerCode({}), 1000, { maxPages: 50 }),
+      },
+      productOverview: await client.post("基础档案-四季蝉商品概览", "report/activityReward/queryTopStatisticData", withMerCode({})),
+    },
     diagnostics,
   };
 }
@@ -9146,6 +9195,161 @@ function averageCandidates(rows, candidates) {
   }
   if (!values.length) return 0;
   return Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 100) / 100;
+}
+
+function normalizedText(value) {
+  return String(value ?? "").trim();
+}
+
+function rowText(row, candidates) {
+  return normalizedText(pickField(row, candidates));
+}
+
+function fieldMissing(row, candidates) {
+  return !candidates.some((candidate) => row && hasValue(row[candidate]));
+}
+
+function isEnabledStoreInstitution(row) {
+  const status = rowText(row, ["statusName", "statusText", "statusLabel", "onlineStatusName", "stateName", "启用状态", "状态"]);
+  const statusValue = pickField(row, ["status", "onlineStatus", "state", "isEnable", "enabled"]);
+  const type = rowText(row, ["orgClassName", "organTypeName", "institutionTypeName", "stClassName", "orTypeName", "机构类型", "门店类型"]);
+  const typeValue = pickField(row, ["orgClass", "organType", "institutionType", "stClass", "orType"]);
+  const enabled = status ? /启用|正常|有效|营业|上线/.test(status) && !/停用|禁用|关闭|离职|作废/.test(status) : !["0", "2", "false", "disabled"].includes(String(statusValue).toLowerCase());
+  const warehouse = /仓库/.test(type) || ["3", 3].includes(typeValue);
+  return enabled && !warehouse;
+}
+
+function isEligibleEmployee(row) {
+  const accountType = rowText(row, ["accountTypeName", "acctTypeName", "userTypeName", "账号类型", "账户类型"]);
+  const employment = rowText(row, ["employmentStatusName", "jobStatusName", "empStatusName", "staffStatusName", "员工状态", "在职状态"]);
+  const watchStatus = rowText(row, ["suiXinKanStatusName", "employeeSxkStatusName", "seeStatusName", "随心看状态", "员工随心看状态"]);
+  const role = rowText(row, ["suiXinKanRoleName", "roleName", "staffRoleName", "随心看角色", "角色"]);
+  const accountOk = fieldMissing(row, ["accountTypeName", "acctTypeName", "userTypeName", "账号类型", "账户类型"]) || /员工/.test(accountType);
+  const employmentOk = fieldMissing(row, ["employmentStatusName", "jobStatusName", "empStatusName", "staffStatusName", "员工状态", "在职状态"]) || (/在职|正常|启用/.test(employment) && !/离职|停用|禁用/.test(employment));
+  const watchOk = fieldMissing(row, ["suiXinKanStatusName", "employeeSxkStatusName", "seeStatusName", "随心看状态", "员工随心看状态"]) || (/启用|正常|开通/.test(watchStatus) && !/停用|禁用|关闭/.test(watchStatus));
+  const roleOk = fieldMissing(row, ["suiXinKanRoleName", "roleName", "staffRoleName", "随心看角色", "角色"]) || /(店员|店长|运营|区域经理)/.test(role);
+  return accountOk && employmentOk && watchOk && roleOk;
+}
+
+function totalFromObject(value, candidates) {
+  const stack = [value];
+  while (stack.length) {
+    const node = stack.shift();
+    if (!node || typeof node !== "object") continue;
+    if (Array.isArray(node)) {
+      stack.push(...node);
+      continue;
+    }
+    for (const candidate of candidates) {
+      if (hasValue(node[candidate])) {
+        const total = toNumber(node[candidate]);
+        if (total > 0) return total;
+      }
+    }
+    stack.push(...Object.values(node));
+  }
+  return 0;
+}
+
+function summarizeOperationBase(raw, fallbackProductRows = []) {
+  const storeRows = rowsFromPaged(raw?.operationBase?.stores?.rows);
+  const employeeRows = rowsFromPaged(raw?.operationBase?.employees?.rows);
+  const productOverview = responseData(raw?.operationBase?.productOverview);
+  const eligibleStoreRows = storeRows.filter(isEnabledStoreInstitution);
+  const eligibleEmployeeRows = employeeRows.filter(isEligibleEmployee);
+  const productTotal = totalFromObject(productOverview, [
+    "commodityTotal",
+    "commodityCount",
+    "goodsTotal",
+    "goodsCount",
+    "productTotal",
+    "productCount",
+    "skuTotal",
+    "skuCount",
+    "activityCommodityCount",
+    "活动商品数",
+    "商品总数",
+  ]) || uniqueCountCandidates(fallbackProductRows, productIdentityCandidates);
+  return {
+    stores: {
+      totalRows: storeRows.length,
+      enabledStoreCount: uniqueCountCandidates(eligibleStoreRows, ["stCode", "storeCode", "orCode", "orgCode", "id", "门店编码", "机构编码"]) || eligibleStoreRows.length,
+      source: "merchant/institution/list 页面对应接口：memberDefend/chooseStoreList，筛选状态为已启用且机构类型不是仓库。",
+    },
+    employees: {
+      totalRows: employeeRows.length,
+      eligibleEmployeeCount: uniqueCountCandidates(eligibleEmployeeRows, ["empCode", "employeeCode", "staffCode", "account", "id", "员工编码", "账号"]) || eligibleEmployeeRows.length,
+      source: "merchant/personManager/index 页面对应接口：csd-staff/_searchEmployee，筛选员工账号、在职、随心看启用、角色为店员/店长/运营/区域经理。",
+    },
+    products: {
+      productTotal,
+      source: productTotalFromOverview(productOverview) ? "sjcmer/overview 概览指标" : "四季蝉概览未返回明确商品总数，使用活动/销售商品唯一数兜底。",
+    },
+  };
+}
+
+function productTotalFromOverview(overview) {
+  return totalFromObject(overview, [
+    "commodityTotal",
+    "commodityCount",
+    "goodsTotal",
+    "goodsCount",
+    "productTotal",
+    "productCount",
+    "skuTotal",
+    "skuCount",
+    "商品总数",
+  ]);
+}
+
+function maxCandidates(rows, candidates) {
+  const values = [];
+  for (const row of rows || []) {
+    for (const candidate of candidates) {
+      const value = toNumber(row?.[candidate]);
+      if (value > 0) values.push(value);
+    }
+  }
+  return values.length ? Math.max(...values) : 0;
+}
+
+function buildMovingRateMetrics(activityRows = [], rewardRows = [], salesRows = [], operationBaseSummary = {}) {
+  const storeIds = uniqueValuesByCandidates(activityRows, ["storeCode", "stCode", "orgCode", "orCode", "门店编码", "机构编码"]);
+  const employeeIds = uniqueValuesByCandidates([...activityRows, ...rewardRows], ["employeeCode", "empCode", "staffCode", "clerkCode", "employeeId", "empId", "员工编码"]);
+  const activeProductCount = uniqueCountCandidates(activityRows, productIdentityCandidates) || uniqueCountCandidates(salesRows, productIdentityCandidates);
+  const storeFallback = maxCandidates(activityRows, ["saleStoreNum", "storeNum", "movingStoreNum", "动销门店数", "销售门店数"]);
+  const employeeFallback = maxCandidates(activityRows, ["saleEmpNum", "rewardEmpNum", "empNum", "employeeNum", "movingEmpNum", "动销员工数"]);
+  const activeStoreCount = storeIds.size || storeFallback;
+  const activeEmployeeCount = employeeIds.size || employeeFallback;
+  const totalStoreCount = toNumber(operationBaseSummary?.stores?.enabledStoreCount);
+  const totalEmployeeCount = toNumber(operationBaseSummary?.employees?.eligibleEmployeeCount);
+  const totalProductCount = toNumber(operationBaseSummary?.products?.productTotal) || activeProductCount;
+  return {
+    storeMoving: {
+      label: "门店动销率",
+      numerator: activeStoreCount,
+      denominator: totalStoreCount,
+      rate: ratioPercent(activeStoreCount, totalStoreCount),
+      source: storeIds.size ? "明细门店编码去重" : storeFallback ? "汇总字段兜底" : "无可计算分子",
+      denominatorSource: operationBaseSummary?.stores?.source || "",
+    },
+    employeeMoving: {
+      label: "人员动销率",
+      numerator: activeEmployeeCount,
+      denominator: totalEmployeeCount,
+      rate: ratioPercent(activeEmployeeCount, totalEmployeeCount),
+      source: employeeIds.size ? "明细员工编码去重" : employeeFallback ? "汇总字段兜底" : "无可计算分子",
+      denominatorSource: operationBaseSummary?.employees?.source || "",
+    },
+    productMoving: {
+      label: "商品动销率",
+      numerator: activeProductCount,
+      denominator: totalProductCount,
+      rate: ratioPercent(activeProductCount, totalProductCount),
+      source: "活动商品编码去重",
+      denominatorSource: operationBaseSummary?.products?.source || "",
+    },
+  };
 }
 
 function compareMetric(current, previous) {
@@ -9176,7 +9380,7 @@ function rowsWithCommonSalesProducts(currentRows = [], previousRows = []) {
   };
 }
 
-function monthlySnapshot(rows = [], activityRows = []) {
+function monthlySnapshot(rows = [], activityRows = [], movingRates = null) {
   const salesAmount = sumCandidates(rows, salesAmountCandidates);
   const grossProfit = sumCandidates(rows, ["grossProfitAmount", "grossProfit", "profitAmount", "maoriAmount", "毛利额", "毛利"]);
   const grossMargin = salesAmount ? Math.round((grossProfit / salesAmount) * 10000) / 100 : averageCandidates(rows, ["grossProfitRate", "grossMargin", "maoriRate", "毛利率"]);
@@ -9192,26 +9396,33 @@ function monthlySnapshot(rows = [], activityRows = []) {
     rewardAmount,
     roi: rewardAmount ? Math.round((activitySalesAmount / rewardAmount) * 100) / 100 : 0,
     feeEfficiencyRate: activitySalesAmount ? Math.round((rewardAmount / activitySalesAmount) * 10000) / 100 : 0,
-    storeActivationRate: averageCandidates(activityRows, ["storeMovingRate", "storeSaleRate", "storeActivationRate", "门店动销率"]),
-    employeeActivationRate: averageCandidates(activityRows, ["employeeMovingRate", "empMovingRate", "employeeActivationRate", "人员动销率"]),
-    skuActivationRate: averageCandidates(activityRows, ["skuMovingRate", "commodityMovingRate", "productMovingRate", "品种动销率"]),
+    storeActivationRate: movingRates?.storeMoving?.rate || averageCandidates(activityRows, ["storeMovingRate", "storeSaleRate", "storeActivationRate", "门店动销率"]),
+    employeeActivationRate: movingRates?.employeeMoving?.rate || averageCandidates(activityRows, ["employeeMovingRate", "empMovingRate", "employeeActivationRate", "人员动销率"]),
+    skuActivationRate: movingRates?.productMoving?.rate || averageCandidates(activityRows, ["skuMovingRate", "commodityMovingRate", "productMovingRate", "品种动销率"]),
+    movingRates,
     jointMedicationRate: averageCandidates(rows, ["jointMedicationRate", "combineSaleRate", "关联销售率", "联合用药率"]),
     keyProductRatio: averageCandidates(rows, ["keyProductRatio", "importantProductRatio", "重点品占比"]),
     slowMovingClearanceRate: averageCandidates(rows, ["slowMovingClearanceRate", "滞销品消化率"]),
   };
 }
 
-function buildMonthlyComparison(raw) {
+function buildMonthlyComparison(raw, operationBaseSummary = null) {
   const currentSalesRows = rowsFromPaged(raw.sales?.currentMonth?.products || raw.sales?.currentMonth_vs_previousMonthSamePeriod?.products);
   const lastSalesRows = rowsFromPaged(raw.sales?.previousMonthSamePeriod?.products || raw.sales?.lastMonth_vs_priorTwoMonths?.products);
   const currentActivityRows = rowsFromPaged(raw.activitySummary?.currentMonth?.rows);
   const lastActivityRows = rowsFromPaged(raw.activitySummary?.previousMonthSamePeriod?.rows);
-  const current = monthlySnapshot(currentSalesRows, currentActivityRows);
-  const previous = monthlySnapshot(lastSalesRows, lastActivityRows);
+  const currentMovingRates = buildMovingRateMetrics(currentActivityRows, rowsFromPaged(raw.rewardStatistics?.nearHalf?.rows), currentSalesRows, operationBaseSummary);
+  const previousMovingRates = buildMovingRateMetrics(lastActivityRows, rowsFromPaged(raw.rewardStatistics?.nearHalf?.rows), lastSalesRows, operationBaseSummary);
+  const current = monthlySnapshot(currentSalesRows, currentActivityRows, currentMovingRates);
+  const previous = monthlySnapshot(lastSalesRows, lastActivityRows, previousMovingRates);
   return {
     label: "当月与上月同期经营对比",
     currentWindow: raw.meta?.windows?.currentMonth || {},
     previousWindow: raw.meta?.windows?.previousMonthSamePeriod || {},
+    movingRateDetails: {
+      current: currentMovingRates,
+      previous: previousMovingRates,
+    },
     marketPerformance: {
       salesAmount: compareMetric(current.salesAmount, previous.salesAmount),
       grossProfit: compareMetric(current.grossProfit, previous.grossProfit),
@@ -9320,6 +9531,12 @@ function summarizeSijichanRaw(raw) {
     ...withDataMeta(rowsFromPaged(raw.employeeAccount?.writeOffRows), "employee_account.json", "writeOffRows"),
     ...withDataMeta(rowsFromPaged(raw.employeeAccount?.settleRows), "employee_account.json", "settleRows"),
   ];
+  const operationBaseStoreRows = withDataMeta(rowsFromPaged(raw.operationBase?.stores?.rows), "operation_base.json", "stores.rows");
+  const operationBaseEmployeeRows = withDataMeta(rowsFromPaged(raw.operationBase?.employees?.rows), "operation_base.json", "employees.rows");
+  const operationBaseSummary = summarizeOperationBase(raw, [
+    ...rowsFromPaged(raw.activitySummary?.currentMonth?.rows),
+    ...rowsFromPaged(raw.sales?.currentMonth?.products),
+  ]);
   const rawData = {
     meta: raw.meta,
     diagnostics: raw.diagnostics || [],
@@ -9346,6 +9563,12 @@ function summarizeSijichanRaw(raw) {
       settleRows: rowsFromPaged(raw.employeeAccount?.settleRows),
     },
     overview: Object.fromEntries(Object.entries(raw.overview).map(([key, value]) => [key, responseData(value)])),
+    operationBase: {
+      stores: { rows: rowsFromPaged(raw.operationBase?.stores?.rows), summary: operationBaseSummary.stores },
+      employees: { rows: rowsFromPaged(raw.operationBase?.employees?.rows), summary: operationBaseSummary.employees },
+      productOverview: responseData(raw.operationBase?.productOverview),
+      summary: operationBaseSummary,
+    },
   };
   const trainingMetricRows = [
     ...metricRowsFromObject(rawData.training.courseOverview, "training.json", "courseOverview"),
@@ -9353,6 +9576,11 @@ function summarizeSijichanRaw(raw) {
   ];
   const tipsMetricRows = metricRowsFromObject(rawData.manufacturerTips.summary, "manufacturer_tips.json", "summary");
   const overviewMetricRows = Object.entries(rawData.overview).flatMap(([key, value]) => metricRowsFromObject(value, "overview.json", key));
+  const operationBaseMetricRows = [
+    { 数据文件: "operation_base.json", 数据路径: "stores.summary.enabledStoreCount", 指标: "启用门店总数", 指标值: operationBaseSummary.stores.enabledStoreCount },
+    { 数据文件: "operation_base.json", 数据路径: "employees.summary.eligibleEmployeeCount", 指标: "符合条件员工总数", 指标值: operationBaseSummary.employees.eligibleEmployeeCount },
+    { 数据文件: "operation_base.json", 数据路径: "products.summary.productTotal", 指标: "四季蝉商品总数", 指标值: operationBaseSummary.products.productTotal },
+  ];
   const salesMetricRows = Object.entries(rawData.sales).flatMap(([key, value]) => metricRowsFromObject(value.overview, "sales.json", `${key}.overview`));
   const activityMetricRows = Object.entries(rawData.activitySummary).flatMap(([key, value]) => metricRowsFromObject(value.sum, "activity_summary.json", `${key}.sum`));
   const rewardMetricRows = metricRowsFromObject(rawData.rewardStatistics.nearHalf.sum, "reward_statistics.json", "nearHalf.sum");
@@ -9372,6 +9600,7 @@ function summarizeSijichanRaw(raw) {
     manufacturerTips: tipsMetricRows,
     employeeAccount: employeeAccountMetricRows,
     overview: overviewMetricRows,
+    operationBase: operationBaseMetricRows,
   };
   const files = [
     { name: "sales.json", label: "销售汇总", rows: salesRows, metricRows: salesMetricRows, note: "销售商品明细接口，同时包含销售概览指标。" },
@@ -9383,6 +9612,7 @@ function summarizeSijichanRaw(raw) {
     { name: "manufacturer_tips.json", label: "厂家打赏", rows: tipsRows, metricRows: tipsMetricRows, note: "厂家打赏接口成功返回；金额和明细为0代表当前口径未发生厂家额外激励。" },
     { name: "employee_account.json", label: "员工豆豆账户/提现", rows: employeeAccountRows, metricRows: employeeAccountMetricRows, note: "员工账户、提现、核销与结算接口，用于证明店员收益闭环。" },
     { name: "overview.json", label: "概览校验", rows: [], metricRows: overviewMetricRows, note: "首页概览是指标型数据，不产生明细行。" },
+    { name: "operation_base.json", label: "基础档案口径", rows: [...operationBaseStoreRows, ...operationBaseEmployeeRows], metricRows: operationBaseMetricRows, note: "门店、员工、商品总数口径，用于计算门店动销率、人员动销率、商品动销率。" },
   ];
   const allRows = files.flatMap((file) => file.rows);
   const productName = [{ name: "商品名称", candidates: ["commodityName", "productName", "goodsName", "skuName", "name", "商品名称"] }];
@@ -9406,9 +9636,10 @@ function summarizeSijichanRaw(raw) {
     rowCounts: Object.fromEntries(files.map((file) => [file.name, file.rows.length])),
     metricRows,
     rawData,
-    monthlyComparison: buildMonthlyComparison(raw),
+    monthlyComparison: buildMonthlyComparison(raw, operationBaseSummary),
     comparableProductComparison: buildComparableProductComparison(raw),
     employeeParticipationComparison: buildEmployeeParticipationComparison(raw),
+    operationBase: operationBaseSummary,
     operationInsights: deriveOperationInsights({
       salesRows: withDataMeta(rowsFromPaged(raw.sales.nearHalf_vs_previousHalf.products), "sales.json", "nearHalf_vs_previousHalf.products"),
       activityRows: withDataMeta(rowsFromPaged(raw.activitySummary.nearHalf.rows), "activity_summary.json", "nearHalf.rows"),
@@ -9419,6 +9650,7 @@ function summarizeSijichanRaw(raw) {
       employeeAccountRows,
       rewardDistributionRows,
       metricRows,
+      operationBase: operationBaseSummary,
     }),
     salesChange: {
       topSalesAmount: topGenericRows(allRows, salesMetric, commonFields, 10, true),
