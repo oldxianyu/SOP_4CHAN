@@ -5144,6 +5144,7 @@ function sanitizeReportVisibleText(value) {
   return String(value || "")
     .replace(/续用风险/g, "运营补强需求")
     .replace(/流失风险/g, "持续运营压力")
+    .replace(/运营健康度/g, "运营评分")
     .trim();
 }
 
@@ -5164,7 +5165,7 @@ function normalizeReport(report) {
     executiveSummary: sanitizeReportVisibleText(safe.executiveSummary || safe.summary || ""),
     highlights: sanitizeReportVisibleList(safe.highlights),
     risks: [],
-    sections: sections.filter((section) => !/续用风险|运营补强需求|风险与短板/i.test(section.heading || "")),
+    sections: sections.filter((section) => !/续用风险|运营补强需求|运营评分|运营健康度|数据源状态|风险与短板/i.test(section.heading || "")),
     nextActions: normalizeNextActions(safe.nextActions || safe.actions || safe.recommendations).map(sanitizeReportVisibleText).filter(Boolean),
   };
 }
@@ -5184,7 +5185,7 @@ function fallbackReportFromSummary(summary, reason = "") {
   const health = insights.healthScore ?? "暂无";
   return applyCustomerTitleToReport({
     title: "四季蝉客户数据复盘报告",
-    executiveSummary: `本次复盘已完成数据读取和运营洞察计算。客户运营健康度为 ${health}。${reason ? "AI返回格式异常，系统已基于结构化数据生成兜底报告。" : ""}`,
+    executiveSummary: `本次复盘已完成数据读取和运营洞察计算。客户运营评分为 ${health}。${reason ? "AI返回格式异常，系统已基于结构化数据生成兜底报告。" : ""}`,
     highlights: [
       ...((insights.valueProofPoints || []).length ? insights.valueProofPoints : ["已完成销售、活动、奖励、培训、厂家协同等数据源识别。"]),
       detailFiles.length ? `识别到 ${detailFiles.length} 个有明细的数据源：${detailFiles.map((file) => file.label || file.name).join("、")}。` : "",
@@ -5280,7 +5281,7 @@ function renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUr
     .summary { max-width:860px; color:#3f4b62; font-size:18px; line-height:1.8; }
     .meta { display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; color:var(--muted); }
     .meta span { padding:8px 12px; border-radius:999px; background:#fff; border:1px solid var(--line); }
-    .grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:22px; }
+    .grid { display:grid; grid-template-columns:1fr; gap:18px; margin-top:22px; }
     .card, .report-section { border:1px solid var(--line); border-radius:18px; background:rgba(255,255,255,.94); box-shadow:0 14px 34px rgba(24,52,126,.07); }
     .card { padding:22px; }
     .card h2, .report-section h2 { margin:0 0 12px; color:var(--navy); font-size:24px; }
