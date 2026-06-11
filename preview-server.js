@@ -5220,15 +5220,15 @@ function fallbackReportFromSummary(summary, reason = "") {
 
 function reportToMarkdown(report) {
   report = normalizeReport(report);
-  const lines = [`# ${report.title || "四季蝉AI复盘报告"}`, "", report.executiveSummary || ""];
+  const lines = [`# ${markdownHeadingIcon(report.title || "四季蝉AI复盘报告")}`, "", report.executiveSummary || ""];
   if (report.highlights?.length) {
-    lines.push("", "## 核心亮点", ...report.highlights.map((item) => `- ${item}`));
+    lines.push("", `## ${markdownHeadingIcon("核心亮点")}`, ...report.highlights.map((item) => `- ${item}`));
   }
   for (const section of report.sections || []) {
-    lines.push("", `## ${section.heading}`, ...(section.bullets || []).map((item) => `- ${item}`));
+    lines.push("", `## ${markdownHeadingIcon(section.heading)}`, ...(section.bullets || []).map((item) => `- ${item}`));
   }
   if (report.nextActions?.length) {
-    lines.push("", "## 下一步动作", ...report.nextActions.map((item) => `- ${item}`));
+    lines.push("", `## ${markdownHeadingIcon("下一步动作")}`, ...report.nextActions.map((item) => `- ${item}`));
   }
   return lines.filter((line, index) => line !== "" || lines[index - 1] !== "").join("\n");
 }
@@ -5238,13 +5238,35 @@ function renderList(items = []) {
   return items.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
 }
 
+function reportIconForText(text = "") {
+  const value = String(text || "");
+  if (/核心|亮点|价值|证明/.test(value)) return "✨";
+  if (/销售|动销|品种|商品|AAA/.test(value)) return "📈";
+  if (/活动|激励|奖励|豆豆|提现/.test(value)) return "🎯";
+  if (/培训|学习|考试/.test(value)) return "🎓";
+  if (/厂家|晒单|打赏|协同/.test(value)) return "🤝";
+  if (/动作|建议|下月|推进|运营重点/.test(value)) return "🚀";
+  if (/数据|口径|来源|诊断/.test(value)) return "📊";
+  if (/扫码|导出|分享/.test(value)) return "🔗";
+  return "📌";
+}
+
+function renderHtmlHeading(title, level = 2) {
+  const tag = level === 1 ? "h1" : "h2";
+  return `<${tag}><span class="heading-icon" aria-hidden="true">${escapeHtml(reportIconForText(title))}</span>${escapeHtml(title)}</${tag}>`;
+}
+
+function markdownHeadingIcon(title) {
+  return `${reportIconForText(title)} ${title}`;
+}
+
 function renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUrl, excelUrl = "", excelStatus = "", excelError = "" }) {
   report = applyCustomerTitleToReport(report, summary);
   const sections = (report.sections || [])
     .map(
       (section) => `
         <section class="report-section">
-          <h2>${escapeHtml(section.heading)}</h2>
+          ${renderHtmlHeading(section.heading)}
           <ul>${renderList(section.bullets)}</ul>
         </section>
       `,
@@ -5284,7 +5306,8 @@ function renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUr
     .grid { display:grid; grid-template-columns:1fr; gap:18px; margin-top:22px; }
     .card, .report-section { border:1px solid var(--line); border-radius:18px; background:rgba(255,255,255,.94); box-shadow:0 14px 34px rgba(24,52,126,.07); }
     .card { padding:22px; }
-    .card h2, .report-section h2 { margin:0 0 12px; color:var(--navy); font-size:24px; }
+    .card h2, .report-section h2 { display:flex; align-items:center; gap:10px; margin:0 0 12px; color:var(--navy); font-size:24px; }
+    .heading-icon { display:inline-grid; place-items:center; flex:0 0 auto; width:34px; height:34px; border-radius:12px; background:#eef3ff; border:1px solid #d5e0ff; box-shadow:inset 0 1px 0 rgba(255,255,255,.85); font-size:19px; line-height:1; }
     ul { margin:0; padding-left:22px; line-height:1.75; }
     li + li { margin-top:7px; }
     .report-section { margin-top:18px; padding:24px; }
@@ -5310,19 +5333,19 @@ function renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUr
 <body>
   <main class="page">
     <section class="hero">
-      <div class="kicker">四季蝉 AI DATA REVIEW</div>
+      <div class="kicker"><span aria-hidden="true">📊</span> 四季蝉 AI DATA REVIEW</div>
       <h1>${escapeHtml(report.title || "四季蝉AI复盘报告")}</h1>
       <p class="summary">${escapeHtml(report.executiveSummary || "")}</p>
       <div class="meta"><span>数据来源：${escapeHtml(sourceName)}</span><span>生成时间：${escapeHtml(generatedAt)}</span></div>
     </section>
     <section class="grid">
-      <div class="card"><h2>核心亮点</h2><ul>${renderList(report.highlights)}</ul></div>
+      <div class="card">${renderHtmlHeading("核心亮点")}<ul>${renderList(report.highlights)}</ul></div>
     </section>
     ${sections}
-    <section class="report-section"><h2>下一步动作</h2><ul>${renderList(report.nextActions)}</ul></section>
+    <section class="report-section">${renderHtmlHeading("下一步动作")}<ul>${renderList(report.nextActions)}</ul></section>
     <section class="actions">
       <div>
-        <h2>扫码查看与导出</h2>
+        ${renderHtmlHeading("扫码查看与导出")}
         <p>此页面可直接分享给客户查看，也可下载SVG长图用于汇报材料。</p>
         <div class="buttons">
           <a class="button" href="${escapeHtml(svgUrl)}" download>下载SVG长图</a>
@@ -5415,7 +5438,7 @@ function renderReportSvg({ report, summary, shareUrl, qrSvg }) {
   const parts = [];
   const addBlock = (title, items) => {
     parts.push(`<rect x="60" y="${y - 38}" width="1080" height="${Math.max(120, 74 + items.length * 54)}" rx="22" fill="#ffffff" stroke="#dbe4ff"/>`);
-    parts.push(svgText([title], 88, y, { size: 30, weight: 900, fill: "#1f3f95" }));
+    parts.push(svgText([`${reportIconForText(title)} ${title}`], 88, y, { size: 30, weight: 900, fill: "#1f3f95" }));
     y += 52;
     for (const item of items) {
       const wrapped = wrapText(item, 46);
@@ -5430,7 +5453,7 @@ function renderReportSvg({ report, summary, shareUrl, qrSvg }) {
   const summaryLines = wrapText(report.executiveSummary || "", 38);
   parts.push(`<rect x="0" y="0" width="${width}" height="100%" fill="#f5f7ff"/>`);
   parts.push(`<rect x="36" y="36" width="1128" height="320" rx="28" fill="url(#hero)" stroke="#cfdcff"/>`);
-  parts.push(`<text x="76" y="${y}" font-size="24" font-weight="900" fill="#2a4bff">四季蝉 AI DATA REVIEW</text>`);
+  parts.push(`<text x="76" y="${y}" font-size="24" font-weight="900" fill="#2a4bff">📊 四季蝉 AI DATA REVIEW</text>`);
   y += 62;
   parts.push(svgText(titleLines, 76, y, { size: 52, weight: 900, fill: "#1f3f95", lineHeight: 62 }));
   y += titleLines.length * 62 + 22;
@@ -5442,7 +5465,7 @@ function renderReportSvg({ report, summary, shareUrl, qrSvg }) {
   addBlock("下一步动作", report.nextActions || []);
 
   parts.push(`<rect x="60" y="${y - 30}" width="1080" height="210" rx="22" fill="#1f3f95"/>`);
-  parts.push(svgText(["扫码查看完整网页报告", shareUrl], 88, y + 34, { size: 25, weight: 800, fill: "#ffffff", lineHeight: 38 }));
+  parts.push(svgText(["🔗 扫码查看完整网页报告", shareUrl], 88, y + 34, { size: 25, weight: 800, fill: "#ffffff", lineHeight: 38 }));
   parts.push(`<rect x="942" y="${y - 4}" width="142" height="142" rx="14" fill="#ffffff"/>`);
   parts.push(inlineQrSvg(qrSvg, 954, y + 8, 118));
   parts.push(`<text x="958" y="${y + 158}" font-size="18" font-weight="800" fill="#ffffff">扫码查看报告</text>`);
