@@ -109,7 +109,9 @@ const defaultReviewPromptInstruction = `# 角色设定
 1. 纯中文业务表达：报告面向中国医药连锁客户，所有可见文字必须是自然流畅的中文。严禁在正文出现 role、actions、bullets、headquarters、stores、factories、operationInsights 等任何英文键名或代码字段。
 2. 拒绝无效发散：严格基于客户实际数据输出，绝对禁止生搬硬套与数据无关的营销节点、节假日场景或泛泛的品类建议。
 3. 不要输出独立风险章节，不要使用“续用风险”作为章节或卡片。
-4. 在“下一步跟进动作”部分，必须严格使用“总部：……”“门店：……”“厂家：……”的中文句式开头。
+4. 没有查到的数据不要写进客户可见报告；不要写“数据缺失、数据为空、无法评估、建议补充ERP数据”等内部诊断话术。
+5. 严禁把未识别到的业务数据写成0，尤其不要写“无激励品种销售额为0”“无激励品种动销为0”等不成立对比。
+6. 在“下一步跟进动作”部分，必须严格使用“总部：……”“门店：……”“厂家：……”的中文句式开头。
 
 # 输出结构要求
 请严格按以下结构组织并输出报告：
@@ -5182,11 +5184,24 @@ function sanitizeReportVisibleText(value) {
     .replace(/续用风险/g, "运营补强需求")
     .replace(/流失风险/g, "持续运营压力")
     .replace(/运营健康度/g, "运营评分")
+    .replace(/[；;，,。]?\s*无激励品种(?:活动)?销售额(?:为|是)?0(?:元|万元)?[^。；;，,]*/g, "")
+    .replace(/[；;，,。]?\s*无激励品种(?:动销|销售|表现)[^。；;，,]*为0[^。；;，,]*/g, "")
     .trim();
 }
 
+function shouldDropReportVisibleText(value) {
+  const text = String(value || "").trim();
+  if (!text) return true;
+  if (/无激励品种[^。；;，,]*(?:销售额|动销|销售|表现)[^。；;，,]*0/.test(text)) return true;
+  if (/数据(?:缺失|为空|不足|未接入)|查不到数据|未查到数据|无法评估|无法分析|建议(?:通过)?ERP数据补充|建议补充(?:ERP)?数据|需补充(?:ERP)?数据/i.test(text)) return true;
+  return false;
+}
+
 function sanitizeReportVisibleList(items) {
-  return arrayOfText(items).map(sanitizeReportVisibleText).filter(Boolean);
+  return arrayOfText(items)
+    .filter((item) => !shouldDropReportVisibleText(item))
+    .map(sanitizeReportVisibleText)
+    .filter((item) => item && !shouldDropReportVisibleText(item));
 }
 
 function normalizeReport(report) {
@@ -6489,19 +6504,19 @@ async function refreshExistingReportArtifacts(targetReportId = "") {
         await queryDb(
           `update review_reports
            set report_title=$2,
-               report_json=jsonb_set(coalesce(report_json, '{}'::jsonb), '{title}', to_jsonb($2::text), true),
+               report_json=$3::jsonb,
                updated_at=now()
            where report_id=$1`,
-          [reportId, report.title || "四季蝉AI复盘报告"],
+          [reportId, report.title || "四季蝉AI复盘报告", JSON.stringify({ title: report.title || "四季蝉AI复盘报告" })],
         ).catch(() => null);
         await queryDb(
           `update review_report_payloads p
-           set report_json=jsonb_set(coalesce(p.report_json, '{}'::jsonb), '{title}', to_jsonb($2::text), true),
-               markdown=$3,
+           set report_json=$3::jsonb,
+               markdown=$4,
                updated_at=now()
            from review_reports r
            where p.report_db_id=r.id and r.report_id=$1`,
-          [reportId, report.title || "四季蝉AI复盘报告", markdown],
+          [reportId, report.title || "四季蝉AI复盘报告", JSON.stringify(report), markdown],
         ).catch(() => null);
       }
     } catch (error) {
