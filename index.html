@@ -2591,28 +2591,10 @@
               )
             : null,
           h(
-            Row,
-            { gutter: [16, 16] },
-            h(
-              Col,
-              { xs: 24, md: 12 },
-              h(
-                "div",
-                { className: "report-section" },
-                h(Title, { level: 4 }, "核心亮点"),
-                h("ul", null, (report.highlights || []).map((item) => h("li", { key: item }, item))),
-              ),
-            ),
-            h(
-              Col,
-              { xs: 24, md: 12 },
-              h(
-                "div",
-                { className: "report-section" },
-                h(Title, { level: 4 }, "风险与短板"),
-                h("ul", null, (report.risks || []).map((item) => h("li", { key: item }, item))),
-              ),
-            ),
+            "div",
+            { className: "report-section" },
+            h(Title, { level: 4 }, "核心亮点"),
+            h("ul", null, (report.highlights || []).map((item) => h("li", { key: item }, item))),
           ),
           sections.map((section) =>
             h(

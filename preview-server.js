@@ -90,8 +90,8 @@ const defaultReviewPromptInstruction = [
   "四季蝉不是单纯红包工具，而是把厂家、连锁总部、门店店员、顾客连接起来，围绕重点品完成选品、培训、激励、销售、提现、统计、复盘的数字化运营平台。",
   "不要加入与客户数据无关的营销节点、季节场景或泛化品类建议。",
   "请关注：品种增长/下滑、活动商品销售与奖励闭环、激励方式使用/未使用价值、店员提现参与、厂家晒单打赏、下一步动作。",
-  "新增复盘目标：通过数据证明四季蝉价值，引导客户持续使用，降低流失风险。必须使用 operationInsights 中的健康度、续用风险、价值证明点和建议动作。",
-  "请明确输出：1）客户继续使用四季蝉的价值证据；2）可能导致客户流失的风险信号；3）下月应推动客户多用哪些模块或玩法；4）总部、门店、厂家三方各自的跟进动作。",
+  "新增复盘目标：通过数据证明四季蝉价值，引导客户持续使用。必须使用 operationInsights 中的健康度、价值证明点和建议动作，但不要设置或输出独立风险模块。",
+  "请明确输出：1）客户继续使用四季蝉的价值证据；2）当前运营中需要补强的环节；3）下月应推动客户多用哪些模块或玩法；4）总部、门店、厂家三方各自的跟进动作。",
   "报告面向中国医药连锁客户阅读，所有可见文字必须使用中文。不要在报告正文中出现 role、actions、bullets、headquarters、stores、factories 等英文键名；下一步动作请写成“总部：……”“门店：……”“厂家：……”这类中文句子。",
 ].join("\n");
 
@@ -4754,7 +4754,7 @@ function buildPrompt(summary, instruction = defaultReviewPromptInstruction) {
     String(instruction || defaultReviewPromptInstruction).trim(),
     "",
     "系统固定输出要求：输出必须是JSON，不要输出Markdown代码块。",
-    "字段必须包含：title、executiveSummary、highlights、risks、sections、nextActions。",
+    "字段必须包含：title、executiveSummary、highlights、sections、nextActions。不要输出 risks 字段，不要输出独立风险章节。",
     "sections 数组每项必须包含 heading 和 bullets；所有可见文字必须使用中文。",
     "数据摘要如下：",
     JSON.stringify(summaryForAi(summary)),
@@ -4764,12 +4764,11 @@ function buildPrompt(summary, instruction = defaultReviewPromptInstruction) {
 const reportSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["title", "executiveSummary", "highlights", "risks", "sections", "nextActions"],
+  required: ["title", "executiveSummary", "highlights", "sections", "nextActions"],
   properties: {
     title: { type: "string" },
     executiveSummary: { type: "string" },
     highlights: { type: "array", items: { type: "string" } },
-    risks: { type: "array", items: { type: "string" } },
     sections: {
       type: "array",
       items: {
@@ -4885,7 +4884,7 @@ async function callChatCompletions(config, input) {
         },
         {
           role: "user",
-          content: `${input}\n\n请输出JSON对象，字段必须包含：title、executiveSummary、highlights、risks、sections、nextActions。sections数组每项包含heading和bullets。`,
+          content: `${input}\n\n请输出JSON对象，字段必须包含：title、executiveSummary、highlights、sections、nextActions，不要输出risks字段，不要输出独立风险章节。sections数组每项包含heading和bullets。`,
         },
       ],
       response_format: { type: "json_object" },
@@ -4923,7 +4922,7 @@ async function callConfiguredAI(config, prompt) {
     return await callOpenAI(config, prompt, true);
   } catch (error) {
     if (error.status === 400) {
-      return callOpenAI(config, `${prompt}\n请按JSON对象返回，字段包含title、executiveSummary、highlights、risks、sections、nextActions。`, false);
+      return callOpenAI(config, `${prompt}\n请按JSON对象返回，字段包含title、executiveSummary、highlights、sections、nextActions，不要输出risks字段，不要输出独立风险章节。`, false);
     }
     throw error;
   }
@@ -5141,20 +5140,32 @@ function reportTitleWithCustomer(title, summary = {}) {
   return `${customer}｜${cleanBase}`;
 }
 
+function sanitizeReportVisibleText(value) {
+  return String(value || "")
+    .replace(/续用风险/g, "运营补强需求")
+    .replace(/流失风险/g, "持续运营压力")
+    .trim();
+}
+
+function sanitizeReportVisibleList(items) {
+  return arrayOfText(items).map(sanitizeReportVisibleText).filter(Boolean);
+}
+
 function normalizeReport(report) {
   const safe = report && typeof report === "object" ? report : {};
+  const sections = Array.isArray(safe.sections)
+    ? safe.sections.map((section, index) => ({
+        heading: sanitizeReportVisibleText(section?.heading || section?.title || `复盘模块${index + 1}`),
+        bullets: sanitizeReportVisibleList(section?.bullets || section?.items || section?.content),
+      }))
+    : sanitizeReportVisibleList(safe.sections).map((item, index) => ({ heading: `复盘模块${index + 1}`, bullets: [item] }));
   return {
-    title: String(safe.title || "四季蝉AI复盘报告").trim(),
-    executiveSummary: String(safe.executiveSummary || safe.summary || "").trim(),
-    highlights: arrayOfText(safe.highlights),
-    risks: arrayOfText(safe.risks),
-    sections: Array.isArray(safe.sections)
-      ? safe.sections.map((section, index) => ({
-          heading: String(section?.heading || section?.title || `复盘模块${index + 1}`).trim(),
-          bullets: arrayOfText(section?.bullets || section?.items || section?.content),
-        }))
-      : arrayOfText(safe.sections).map((item, index) => ({ heading: `复盘模块${index + 1}`, bullets: [item] })),
-    nextActions: normalizeNextActions(safe.nextActions || safe.actions || safe.recommendations),
+    title: sanitizeReportVisibleText(safe.title || "四季蝉AI复盘报告"),
+    executiveSummary: sanitizeReportVisibleText(safe.executiveSummary || safe.summary || ""),
+    highlights: sanitizeReportVisibleList(safe.highlights),
+    risks: [],
+    sections: sections.filter((section) => !/续用风险|运营补强需求|风险与短板/i.test(section.heading || "")),
+    nextActions: normalizeNextActions(safe.nextActions || safe.actions || safe.recommendations).map(sanitizeReportVisibleText).filter(Boolean),
   };
 }
 
@@ -5171,26 +5182,20 @@ function fallbackReportFromSummary(summary, reason = "") {
   const metricFiles = files.filter((file) => (file.metricCount || 0) > 0 && !(file.rowCount || 0));
   const metrics = insights.metrics || {};
   const health = insights.healthScore ?? "暂无";
-  const risk = insights.retentionRisk || "待判断";
   return applyCustomerTitleToReport({
     title: "四季蝉客户数据复盘报告",
-    executiveSummary: `本次复盘已完成数据读取和运营洞察计算。客户续用健康度为 ${health}，续用风险为 ${risk}。${reason ? "AI返回格式异常，系统已基于结构化数据生成兜底报告。" : ""}`,
+    executiveSummary: `本次复盘已完成数据读取和运营洞察计算。客户运营健康度为 ${health}。${reason ? "AI返回格式异常，系统已基于结构化数据生成兜底报告。" : ""}`,
     highlights: [
       ...((insights.valueProofPoints || []).length ? insights.valueProofPoints : ["已完成销售、活动、奖励、培训、厂家协同等数据源识别。"]),
       detailFiles.length ? `识别到 ${detailFiles.length} 个有明细的数据源：${detailFiles.map((file) => file.label || file.name).join("、")}。` : "",
       metricFiles.length ? `识别到 ${metricFiles.length} 个指标型数据源：${metricFiles.map((file) => file.label || file.name).join("、")}。` : "",
     ].filter(Boolean),
-    risks: [
-      ...((insights.riskItems || []).map((item) => item.explanation || item.label).filter(Boolean)),
-      !(metrics.usedRewardPlayCount > 0) ? "当前激励玩法使用信号偏弱，需要避免客户只把四季蝉理解为单次活动工具。" : "",
-      !(metrics.shareRecordCount > 0 || metrics.shareRewardAmount > 0) ? "厂家晒单/打赏信号不足，厂家资源协同价值还需要继续放大。" : "",
-    ].filter(Boolean),
+    risks: [],
     sections: [
       {
-        heading: "续用健康度",
+        heading: "运营健康度",
         bullets: [
           `健康度评分：${health}`,
-          `续用风险：${risk}`,
           `活动覆盖率：${metrics.activityCoverageRate ?? 0}%`,
           `已使用激励玩法数：${metrics.usedRewardPlayCount ?? 0}`,
         ],
@@ -5217,9 +5222,6 @@ function reportToMarkdown(report) {
   const lines = [`# ${report.title || "四季蝉AI复盘报告"}`, "", report.executiveSummary || ""];
   if (report.highlights?.length) {
     lines.push("", "## 核心亮点", ...report.highlights.map((item) => `- ${item}`));
-  }
-  if (report.risks?.length) {
-    lines.push("", "## 风险与短板", ...report.risks.map((item) => `- ${item}`));
   }
   for (const section of report.sections || []) {
     lines.push("", `## ${section.heading}`, ...(section.bullets || []).map((item) => `- ${item}`));
@@ -5314,7 +5316,6 @@ function renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUr
     </section>
     <section class="grid">
       <div class="card"><h2>核心亮点</h2><ul>${renderList(report.highlights)}</ul></div>
-      <div class="card"><h2>风险与短板</h2><ul>${renderList(report.risks)}</ul></div>
     </section>
     ${sections}
     <section class="report-section"><h2>下一步动作</h2><ul>${renderList(report.nextActions)}</ul></section>
@@ -5436,7 +5437,6 @@ function renderReportSvg({ report, summary, shareUrl, qrSvg }) {
   y = 430;
 
   addBlock("核心亮点", report.highlights || []);
-  addBlock("风险与短板", report.risks || []);
   for (const section of report.sections || []) addBlock(section.heading, section.bullets || []);
   addBlock("下一步动作", report.nextActions || []);
 
@@ -5746,7 +5746,7 @@ function workbookRowStyleId(row, sheetName) {
   const text = (Array.isArray(row) ? row.join(" ") : String(row || "")).toLowerCase();
   if (/流失风险|续用风险|风险问题|需要关注|当前数据不足|无明细|失败|异常|停用|risk|warning/.test(text)) return 3;
   if (/重点|关键发现|价值证明|客户继续使用证据|总览结论|健康度评分|下一步动作|总部|门店|厂家/.test(text)) return 2;
-  if (/续用风险|复盘结论/.test(sheetName)) return 4;
+  if (/运营健康度|复盘结论/.test(sheetName)) return 4;
   return 4;
 }
 
@@ -5821,18 +5821,18 @@ function workbookSheets(summary, report) {
   const metrics = summary.metricRows || {};
   const insights = summary.operationInsights || {};
   const insightRows = [
-    { 重点标注: "重点：续用判断", 模块: "客户续用健康度", 指标: "健康度评分", 数值: insights.healthScore ?? "", 结论: insights.retentionRisk ? `续用风险：${insights.retentionRisk}` : "", 建议动作: "用于判断客户是否已经把四季蝉用成持续运营工具，而不是一次性红包活动。" },
+    { 重点标注: "重点：运营健康度", 模块: "客户运营健康度", 指标: "健康度评分", 数值: insights.healthScore ?? "", 结论: "", 建议动作: "用于判断客户是否已经把四季蝉用成持续运营工具，而不是一次性红包活动。" },
     ...((insights.scoreItems || []).map((item) => ({
-      重点标注: item.level === "risk" ? "重点风险" : item.level === "watch" ? "重点关注" : "持续保持",
+      重点标注: item.level === "risk" ? "重点补强" : item.level === "watch" ? "重点关注" : "持续保持",
       模块: "健康度拆解",
       指标: item.label || item.key || "",
       数值: item.value ?? "",
-      结论: item.level === "healthy" ? "表现较好" : item.level === "watch" ? "需要关注" : "流失风险",
-      建议动作: item.explanation || "",
+      结论: item.level === "healthy" ? "表现较好" : item.level === "watch" ? "需要关注" : "需要补强",
+      建议动作: sanitizeReportVisibleText(item.explanation || ""),
     }))),
     ...((insights.valueProofPoints || []).map((item) => ({ 重点标注: "重点价值证据", 模块: "价值证明点", 指标: "客户继续使用证据", 数值: "", 结论: item, 建议动作: "复盘会上优先展示，用数据证明四季蝉带来的动销、激励和协同价值。" }))),
-    ...((insights.riskItems || []).map((item) => ({ 重点标注: "重点风险", 模块: "流失风险信号", 指标: item.label || "", 数值: item.value ?? "", 结论: item.explanation || "", 建议动作: "形成下月跟进清单，避免客户只看到成本，看不到持续运营收益。" }))),
-    ...((insights.recommendedActions || []).map((item, index) => ({ 重点标注: "重点动作", 模块: "下月推动动作", 指标: `动作${index + 1}`, 数值: "", 结论: item, 建议动作: item }))),
+    ...((insights.riskItems || []).map((item) => ({ 重点标注: "重点补强", 模块: "运营补强信号", 指标: item.label || "", 数值: item.value ?? "", 结论: sanitizeReportVisibleText(item.explanation || ""), 建议动作: "形成下月跟进清单，让客户持续看到运营收益。" }))),
+    ...((insights.recommendedActions || []).map((item, index) => ({ 重点标注: "重点动作", 模块: "下月推动动作", 指标: `动作${index + 1}`, 数值: "", 结论: sanitizeReportVisibleText(item), 建议动作: sanitizeReportVisibleText(item) }))),
     ...((insights.weakActivityItems || []).map((item) => ({ 重点标注: "重点跟进品种", 模块: "弱活动品种", 指标: item.商品名称 || item.商品编码 || "", 数值: item.指标值 ?? "", 结论: item.数据路径 || "", 建议动作: "检查是否存在有奖励但无销售的品种，必要时调整选品、门店覆盖或店员培训。" }))),
   ].filter((row) => Object.values(row).some((value) => value !== "" && value !== undefined && value !== null));
   const statusRows = (summary.datasetFiles || []).map((file) => ({
@@ -5878,11 +5878,10 @@ function workbookSheets(summary, report) {
   const conclusionRows = [
     { 重点标注: "重点摘要", 类型: "总览结论", 内容: report?.executiveSummary || "" },
     ...((report?.highlights || []).map((item) => ({ 重点标注: "重点亮点", 类型: "关键发现", 内容: item }))),
-    ...((report?.risks || []).map((item) => ({ 重点标注: "重点风险", 类型: "风险问题", 内容: item }))),
     ...((report?.nextActions || []).map((item) => ({ 重点标注: "重点动作", 类型: "下一步动作", 内容: item }))),
   ];
   return [
-    { name: "续用风险", rows: insightRows.length ? insightRows : [{ 重点标注: "重点关注", 模块: "运营洞察", 指标: "暂无可计算洞察", 数值: "", 结论: "当前数据不足", 建议动作: "补齐销售、活动、奖励、培训、提现或厂家协同数据后再复盘。" }] },
+    { name: "运营健康度", rows: insightRows.length ? insightRows : [{ 重点标注: "重点关注", 模块: "运营洞察", 指标: "暂无可计算洞察", 数值: "", 结论: "当前数据不足", 建议动作: "补齐销售、活动、奖励、培训、提现或厂家协同数据后再复盘。" }] },
     { name: "复盘结论", rows: conclusionRows },
     { name: "数据口径说明", rows: [
       { 项目: "数据来源", 内容: summary.source || "登录获取" },
@@ -8650,7 +8649,7 @@ function deriveOperationInsights({
     { key: "activitySustainability", label: "活动持续运营", value: joinedActivityCount, level: onlineActivityCount ? "healthy" : joinedActivityCount ? "watch" : "risk", explanation: joinedActivityCount ? `已识别 ${joinedActivityCount} 个已参加/已配置活动，其中当前上架/发布约 ${onlineActivityCount} 个，活动销售额约 ${activityCatalogSalesAmount}。` : "未识别到已参加活动列表，客户可能还没有形成持续活动运营池。" },
     { key: "activityCoverage", label: "活动覆盖", value: activityCoverageRate, level: rateLevel(activityCoverageRate, 35, 15), explanation: `活动覆盖约 ${activityCoverageRate}% 的动销品种；覆盖越低，客户越容易把四季蝉理解成少数单品红包。` },
     { key: "rewardClosure", label: "激励闭环", value: rewardEfficiency, level: activitySalesAmount ? rateLevel(Math.min(rewardEfficiency, 100), 8, 2) : "risk", explanation: activitySalesAmount ? `每100元活动销售对应约 ${rewardEfficiency} 元奖励，需结合毛利判断激励效率。` : "当前没有识别到活动销售额，难以证明奖励带动销售。" },
-    { key: "employeeParticipation", label: "员工参与", value: employeeParticipationSignal, level: employeeParticipationSignal ? (totalWithdrawMoney || employeeCoverage ? "healthy" : "watch") : "risk", explanation: employeeParticipationSignal ? `识别到店员参与/豆豆/提现信号约 ${employeeParticipationSignal}，提现金额约 ${totalWithdrawMoney}。` : "缺少员工参与或提现信号，店员感知弱时客户续用风险会上升。" },
+    { key: "employeeParticipation", label: "员工参与", value: employeeParticipationSignal, level: employeeParticipationSignal ? (totalWithdrawMoney || employeeCoverage ? "healthy" : "watch") : "risk", explanation: employeeParticipationSignal ? `识别到店员参与/豆豆/提现信号约 ${employeeParticipationSignal}，提现金额约 ${totalWithdrawMoney}。` : "缺少员工参与或提现信号，店员感知会变弱。" },
     { key: "trainingConversion", label: "培训承接", value: trainingRows.length || trainingMetricRows.length, level: trainingHasSignal ? "watch" : "risk", explanation: trainingHasSignal ? "已有培训或学习指标，可进一步与销售结果绑定。" : "培训数据为空，建议把重点品培训、考试和激励任务连成闭环。" },
     { key: "factoryCollaboration", label: "厂家协同", value: shareRewardAmount || shareRecordCount, level: factoryCollaborationLevel, explanation: shareRecordCount || shareRewardAmount ? `厂家晒单/打赏已有 ${shareRecordCount} 条记录，金额约 ${shareRewardAmount}。` : "厂家打赏和晒单为空，厂家资源没有被充分转化为门店执行证据。" },
   ];
