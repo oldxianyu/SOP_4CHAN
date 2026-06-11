@@ -3024,6 +3024,7 @@ async function saveReviewReportRecord(userId, sourceType, sourceName, summary, g
     reportTitle: generated.report?.title || "四季蝉AI复盘报告",
     shareUrl: generated.shareUrl,
     svgUrl: generated.svgUrl,
+    posterUrl: generated.posterUrl,
     qrSvgUrl: generated.qrSvgUrl,
     excelUrl: generated.excelUrl,
     excelStatus: excelStatus || (generated.excelUrl ? "ready" : ""),
@@ -3897,6 +3898,7 @@ function normalizeReviewReportRow(row, options = {}) {
     reportId: row.report_id || row.reportId,
     shareUrl,
     svgUrl: normalizePublicArtifactUrl(row.svg_url || row.svgUrl || reportArtifactUrl(shareUrl, "report.svg")),
+    posterUrl: normalizePublicArtifactUrl(row.poster_url || row.posterUrl || reportArtifactUrl(shareUrl, "poster.svg")),
     qrSvgUrl: normalizePublicArtifactUrl(row.qr_svg_url || row.qrSvgUrl || reportArtifactUrl(shareUrl, "qr.svg")),
     excelUrl,
     excelStatus,
@@ -5361,7 +5363,7 @@ function markdownHeadingIcon(title) {
   return `${reportIconForText(title)} ${title}`;
 }
 
-function renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUrl, excelUrl = "", excelStatus = "", excelError = "" }) {
+function renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUrl, posterUrl = "", excelUrl = "", excelStatus = "", excelError = "" }) {
   report = applyCustomerTitleToReport(report, summary);
   const sections = (report.sections || [])
     .map(
@@ -5383,6 +5385,7 @@ function renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUr
     : resolvedExcelStatus === "failed"
       ? `<span class="button disabled danger" id="excelAction" data-excel-status="failed" title="${escapeHtml(excelError || "Excel汇总生成失败")}">Excel生成失败</span>`
       : `<span class="button disabled" id="excelAction" data-excel-status="generating">Excel后台生成中</span>`;
+  const resolvedPosterUrl = String(posterUrl || `${shareUrl}poster.svg`).trim();
   const diagnosticsUrl = `${shareUrl}${encodeURIComponent("四季蝉接口诊断.json")}`;
   const normalizedDataUrl = `${shareUrl}${encodeURIComponent("四季蝉登录获取标准化数据.json")}`;
 
@@ -5447,8 +5450,9 @@ function renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUr
     <section class="actions">
       <div>
         ${renderHtmlHeading("扫码查看与导出")}
-        <p>此页面可直接分享给客户查看，也可下载SVG长图用于汇报材料。</p>
+        <p>此页面可直接分享给客户查看，也可下载视觉海报和SVG长图用于汇报材料。</p>
         <div class="buttons">
+          <a class="button" href="${escapeHtml(resolvedPosterUrl)}" download>下载视觉海报</a>
           <a class="button" href="${escapeHtml(svgUrl)}" download>下载SVG长图</a>
           <a class="button secondary" href="${escapeHtml(qrSvgUrl)}" download>下载二维码</a>
           ${excelActionHtml}
@@ -5578,6 +5582,109 @@ function renderReportSvg({ report, summary, shareUrl, qrSvg }) {
       <stop offset="0%" stop-color="#ffffff"/>
       <stop offset="55%" stop-color="#eef2ff"/>
       <stop offset="100%" stop-color="#fff7f0"/>
+    </linearGradient>
+  </defs>
+  ${parts.join("\n")}
+</svg>`;
+}
+
+function posterMetricValue(value, suffix = "") {
+  if (value === undefined || value === null || value === "") return "暂无";
+  const number = Number(value);
+  if (!Number.isFinite(number)) return String(value);
+  if (Math.abs(number) >= 10000) return `${money(number / 10000)}万${suffix}`;
+  return `${money(number)}${suffix}`;
+}
+
+function posterText(text, x, y, options = {}) {
+  return `<text x="${x}" y="${y}" font-size="${options.size || 28}" font-weight="${options.weight || 700}" fill="${options.fill || "#172033"}" ${options.anchor ? `text-anchor="${options.anchor}"` : ""}>${escapeXml(text)}</text>`;
+}
+
+function posterCard(x, y, w, h, title, value, subtitle, color = "#2a4bff") {
+  return `
+    <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="24" fill="#ffffff" stroke="#dbe4ff"/>
+    <circle cx="${x + w - 42}" cy="${y + 42}" r="30" fill="${color}" opacity=".12"/>
+    ${posterText(title, x + 28, y + 42, { size: 22, weight: 800, fill: "#63708a" })}
+    ${posterText(value, x + 28, y + 102, { size: 46, weight: 950, fill: color })}
+    ${posterText(subtitle || "", x + 28, y + h - 28, { size: 20, weight: 700, fill: "#63708a" })}
+  `;
+}
+
+function posterRing(cx, cy, r, percent, label, color) {
+  const safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
+  const circumference = 2 * Math.PI * r;
+  const dash = (safePercent / 100) * circumference;
+  return `
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#e8eefc" stroke-width="22"/>
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="22" stroke-linecap="round" stroke-dasharray="${dash} ${circumference - dash}" transform="rotate(-90 ${cx} ${cy})"/>
+    ${posterText(`${safePercent}%`, cx, cy + 10, { size: 38, weight: 950, fill: color, anchor: "middle" })}
+    ${posterText(label, cx, cy + r + 44, { size: 21, weight: 800, fill: "#3f4b62", anchor: "middle" })}
+  `;
+}
+
+function renderReportPosterSvg({ report, summary, shareUrl, qrSvg }) {
+  report = applyCustomerTitleToReport(report, summary);
+  const metrics = summary?.operationInsights?.metrics || {};
+  const moving = metrics.movingRates || summary?.monthlyComparison?.movingRateDetails?.current || {};
+  const storeMoving = moving.storeMoving || {};
+  const employeeMoving = moving.employeeMoving || {};
+  const productMoving = moving.productMoving || {};
+  const monthly = summary?.monthlyComparison || {};
+  const market = monthly.marketPerformance || {};
+  const activity = monthly.activityExecution || {};
+  const salesAmount = market.salesAmount?.current ?? metrics.totalSalesAmount ?? 0;
+  const activityCount = activity.activityCount?.current ?? metrics.joinedActivityCount ?? 0;
+  const rewardAmount = monthly.inputOutput?.rewardAmount?.current ?? metrics.totalRewardAmount ?? 0;
+  const roi = monthly.inputOutput?.roi?.current ?? metrics.inputOutputRatio ?? 0;
+  const health = summary?.operationInsights?.healthScore ?? "";
+  const title = report.title || "四季蝉AI复盘报告";
+  const highlights = arrayOfText(report.highlights).slice(0, 3);
+  const actions = arrayOfText(report.nextActions).slice(0, 3);
+  const parts = [];
+  parts.push(`<rect width="1080" height="1620" fill="#f4f7ff"/>`);
+  parts.push(`<circle cx="940" cy="130" r="180" fill="#ff7a2f" opacity=".13"/>`);
+  parts.push(`<circle cx="92" cy="1380" r="210" fill="#2a4bff" opacity=".10"/>`);
+  parts.push(`<rect x="54" y="54" width="972" height="1512" rx="36" fill="#ffffff" stroke="#dbe4ff"/>`);
+  parts.push(`<rect x="84" y="84" width="912" height="260" rx="30" fill="url(#posterHero)"/>`);
+  parts.push(posterText("海典四季蝉 · 数据视觉海报", 124, 136, { size: 24, weight: 900, fill: "#ffffff" }));
+  parts.push(svgText(wrapText(title, 18).slice(0, 2), 124, 208, { size: 46, weight: 950, fill: "#ffffff", lineHeight: 58 }));
+  parts.push(posterText("少字版经营复盘，一眼看懂动销状态", 124, 304, { size: 23, weight: 800, fill: "#dfe7ff" }));
+  parts.push(posterCard(84, 380, 280, 150, "重点品销售", posterMetricValue(salesAmount, "元"), "同期口径", "#2a4bff"));
+  parts.push(posterCard(400, 380, 280, 150, "活动数量", posterMetricValue(activityCount, "个"), "活动执行", "#ff7a2f"));
+  parts.push(posterCard(716, 380, 280, 150, "ROI", posterMetricValue(roi), "销售/奖励", "#12a87b"));
+  parts.push(`<rect x="84" y="574" width="912" height="342" rx="28" fill="#fbfcff" stroke="#dbe4ff"/>`);
+  parts.push(posterText("动销率三看板", 124, 632, { size: 30, weight: 950, fill: "#1f3f95" }));
+  parts.push(posterRing(240, 748, 74, storeMoving.rate, "门店动销率", "#2a4bff"));
+  parts.push(posterRing(540, 748, 74, employeeMoving.rate, "人员动销率", "#ff7a2f"));
+  parts.push(posterRing(840, 748, 74, productMoving.rate, "商品动销率", "#12a87b"));
+  parts.push(`<rect x="84" y="956" width="912" height="236" rx="28" fill="#fff9f3" stroke="#ffe0c7"/>`);
+  parts.push(posterText("核心信号", 124, 1016, { size: 30, weight: 950, fill: "#a4490d" }));
+  highlights.forEach((item, index) => {
+    parts.push(`<circle cx="132" cy="${1070 + index * 48}" r="12" fill="#ff7a2f" opacity=".85"/>`);
+    parts.push(svgText(wrapText(item, 31).slice(0, 1), 158, 1078 + index * 48, { size: 22, weight: 800, fill: "#442a18" }));
+  });
+  parts.push(`<rect x="84" y="1230" width="650" height="250" rx="28" fill="#f7fbff" stroke="#dbe4ff"/>`);
+  parts.push(posterText("下一步动作", 124, 1290, { size: 30, weight: 950, fill: "#1f3f95" }));
+  actions.forEach((item, index) => {
+    parts.push(`<rect x="124" y="${1320 + index * 48}" width="28" height="28" rx="8" fill="#2a4bff" opacity=".12"/>`);
+    parts.push(posterText(String(index + 1), 138, 1342 + index * 48, { size: 18, weight: 950, fill: "#2a4bff", anchor: "middle" }));
+    parts.push(svgText(wrapText(item, 24).slice(0, 1), 168, 1342 + index * 48, { size: 21, weight: 800, fill: "#273349" }));
+  });
+  parts.push(`<rect x="764" y="1230" width="232" height="250" rx="28" fill="#1f3f95"/>`);
+  parts.push(`<rect x="812" y="1272" width="136" height="136" rx="16" fill="#ffffff"/>`);
+  parts.push(inlineQrSvg(qrSvg, 824, 1284, 112));
+  parts.push(posterText("扫码看完整报告", 880, 1444, { size: 20, weight: 900, fill: "#ffffff", anchor: "middle" }));
+  if (health !== "") {
+    parts.push(`<circle cx="914" cy="420" r="52" fill="#ffffff" opacity=".92"/>`);
+    parts.push(posterText(String(health), 914, 434, { size: 36, weight: 950, fill: "#1f3f95", anchor: "middle" }));
+    parts.push(posterText("评分", 914, 466, { size: 17, weight: 800, fill: "#63708a", anchor: "middle" }));
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1620" viewBox="0 0 1080 1620">
+  <defs>
+    <linearGradient id="posterHero" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#1f3f95"/>
+      <stop offset="55%" stop-color="#2a4bff"/>
+      <stop offset="100%" stop-color="#ff7a2f"/>
     </linearGradient>
   </defs>
   ${parts.join("\n")}
@@ -6247,6 +6354,7 @@ function reportArtifactStatusPayload(artifact = {}, overrides = {}) {
     reportId: overrides.reportId || artifact.reportId || "",
     shareUrl: overrides.shareUrl || artifact.shareUrl || "",
     svgUrl: overrides.svgUrl || artifact.svgUrl || "",
+    posterUrl: overrides.posterUrl || artifact.posterUrl || reportArtifactUrl(overrides.shareUrl || artifact.shareUrl || "", "poster.svg"),
     qrSvgUrl: overrides.qrSvgUrl || artifact.qrSvgUrl || "",
     excelUrl: overrides.excelUrl || artifact.excelUrl || "",
     excelStatus: overrides.excelStatus || artifact.excelStatus || "",
@@ -6257,7 +6365,7 @@ function reportArtifactStatusPayload(artifact = {}, overrides = {}) {
   };
 }
 
-function reportArtifactJsonPayload({ report, markdown, summary, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl = "", excelStatus = "", excelError = "", excelFileName = "", normalizedDataUrl = "", diagnosticsUrl = "" }) {
+function reportArtifactJsonPayload({ report, markdown, summary, reportId, shareUrl, svgUrl, posterUrl = "", qrSvgUrl, excelUrl = "", excelStatus = "", excelError = "", excelFileName = "", normalizedDataUrl = "", diagnosticsUrl = "" }) {
   return {
     report,
     markdown: markdown || "",
@@ -6265,6 +6373,7 @@ function reportArtifactJsonPayload({ report, markdown, summary, reportId, shareU
     reportId,
     shareUrl,
     svgUrl,
+    posterUrl: posterUrl || reportArtifactUrl(shareUrl, "poster.svg"),
     qrSvgUrl,
     excelUrl,
     excelStatus,
@@ -6296,6 +6405,7 @@ function updateReportArtifactExcelState(artifact, summary, report, markdown, exc
     reportId: artifact.reportId,
     shareUrl: artifact.shareUrl || "",
     svgUrl: artifact.svgUrl || "",
+    posterUrl: artifact.posterUrl || reportArtifactUrl(artifact.shareUrl || "", "poster.svg"),
     qrSvgUrl: artifact.qrSvgUrl || "",
     excelUrl: resolvedExcelUrl,
     excelStatus: resolvedExcelStatus,
@@ -6313,6 +6423,7 @@ function updateReportArtifactExcelState(artifact, summary, report, markdown, exc
         summary: summary || {},
         shareUrl: next.shareUrl,
         svgUrl: next.svgUrl,
+        posterUrl: next.posterUrl,
         qrSvgUrl: next.qrSvgUrl,
         excelUrl: next.excelUrl,
         excelStatus: next.excelStatus,
@@ -6481,6 +6592,7 @@ async function persistReportArtifact({ report, markdown, summary }) {
 
   const shareUrl = `${publicReportBaseUrl}/reports/${reportId}/`;
   const svgUrl = `${shareUrl}report.svg`;
+  const posterUrl = `${shareUrl}poster.svg`;
   const qrSvgUrl = `${shareUrl}qr.svg`;
   const excelFileName = reviewWorkbookFileName(summary);
   const excelUrl = "";
@@ -6495,17 +6607,19 @@ async function persistReportArtifact({ report, markdown, summary }) {
     color: { dark: "#1f3f95", light: "#ffffff" },
   });
   const reportSvg = renderReportSvg({ report, summary, shareUrl, qrSvg });
-  const html = renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError });
+  const posterSvg = renderReportPosterSvg({ report, summary, shareUrl, qrSvg });
+  const html = renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, posterUrl, qrSvgUrl, excelUrl, excelStatus, excelError });
 
-  fs.writeFileSync(path.join(reportDir, "report.json"), JSON.stringify(reportArtifactJsonPayload({ report, markdown, summary, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl }), null, 2), "utf8");
-  writeReportArtifactStatus(reportDir, { reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError, normalizedDataUrl, diagnosticsUrl });
+  fs.writeFileSync(path.join(reportDir, "report.json"), JSON.stringify(reportArtifactJsonPayload({ report, markdown, summary, reportId, shareUrl, svgUrl, posterUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl }), null, 2), "utf8");
+  writeReportArtifactStatus(reportDir, { reportId, shareUrl, svgUrl, posterUrl, qrSvgUrl, excelUrl, excelStatus, excelError, normalizedDataUrl, diagnosticsUrl });
   fs.writeFileSync(path.join(reportDir, "四季蝉登录获取标准化数据.json"), JSON.stringify(summary.rawData || {}, null, 2), "utf8");
   fs.writeFileSync(path.join(reportDir, "四季蝉接口诊断.json"), JSON.stringify(summary.interfaceDiagnostics || [], null, 2), "utf8");
   fs.writeFileSync(path.join(reportDir, "index.html"), html, "utf8");
   fs.writeFileSync(path.join(reportDir, "report.svg"), reportSvg, "utf8");
+  fs.writeFileSync(path.join(reportDir, "poster.svg"), posterSvg, "utf8");
   fs.writeFileSync(path.join(reportDir, "qr.svg"), qrSvg, "utf8");
 
-  return { reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl };
+  return { reportId, shareUrl, svgUrl, posterUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl };
 }
 
 async function refreshExistingReportArtifacts(targetReportId = "") {
@@ -6538,6 +6652,8 @@ async function refreshExistingReportArtifacts(targetReportId = "") {
       const excelStatus = savedExcelStatus || (workbookExists ? "ready" : "generating");
       const excelUrl = saved.excelUrl || saved.excel_url || (workbookExists ? reportArtifactEncodedUrl(saved.shareUrl, excelFileName) : "");
       const excelError = saved.excelError || saved.excel_error || "";
+      const reportId = saved.reportId || entry.name;
+      const posterUrl = saved.posterUrl || `${saved.shareUrl.replace(/\/+$/, "")}/poster.svg`;
       const reportSvg = renderReportSvg({ report, summary: saved.summary, shareUrl: saved.shareUrl, qrSvg });
       const html = renderReportHtml({
         report,
@@ -6545,19 +6661,21 @@ async function refreshExistingReportArtifacts(targetReportId = "") {
         summary: saved.summary,
         shareUrl: saved.shareUrl,
         svgUrl,
+        posterUrl,
         qrSvgUrl,
         excelUrl,
         excelStatus,
         excelError,
       });
-      const reportId = saved.reportId || entry.name;
       const normalizedDataUrl = saved.normalizedDataUrl || `${saved.shareUrl}${encodeURIComponent("四季蝉登录获取标准化数据.json")}`;
       const diagnosticsUrl = saved.diagnosticsUrl || `${saved.shareUrl}${encodeURIComponent("四季蝉接口诊断.json")}`;
-      const refreshed = { ...saved, report, markdown, reportId, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl };
-      fs.writeFileSync(path.join(reportDir, "report.json"), JSON.stringify(reportArtifactJsonPayload({ report, markdown, summary: saved.summary || {}, reportId, shareUrl: saved.shareUrl, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl }), null, 2), "utf8");
+      const posterSvg = renderReportPosterSvg({ report, summary: saved.summary || {}, shareUrl: saved.shareUrl, qrSvg });
+      const refreshed = { ...saved, report, markdown, reportId, svgUrl, posterUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl };
+      fs.writeFileSync(path.join(reportDir, "report.json"), JSON.stringify(reportArtifactJsonPayload({ report, markdown, summary: saved.summary || {}, reportId, shareUrl: saved.shareUrl, svgUrl, posterUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl }), null, 2), "utf8");
       writeReportArtifactStatus(reportDir, refreshed);
       fs.writeFileSync(path.join(reportDir, "index.html"), html, "utf8");
       fs.writeFileSync(path.join(reportDir, "report.svg"), reportSvg, "utf8");
+      fs.writeFileSync(path.join(reportDir, "poster.svg"), posterSvg, "utf8");
       fs.writeFileSync(path.join(reportDir, "qr.svg"), qrSvg, "utf8");
       if (saved.summary?.rawData) {
         fs.writeFileSync(path.join(reportDir, "四季蝉登录获取标准化数据.json"), JSON.stringify(saved.summary.rawData || {}, null, 2), "utf8");
@@ -10284,6 +10402,7 @@ function buildGeneratedReviewResponse(id, summary, generated) {
     reportId: generated.reportId,
     shareUrl: generated.shareUrl,
     svgUrl: generated.svgUrl,
+    posterUrl: generated.posterUrl,
     qrSvgUrl: generated.qrSvgUrl,
     excelUrl: generated.excelUrl,
     excelStatus: generated.excelStatus || "",
@@ -10317,10 +10436,10 @@ async function handleReviewReport(req, res) {
     datasetId = await saveDatasetRecord(user.id, "excel", summary, filename);
     await assertReviewJobStillActive(job);
     await updateReviewReportProgress(job.reportDbId, "ai_generating", "客户数据已整理完成，正在生成AI复盘报告。", 58);
-    const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary, user);
+    const { report, markdown, reportId, shareUrl, svgUrl, posterUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary, user);
     await assertReviewJobStillActive(job);
     await updateReviewReportProgress(job.reportDbId, "publishing", "AI分析已完成，正在写入历史记录并生成分享产物；Excel汇总将在后台生成。", 88);
-    const generated = { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl };
+    const generated = { report, markdown, reportId, shareUrl, svgUrl, posterUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl };
     const dbReportId = await saveReviewReportRecord(user.id, "excel", filename, summary, generated, { reportDbId: job.reportDbId, jobKey });
     queueReviewWorkbookGeneration(dbReportId, summary, report, markdown, generated);
     await linkDatasetToReviewReport(datasetId, dbReportId, "completed");
@@ -10363,10 +10482,10 @@ async function handleSijichanReviewReport(req, res) {
     datasetId = await saveDatasetRecord(user.id, "login", summary, summary.source || "登录获取");
     await assertReviewJobStillActive(job);
     await updateReviewReportProgress(job.reportDbId, "ai_generating", "明细数据已整理完成，正在生成AI复盘报告。", 62);
-    const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary, user);
+    const { report, markdown, reportId, shareUrl, svgUrl, posterUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary, user);
     await assertReviewJobStillActive(job);
     await updateReviewReportProgress(job.reportDbId, "publishing", "AI分析已完成，正在生成分享页、SVG和二维码；Excel汇总将在后台生成。", 88);
-    const generated = { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl };
+    const generated = { report, markdown, reportId, shareUrl, svgUrl, posterUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl };
     const dbReportId = await saveReviewReportRecord(user.id, "login", "登录获取", summary, generated, { reportDbId: job.reportDbId, jobKey });
     queueReviewWorkbookGeneration(dbReportId, summary, report, markdown, generated);
     await upsertSijichanAuthorization(user.id, body, summary, dbReportId).catch((error) => {
@@ -10426,10 +10545,10 @@ async function buildWeComTokenReportForUser(user, body) {
     datasetId = await saveDatasetRecord(user.id, "wecom_token", summary, summary.source || "企微扫码授权");
     await assertReviewJobStillActive(job);
     await updateReviewReportProgress(job.reportDbId, "ai_generating", "明细数据已整理完成，正在生成AI复盘报告。", 62);
-    const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary, user);
+    const { report, markdown, reportId, shareUrl, svgUrl, posterUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary, user);
     await assertReviewJobStillActive(job);
     await updateReviewReportProgress(job.reportDbId, "publishing", "AI分析已完成，正在生成分享页、SVG和二维码；Excel汇总将在后台生成。", 88);
-    const generated = { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl };
+    const generated = { report, markdown, reportId, shareUrl, svgUrl, posterUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl };
     const dbReportId = await saveReviewReportRecord(user.id, "wecom_token", "企微扫码授权", summary, generated, { reportDbId: job.reportDbId, jobKey });
     queueReviewWorkbookGeneration(dbReportId, summary, report, markdown, generated);
     await upsertSijichanTokenAuthorization(user.id, { ...body, token }, summary, dbReportId).catch((error) => {
@@ -10746,10 +10865,10 @@ async function buildWeComBrowserSessionReportForUser(user, session, body = {}) {
     datasetId = await saveDatasetRecord(user.id, "wecom_browser", summary, summary.source || "企微扫码服务器登录");
     await assertReviewJobStillActive(job);
     await updateReviewReportProgress(job.reportDbId, "ai_generating", "明细数据已整理完成，正在生成AI复盘报告。", 62);
-    const { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary, user);
+    const { report, markdown, reportId, shareUrl, svgUrl, posterUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl } = await generateReportFromSummary(summary, user);
     await assertReviewJobStillActive(job);
     await updateReviewReportProgress(job.reportDbId, "publishing", "AI分析已完成，正在生成分享页、SVG和二维码；Excel汇总将在后台生成。", 88);
-    const generated = { report, markdown, reportId, shareUrl, svgUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl };
+    const generated = { report, markdown, reportId, shareUrl, svgUrl, posterUrl, qrSvgUrl, excelUrl, excelStatus, excelError, excelFileName, normalizedDataUrl, diagnosticsUrl };
     const dbReportId = await saveReviewReportRecord(user.id, "wecom_browser", "企微扫码服务器登录", summary, generated, { reportDbId: job.reportDbId, jobKey });
     queueReviewWorkbookGeneration(dbReportId, summary, report, markdown, generated);
     await linkDatasetToReviewReport(datasetId, dbReportId, "completed");
@@ -10803,6 +10922,7 @@ async function triggerWeComBrowserAutoReport(session, reason = "") {
         reportId: result.reportId,
         shareUrl: result.shareUrl,
         svgUrl: result.svgUrl,
+        posterUrl: result.posterUrl,
         qrSvgUrl: result.qrSvgUrl,
         excelUrl: result.excelUrl,
       };
@@ -11041,6 +11161,7 @@ async function handleGetReportStatus(req, res, id) {
       status: report.status,
       shareUrl: report.shareUrl,
       svgUrl: report.svgUrl,
+      posterUrl: report.posterUrl,
       qrSvgUrl: report.qrSvgUrl,
       excelUrl: report.excelUrl,
       excelStatus: report.excelStatus,
@@ -11374,3 +11495,4 @@ if (!isMainThread && workerData?.type === "review-workbook") {
     listenOn();
   }
 }
+
