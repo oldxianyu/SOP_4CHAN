@@ -83,17 +83,49 @@ const expectedSheets = [
   "店员晒单厂家给额外激励",
 ];
 
-const defaultReviewPromptInstruction = [
-  "你是海典四季蝉重点品数字化动销平台的运营复盘顾问。",
-  "请基于客户上传的Excel数据摘要，输出品种动销复盘报告。",
-  "固定业务口径：AAA品种是销售额、毛利额、客流量都进入核心贡献区间的主力赚钱品种。",
-  "四季蝉不是单纯红包工具，而是把厂家、连锁总部、门店店员、顾客连接起来，围绕重点品完成选品、培训、激励、销售、提现、统计、复盘的数字化运营平台。",
-  "不要加入与客户数据无关的营销节点、季节场景或泛化品类建议。",
-  "请关注：品种增长/下滑、上月与去年同月同比、近半年与去年同期同比、活动商品销售与奖励闭环、激励方式使用/未使用价值、店员提现参与、厂家晒单打赏、下一步动作。",
-  "新增复盘目标：通过数据证明四季蝉价值，引导客户持续使用。必须使用 operationInsights 中的健康度、价值证明点和建议动作，但不要设置或输出独立风险模块。",
-  "请明确输出：1）客户继续使用四季蝉的价值证据；2）当前运营中需要补强的环节；3）下月应推动客户多用哪些模块或玩法；4）总部、门店、厂家三方各自的跟进动作。",
-  "报告面向中国医药连锁客户阅读，所有可见文字必须使用中文。不要在报告正文中出现 role、actions、bullets、headquarters、stores、factories 等英文键名；下一步动作请写成“总部：……”“门店：……”“厂家：……”这类中文句子。",
-].join("\n");
+const defaultReviewPromptInstruction = `# 角色设定
+你是海典四季蝉（重点品数字化动销平台）的资深运营复盘顾问。你的核心任务是通过深度解析客户上传的Excel数据摘要及传入的 operationInsights 数据，输出一份专业、精准且具有业务导向的品种动销复盘报告。
+
+# 平台与业务背景
+- 四季蝉定位：绝非单纯的“发红包工具”，而是深度连接【厂家、连锁总部、门店店员、顾客】四端的数字化动销平台，完整覆盖“选品-培训-激励-销售-提现-统计-复盘”全链路闭环。
+- 业务口径（AAA品种）：指销售额、毛利额、客流量三项指标均进入核心贡献区间的主力赚钱品种。
+- 复盘终极目标：用真实数据向中国医药连锁客户自证四季蝉的业务价值，有效引导客户持续深挖平台功能，前置化解客户流失风险。
+
+# 工作任务与数据聚焦点
+请基于传入的数据源（Excel数据摘要 + operationInsights 中的健康度、价值证明点和建议动作）生成复盘报告。分析必须聚焦：
+1. 品种表现：增长/下滑趋势、AAA品种表现、上月与去年同月同比、近半年与去年同期同比。
+2. 活动商品销售与奖励闭环健康度。
+3. 激励方式的实际应用价值，必须体现“用与不用”的差异对比。
+4. 店员提现参与度与厂家晒单打赏活跃度。
+5. 一个豆豆能带动的销售金额，格式严格写成“每1个豆豆奖励带动……元销售额。”。
+6. 当月与上月活动数据对比：活动个数、活动商品数、活动销售额。
+7. 大盘业绩对比：销售额、毛利额、毛利率，用于回答“赚没赚钱、规模多大”。
+8. 活动执行情况对比：门店动销率、人员动销率、品种动销率，用于回答“员工有没有真正推、目标商品动没动”。
+9. 商品与结构对比：联合用药率、重点品占比、滞销品消化率，用于回答“卖出去的东西结构健不健康”。
+10. 投入产出对比：ROI、费效比是否变化，用于回答“花出去的钱值不值”。
+
+# 严格约束条件
+1. 纯中文业务表达：报告面向中国医药连锁客户，所有可见文字必须是自然流畅的中文。严禁在正文出现 role、actions、bullets、headquarters、stores、factories、operationInsights 等任何英文键名或代码字段。
+2. 拒绝无效发散：严格基于客户实际数据输出，绝对禁止生搬硬套与数据无关的营销节点、节假日场景或泛泛的品类建议。
+3. 不要输出独立风险章节，不要使用“续用风险”作为章节或卡片。
+4. 在“下一步跟进动作”部分，必须严格使用“总部：……”“门店：……”“厂家：……”的中文句式开头。
+
+# 输出结构要求
+请严格按以下结构组织并输出报告：
+
+一、四季蝉当期核心价值证明
+提取 operationInsights 中的价值证明点，结合Excel数据，直观展示四季蝉为客户带来的实际增长与闭环价值。
+
+二、动销数据深度解析
+围绕AAA品种升降、激励应用价值、店员提现与厂家打赏、当月/上月活动执行对比、大盘业绩、商品结构和投入产出进行复盘。
+
+三、下月运营重点与功能推进
+明确指出下月应重点推动客户多使用四季蝉的哪些模块或具体玩法，以提升平台粘性。
+
+四、三方协同下一步跟进动作
+总部：[填写具体动作]
+门店：[填写具体动作]
+厂家：[填写具体动作]`;
 
 function ensureServerDir() {
   fs.mkdirSync(serverDir, { recursive: true });
@@ -5699,6 +5731,14 @@ function prepareReviewWorkbookInput(summary = {}, report = {}) {
       },
     },
     sales: {
+      currentMonth_vs_lastMonth: {
+        ...(raw.sales?.currentMonth_vs_lastMonth || {}),
+        rows: capWorkbookInputRows(raw.sales?.currentMonth_vs_lastMonth?.rows || [], "销售汇总-当月_vs_上月"),
+      },
+      currentMonth: {
+        ...(raw.sales?.currentMonth || {}),
+        rows: capWorkbookInputRows(raw.sales?.currentMonth?.rows || [], "销售汇总-当月"),
+      },
       lastMonth_vs_priorTwoMonths: {
         ...(raw.sales?.lastMonth_vs_priorTwoMonths || {}),
         rows: capWorkbookInputRows(raw.sales?.lastMonth_vs_priorTwoMonths?.rows || [], "销售汇总-上月_vs_前两月"),
@@ -5717,6 +5757,10 @@ function prepareReviewWorkbookInput(summary = {}, report = {}) {
       },
     },
     activitySummary: {
+      currentMonth: {
+        ...(raw.activitySummary?.currentMonth || {}),
+        rows: capWorkbookInputRows(raw.activitySummary?.currentMonth?.rows || [], "活动汇总-当月"),
+      },
       lastMonth: {
         ...(raw.activitySummary?.lastMonth || {}),
         rows: capWorkbookInputRows(raw.activitySummary?.lastMonth?.rows || [], "活动汇总-上月"),
@@ -5864,6 +5908,40 @@ function workbookSheets(summary, report) {
   const windows = summary.windows || {};
   const metrics = summary.metricRows || {};
   const insights = summary.operationInsights || {};
+  const monthlyComparisonRows = Object.entries(summary.monthlyComparison || {}).flatMap(([group, values]) => {
+    if (!values || typeof values !== "object" || !["marketPerformance", "activityExecution", "productStructure", "inputOutput"].includes(group)) return [];
+    const groupName = {
+      marketPerformance: "大盘业绩",
+      activityExecution: "活动执行情况",
+      productStructure: "商品与结构",
+      inputOutput: "投入产出",
+    }[group] || group;
+    const metricNames = {
+      salesAmount: "销售额",
+      grossProfit: "毛利额",
+      grossMargin: "毛利率",
+      activityCount: "活动个数",
+      activitySkuCount: "活动商品数",
+      activitySalesAmount: "活动销售额",
+      storeActivationRate: "门店动销率",
+      employeeActivationRate: "人员动销率",
+      skuActivationRate: "品种动销率",
+      jointMedicationRate: "联合用药率",
+      keyProductRatio: "重点品占比",
+      slowMovingClearanceRate: "滞销品消化率",
+      rewardAmount: "奖励金额",
+      roi: "投入产出比ROI",
+      feeEfficiencyRate: "费效比",
+    };
+    return Object.entries(values).map(([key, metric]) => ({
+      对比模块: groupName,
+      指标: metricNames[key] || key,
+      当月: metric?.current ?? "",
+      上月: metric?.previous ?? "",
+      差额: metric?.diff ?? "",
+      变化率: metric?.changeRate === undefined || metric?.changeRate === "" ? "" : `${metric.changeRate}%`,
+    }));
+  });
   const insightRows = [
     { 重点标注: "重点：运营健康度", 模块: "客户运营健康度", 指标: "健康度评分", 数值: insights.healthScore ?? "", 结论: "", 建议动作: "用于判断客户是否已经把四季蝉用成持续运营工具，而不是一次性红包活动。" },
     ...((insights.scoreItems || []).map((item) => ({
@@ -5927,10 +6005,12 @@ function workbookSheets(summary, report) {
   return [
     { name: "运营健康度", rows: insightRows.length ? insightRows : [{ 重点标注: "重点关注", 模块: "运营洞察", 指标: "暂无可计算洞察", 数值: "", 结论: "当前数据不足", 建议动作: "补齐销售、活动、奖励、培训、提现或厂家协同数据后再复盘。" }] },
     { name: "复盘结论", rows: conclusionRows },
+    { name: "当月_vs_上月经营对比", rows: monthlyComparisonRows.length ? monthlyComparisonRows : [{ 对比模块: "当月与上月经营对比", 指标: "暂无可计算指标", 当月: "", 上月: "", 差额: "", 变化率: "" }] },
     { name: "数据口径说明", rows: [
       { 项目: "数据来源", 内容: summary.source || "登录获取" },
       { 项目: "客户名称", 内容: summary.requestInfo?.merName || raw.meta?.merName || "" },
       { 项目: "客户编码", 内容: summary.requestInfo?.merCode || raw.meta?.merCode || "" },
+      { 项目: "当月", 内容: `${windows.currentMonth?.start || ""} 至 ${windows.currentMonth?.end || ""}` },
       { 项目: "上月", 内容: `${windows.lastMonth?.start || ""} 至 ${windows.lastMonth?.end || ""}` },
       { 项目: "上上月", 内容: `${windows.previousMonth?.start || ""} 至 ${windows.previousMonth?.end || ""}` },
       { 项目: "去年同月", 内容: `${windows.sameMonthLastYear?.start || ""} 至 ${windows.sameMonthLastYear?.end || ""}` },
@@ -5959,10 +6039,12 @@ function workbookSheets(summary, report) {
     { name: "奖励统计-半年", rows: capWorkbookRows(raw.rewardStatistics?.nearHalf?.rows || [], "奖励统计-半年") },
     { name: "奖励发放明细", rows: rewardDistributionRows.length ? capWorkbookRows(rewardDistributionRows, "奖励发放明细") : [{ 类型: "奖励发放", 说明: "当前口径未识别到奖励发放明细或指标，请查看接口诊断。" }] },
     { name: "员工豆豆账户与提现", rows: employeeAccountRows.length ? capWorkbookRows(employeeAccountRows, "员工豆豆账户与提现") : [{ 类型: "员工收益闭环", 说明: "当前口径未识别到员工账户、提现、核销或结算数据，请查看接口诊断。" }] },
+    { name: "销售汇总-当月_vs_上月", rows: capWorkbookRows(raw.sales?.currentMonth_vs_lastMonth?.rows || [], "销售汇总-当月_vs_上月") },
     { name: "销售汇总-上月_vs_前两月", rows: capWorkbookRows(raw.sales?.lastMonth_vs_priorTwoMonths?.rows || [], "销售汇总-上月_vs_前两月") },
     { name: "销售汇总-上月_vs_去年同月", rows: capWorkbookRows(raw.sales?.lastMonth_vs_sameMonthLastYear?.rows || [], "销售汇总-上月_vs_去年同月") },
     { name: "销售汇总-近半年_vs_上期", rows: capWorkbookRows(raw.sales?.nearHalf_vs_previousHalf?.rows || [], "销售汇总-近半年_vs_上期") },
     { name: "销售汇总-近半年_vs_去年同期", rows: capWorkbookRows(raw.sales?.nearHalf_vs_sameNearHalfLastYear?.rows || [], "销售汇总-近半年_vs_去年同期") },
+    { name: "活动汇总-当月_vs_上月", rows: capWorkbookRows([...(raw.activitySummary?.currentMonth?.rows || []), ...(raw.activitySummary?.lastMonth?.rows || [])], "活动汇总-当月_vs_上月") },
     { name: "活动汇总-5月_vs_4月", rows: capWorkbookRows([...(raw.activitySummary?.lastMonth?.rows || []), ...(raw.activitySummary?.previousMonth?.rows || [])], "活动汇总-5月_vs_4月") },
     { name: "活动汇总-上月_vs_去年同月", rows: capWorkbookRows([...(raw.activitySummary?.lastMonth?.rows || []), ...(raw.activitySummary?.sameMonthLastYear?.rows || [])], "活动汇总-上月_vs_去年同月") },
     { name: "活动汇总-近半年_vs_去年同期", rows: capWorkbookRows([...(raw.activitySummary?.nearHalf?.rows || []), ...(raw.activitySummary?.sameNearHalfLastYear?.rows || [])], "活动汇总-近半年_vs_去年同期") },
@@ -6470,6 +6552,7 @@ function currentSijichanAsOfDate() {
 
 function buildSijichanWindows(asOfText = "") {
   const asOf = new Date(`${asOfText || currentSijichanAsOfDate()}T12:00:00`);
+  const current = asOf;
   const last = addMonths(asOf, -1);
   const prev = addMonths(asOf, -2);
   const priorTwoStart = addMonths(asOf, -3);
@@ -6480,6 +6563,11 @@ function buildSijichanWindows(asOfText = "") {
   const sameNearHalfStart = addMonths(nearStart, -12);
   const sameNearHalfEnd = addMonths(last, -12);
   return {
+    currentMonth: {
+      label: "当月",
+      start: atStart(dateOnly(monthStart(current))),
+      end: atEnd(dateOnly(current)),
+    },
     lastMonth: { label: "上月", ...monthWindow(last) },
     previousMonth: { label: "上上月", ...monthWindow(prev) },
     sameMonthLastYear: { label: "去年同月", ...monthWindow(sameMonthLastYear) },
@@ -8848,6 +8936,8 @@ async function collectSijichanDataWithClient({ client, diagnostics, merCode = ""
   const withMerCode = (payload = {}) => (merCode ? { merCode, ...payload } : payload);
 
   const salesPeriods = {
+    currentMonth_vs_lastMonth: [windows.currentMonth, windows.lastMonth],
+    currentMonth: [windows.currentMonth, null],
     lastMonth_vs_priorTwoMonths: [windows.lastMonth, windows.priorTwoMonths],
     lastMonth_vs_sameMonthLastYear: [windows.lastMonth, windows.sameMonthLastYear],
     previousMonth: [windows.previousMonth, null],
@@ -8914,6 +9004,10 @@ async function collectSijichanDataWithClient({ client, diagnostics, merCode = ""
       joined: await client.paged("我的活动列表", "industryMarket/queryAlreadyActivity", activityCatalogBody),
     },
     activitySummary: {
+      currentMonth: {
+        rows: await client.paged("活动汇总-当月", "imActivityReward/summary/page", activityBody(windows.currentMonth)),
+        sum: await client.post("活动汇总合计-当月", "imActivityReward/summary/sum", activityBody(windows.currentMonth)),
+      },
       lastMonth: {
         rows: await client.paged("活动汇总-5月", "imActivityReward/summary/page", activityBody(windows.lastMonth)),
         sum: await client.post("活动汇总合计-5月", "imActivityReward/summary/sum", activityBody(windows.lastMonth)),
@@ -8968,8 +9062,93 @@ function withDataMeta(rows, fileName, dataPath) {
   return (rows || []).map((row) => ({ ...row, 数据文件: fileName, 数据路径: dataPath }));
 }
 
+function averageCandidates(rows, candidates) {
+  const values = [];
+  for (const row of rows || []) {
+    const key = candidates.find((candidate) => row && row[candidate] !== undefined && row[candidate] !== "");
+    if (key) {
+      const value = toNumber(row[key]);
+      if (value) values.push(value);
+    }
+  }
+  if (!values.length) return 0;
+  return Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 100) / 100;
+}
+
+function compareMetric(current, previous) {
+  const currentValue = Math.round(toNumber(current) * 100) / 100;
+  const previousValue = Math.round(toNumber(previous) * 100) / 100;
+  const diff = Math.round((currentValue - previousValue) * 100) / 100;
+  const changeRate = previousValue ? Math.round((diff / previousValue) * 10000) / 100 : 0;
+  return { current: currentValue, previous: previousValue, diff, changeRate };
+}
+
+function monthlySnapshot(rows = [], activityRows = []) {
+  const salesAmount = sumCandidates(rows, ["saleCommodityAmount", "rewardSaleAmount", "saleAmount", "salesAmount", "amount", "销售额", "销售金额"]);
+  const grossProfit = sumCandidates(rows, ["grossProfitAmount", "grossProfit", "profitAmount", "maoriAmount", "毛利额", "毛利"]);
+  const grossMargin = salesAmount ? Math.round((grossProfit / salesAmount) * 10000) / 100 : averageCandidates(rows, ["grossProfitRate", "grossMargin", "maoriRate", "毛利率"]);
+  const activitySalesAmount = sumCandidates(activityRows, ["rewardSaleAmount", "saleCommodityAmount", "saleAmount", "salesAmount", "销售额", "活动销售额"]);
+  const rewardAmount = sumCandidates(activityRows, ["rewardCommodityAmount", "singleRewardMoney", "rewardAmount", "奖励金额"]);
+  return {
+    salesAmount,
+    grossProfit,
+    grossMargin,
+    activityCount: uniqueCountCandidates(activityRows, ["activityId", "activityCode", "activityName", "marketActivityName", "活动ID", "活动编码", "活动名称"]) || (activityRows || []).length,
+    activitySkuCount: uniqueCountCandidates(activityRows, ["commodityCode", "wareIspCode", "productCode", "goodsCode", "商品编码"]),
+    activitySalesAmount,
+    rewardAmount,
+    roi: rewardAmount ? Math.round((activitySalesAmount / rewardAmount) * 100) / 100 : 0,
+    feeEfficiencyRate: activitySalesAmount ? Math.round((rewardAmount / activitySalesAmount) * 10000) / 100 : 0,
+    storeActivationRate: averageCandidates(activityRows, ["storeMovingRate", "storeSaleRate", "storeActivationRate", "门店动销率"]),
+    employeeActivationRate: averageCandidates(activityRows, ["employeeMovingRate", "empMovingRate", "employeeActivationRate", "人员动销率"]),
+    skuActivationRate: averageCandidates(activityRows, ["skuMovingRate", "commodityMovingRate", "productMovingRate", "品种动销率"]),
+    jointMedicationRate: averageCandidates(rows, ["jointMedicationRate", "combineSaleRate", "关联销售率", "联合用药率"]),
+    keyProductRatio: averageCandidates(rows, ["keyProductRatio", "importantProductRatio", "重点品占比"]),
+    slowMovingClearanceRate: averageCandidates(rows, ["slowMovingClearanceRate", "滞销品消化率"]),
+  };
+}
+
+function buildMonthlyComparison(raw) {
+  const currentSalesRows = rowsFromPaged(raw.sales?.currentMonth?.products || raw.sales?.currentMonth_vs_lastMonth?.products);
+  const lastSalesRows = rowsFromPaged(raw.sales?.lastMonth_vs_priorTwoMonths?.products || raw.sales?.previousMonth?.products);
+  const currentActivityRows = rowsFromPaged(raw.activitySummary?.currentMonth?.rows);
+  const lastActivityRows = rowsFromPaged(raw.activitySummary?.lastMonth?.rows);
+  const current = monthlySnapshot(currentSalesRows, currentActivityRows);
+  const previous = monthlySnapshot(lastSalesRows, lastActivityRows);
+  return {
+    label: "当月与上月经营对比",
+    currentWindow: raw.meta?.windows?.currentMonth || {},
+    previousWindow: raw.meta?.windows?.lastMonth || {},
+    marketPerformance: {
+      salesAmount: compareMetric(current.salesAmount, previous.salesAmount),
+      grossProfit: compareMetric(current.grossProfit, previous.grossProfit),
+      grossMargin: compareMetric(current.grossMargin, previous.grossMargin),
+    },
+    activityExecution: {
+      activityCount: compareMetric(current.activityCount, previous.activityCount),
+      activitySkuCount: compareMetric(current.activitySkuCount, previous.activitySkuCount),
+      activitySalesAmount: compareMetric(current.activitySalesAmount, previous.activitySalesAmount),
+      storeActivationRate: compareMetric(current.storeActivationRate, previous.storeActivationRate),
+      employeeActivationRate: compareMetric(current.employeeActivationRate, previous.employeeActivationRate),
+      skuActivationRate: compareMetric(current.skuActivationRate, previous.skuActivationRate),
+    },
+    productStructure: {
+      jointMedicationRate: compareMetric(current.jointMedicationRate, previous.jointMedicationRate),
+      keyProductRatio: compareMetric(current.keyProductRatio, previous.keyProductRatio),
+      slowMovingClearanceRate: compareMetric(current.slowMovingClearanceRate, previous.slowMovingClearanceRate),
+    },
+    inputOutput: {
+      rewardAmount: compareMetric(current.rewardAmount, previous.rewardAmount),
+      roi: compareMetric(current.roi, previous.roi),
+      feeEfficiencyRate: compareMetric(current.feeEfficiencyRate, previous.feeEfficiencyRate),
+    },
+  };
+}
+
 function summarizeSijichanRaw(raw) {
   const salesRows = [
+    ...withDataMeta(rowsFromPaged(raw.sales.currentMonth_vs_lastMonth?.products), "sales.json", "currentMonth_vs_lastMonth.products"),
+    ...withDataMeta(rowsFromPaged(raw.sales.currentMonth?.products), "sales.json", "currentMonth.products"),
     ...withDataMeta(rowsFromPaged(raw.sales.lastMonth_vs_priorTwoMonths.products), "sales.json", "lastMonth_vs_priorTwoMonths.products"),
     ...withDataMeta(rowsFromPaged(raw.sales.lastMonth_vs_sameMonthLastYear?.products), "sales.json", "lastMonth_vs_sameMonthLastYear.products"),
     ...withDataMeta(rowsFromPaged(raw.sales.previousMonth.products), "sales.json", "previousMonth.products"),
@@ -8981,6 +9160,7 @@ function summarizeSijichanRaw(raw) {
     ...withDataMeta(rowsFromPaged(raw.sales.sameNearHalfLastYear?.products), "sales.json", "sameNearHalfLastYear.products"),
   ];
   const activityRows = [
+    ...withDataMeta(rowsFromPaged(raw.activitySummary.currentMonth?.rows), "activity_summary.json", "currentMonth.rows"),
     ...withDataMeta(rowsFromPaged(raw.activitySummary.lastMonth.rows), "activity_summary.json", "lastMonth.rows"),
     ...withDataMeta(rowsFromPaged(raw.activitySummary.previousMonth.rows), "activity_summary.json", "previousMonth.rows"),
     ...withDataMeta(rowsFromPaged(raw.activitySummary.sameMonthLastYear?.rows), "activity_summary.json", "sameMonthLastYear.rows"),
@@ -9088,6 +9268,7 @@ function summarizeSijichanRaw(raw) {
     rowCounts: Object.fromEntries(files.map((file) => [file.name, file.rows.length])),
     metricRows,
     rawData,
+    monthlyComparison: buildMonthlyComparison(raw),
     operationInsights: deriveOperationInsights({
       salesRows: withDataMeta(rowsFromPaged(raw.sales.nearHalf_vs_previousHalf.products), "sales.json", "nearHalf_vs_previousHalf.products"),
       activityRows: withDataMeta(rowsFromPaged(raw.activitySummary.nearHalf.rows), "activity_summary.json", "nearHalf.rows"),
