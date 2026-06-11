@@ -102,7 +102,7 @@ const defaultReviewPromptInstruction = `# 角色设定
 7. 大盘业绩对比：销售额、毛利额、毛利率，用于回答“赚没赚钱、规模多大”。同比或近半年同期对比时，只能计算两期都有销售记录的品种；去年同期或半年前没有销售的新品，不得纳入同比增幅。
 8. 活动执行情况对比：门店动销率、人员动销率、品种动销率，用于回答“员工有没有真正推、目标商品动没动”。
 9. 商品与结构对比：联合用药率、重点品占比、滞销品消化率，用于回答“卖出去的东西结构健不健康”。
-10. 投入产出对比：ROI、费效比是否变化，用于回答“花出去的钱值不值”。ROI口径必须说明为“活动销售额 ÷ 奖励金额”，费效比口径必须说明为“奖励金额 ÷ 活动销售额 × 100%”。如果奖励金额或活动销售额缺失，不得强行判断健康。
+10. 投入产出对比：ROI、费效比是否变化，用于回答“花出去的钱值不值”。ROI口径必须说明为“活动销售额 ÷ 奖励金额”，费效比口径必须说明为“奖励金额 ÷ 活动销售额 × 100%”。例如活动销售额809万元、奖励金额63.6万元时，ROI约12.7，费效比约7.9%；严禁把7.9%反写成ROI 0.08，也严禁把费效比写成1200%以上。如果奖励金额或活动销售额缺失，不得强行判断健康。
 11. 店员激励闭环必须补充店员认证总人数与提现总人数对比，并说明提现参与率。
 
 # 严格约束条件
@@ -4678,6 +4678,10 @@ function compactOperationInsightsForResponse(insights = {}) {
       activitySalesAmount: metrics.activitySalesAmount ?? null,
       totalRewardAmount: metrics.totalRewardAmount ?? null,
       rewardEfficiency: metrics.rewardEfficiency ?? null,
+      inputOutputRatio: metrics.inputOutputRatio ?? null,
+      feeEfficiencyRate: metrics.feeEfficiencyRate ?? null,
+      roiFormula: metrics.roiFormula || "投入产出比ROI = 活动销售额 ÷ 奖励金额",
+      feeEfficiencyFormula: metrics.feeEfficiencyFormula || "费效比 = 奖励金额 ÷ 活动销售额 × 100%",
       employeeCoverage: metrics.employeeCoverage ?? null,
       totalWithdrawMoney: metrics.totalWithdrawMoney ?? null,
       usedRewardPlayCount: metrics.usedRewardPlayCount ?? null,
@@ -8740,8 +8744,8 @@ function deriveOperationInsights({
 } = {}) {
   const productCodeCandidates = ["commodityCode", "wareIspCode", "erpCode", "productCode", "goodsCode", "skuCode", "商品编码"];
   const productNameCandidates = ["commodityName", "productName", "goodsName", "skuName", "商品名称"];
-  const salesAmountCandidates = ["saleCommodityAmount", "rewardCommodityAmount", "saleAmount", "salesAmount", "销售金额", "激励商品销售金额"];
-  const rewardAmountCandidates = ["rewardSaleAmount", "rewardMoney", "rewardBookingMoney", "rewardAmount", "singleRewardMoney", "multiRewardMoney", "combineRewardMoney", "commodityTargetRewardMoney", "serialTargetRewardMoney", "combinationTargetRewardMoney", "dayRankRewardMoney", "rankingRewardMoney", "amount", "奖励金额", "激励总金额"];
+  const salesAmountCandidates = ["saleCommodityAmount", "saleAmount", "salesAmount", "销售金额", "激励商品销售金额"];
+  const rewardAmountCandidates = activityRewardAmountCandidates;
   const storeCandidates = ["saleStoreNum", "storeNum", "storeCode", "merCode", "门店编码", "动销门店数"];
   const employeeCandidates = ["employeeCode", "empCode", "empId", "employeeName", "empName", "clerkName", "员工编码", "员工姓名"];
   const employeeCountCandidates = ["saleEmpNum", "rewardEmpNum", "empNum", "employeeNum", "参与员工数", "奖励员工数"];
@@ -8771,7 +8775,7 @@ function deriveOperationInsights({
   const activityUsedBudgetAmount = money(sumCandidates(activityCatalogRows, activityUsedBudgetCandidates));
   const activityRemainBudgetAmount = money(sumCandidates(activityCatalogRows, activityRemainBudgetCandidates));
   const totalSalesAmount = money(sumCandidates(salesRows, salesAmountCandidates));
-  const activitySalesAmount = money(sumCandidates(activityRows, salesAmountCandidates));
+  const activitySalesAmount = money(sumCandidates(activityRows, activitySalesAmountCandidates));
   const rewardRowsAmount = money(sumAllCandidateFields(rewardRows, rewardPlayFields.flatMap(([, ...fields]) => fields)));
   const activityRewardAmount = money(sumCandidates(activityRows, rewardAmountCandidates));
   const rewardDistributionAmount = money(sumCandidates(rewardDistributionRows, rewardAmountCandidates));
@@ -8793,7 +8797,8 @@ function deriveOperationInsights({
   const writeOffIntegralMoney = yuanFromBeanUnit(maxMetricCandidate(employeeMetricObjects, ["writeOffIntegralMoney", "integralMoney"]));
   const rewardDistributionMetricAmount = money(sumCandidates(metricObjects(rewardDistributionMetricRows), rewardAmountCandidates));
   const totalRewardAmount = rewardRowsAmount || rewardDistributionAmount || rewardDistributionMetricAmount || activityRewardAmount;
-  const rewardEfficiency = activitySalesAmount ? money((totalRewardAmount / activitySalesAmount) * 100) : 0;
+  const inputOutputRatio = totalRewardAmount ? money(activitySalesAmount / totalRewardAmount) : 0;
+  const feeEfficiencyRate = activitySalesAmount ? money((totalRewardAmount / activitySalesAmount) * 100) : 0;
   const activityCoverageRate = ratioPercent(activeSkuCount || rewardSkuCount, salesSkuCount || activeSkuCount || rewardSkuCount);
   const storeCoverage = uniqueCountCandidates([...salesRows, ...activityRows], storeCandidates);
   const employeeCoverage = uniqueCountCandidates([...activityRows, ...cashoutRows, ...shareRewardRows, ...employeeAccountRows, ...rewardDistributionRows], employeeCandidates);
@@ -8824,7 +8829,7 @@ function deriveOperationInsights({
   const scoreItems = [
     { key: "activitySustainability", label: "活动持续运营", value: joinedActivityCount, level: onlineActivityCount ? "healthy" : joinedActivityCount ? "watch" : "risk", explanation: joinedActivityCount ? `已识别 ${joinedActivityCount} 个已参加/已配置活动，其中当前上架/发布约 ${onlineActivityCount} 个，活动销售额约 ${activityCatalogSalesAmount}。` : "未识别到已参加活动列表，客户可能还没有形成持续活动运营池。" },
     { key: "activityCoverage", label: "活动覆盖", value: activityCoverageRate, level: rateLevel(activityCoverageRate, 35, 15), explanation: `活动覆盖约 ${activityCoverageRate}% 的动销品种；覆盖越低，客户越容易把四季蝉理解成少数单品红包。` },
-    { key: "rewardClosure", label: "激励闭环", value: rewardEfficiency, level: activitySalesAmount ? rateLevel(Math.min(rewardEfficiency, 100), 8, 2) : "risk", explanation: activitySalesAmount ? `每100元活动销售对应约 ${rewardEfficiency} 元奖励，需结合毛利判断激励效率。` : "当前没有识别到活动销售额，难以证明奖励带动销售。" },
+    { key: "rewardClosure", label: "激励闭环", value: feeEfficiencyRate, level: activitySalesAmount ? rateLevel(Math.min(feeEfficiencyRate, 100), 8, 2) : "risk", explanation: activitySalesAmount ? `每100元活动销售对应约 ${feeEfficiencyRate} 元奖励；投入产出比约 ${inputOutputRatio}，即每1元奖励带动约 ${inputOutputRatio} 元活动销售。` : "当前没有识别到活动销售额，难以证明奖励带动销售。" },
     { key: "employeeParticipation", label: "员工参与", value: employeeParticipationSignal, level: employeeParticipationSignal ? (totalWithdrawMoney || employeeCoverage ? "healthy" : "watch") : "risk", explanation: employeeParticipationSignal ? `识别到店员参与/豆豆/提现信号约 ${employeeParticipationSignal}，提现金额约 ${totalWithdrawMoney}。` : "缺少员工参与或提现信号，店员感知会变弱。" },
     { key: "trainingConversion", label: "培训承接", value: trainingRows.length || trainingMetricRows.length, level: trainingHasSignal ? "watch" : "risk", explanation: trainingHasSignal ? "已有培训或学习指标，可进一步与销售结果绑定。" : "培训数据为空，建议把重点品培训、考试和激励任务连成闭环。" },
     { key: "factoryCollaboration", label: "厂家协同", value: shareRewardAmount || shareRecordCount, level: factoryCollaborationLevel, explanation: shareRecordCount || shareRewardAmount ? `厂家晒单/打赏已有 ${shareRecordCount} 条记录，金额约 ${shareRewardAmount}。` : "厂家打赏和晒单为空，厂家资源没有被充分转化为门店执行证据。" },
@@ -8877,7 +8882,11 @@ function deriveOperationInsights({
       totalSalesAmount,
       activitySalesAmount,
       totalRewardAmount,
-      rewardEfficiency,
+      rewardEfficiency: feeEfficiencyRate,
+      inputOutputRatio,
+      feeEfficiencyRate,
+      roiFormula: "投入产出比ROI = 活动销售额 ÷ 奖励金额",
+      feeEfficiencyFormula: "费效比 = 奖励金额 ÷ 活动销售额 × 100%",
       storeCoverage,
       employeeCoverage,
       employeeParticipationSignal,
@@ -9115,6 +9124,8 @@ function compareMetric(current, previous) {
 
 const productIdentityCandidates = ["commodityCode", "wareIspCode", "productCode", "goodsCode", "skuCode", "商品编码", "商品名称", "commodityName", "productName", "goodsName"];
 const salesAmountCandidates = ["saleCommodityAmount", "rewardSaleAmount", "saleAmount", "salesAmount", "amount", "销售额", "销售金额"];
+const activitySalesAmountCandidates = ["rewardCommodityAmount", "saleCommodityAmount", "activitySaleAmount", "saleAmount", "salesAmount", "活动销售额", "销售金额", "销售额"];
+const activityRewardAmountCandidates = ["rewardSaleAmount", "rewardMoney", "rewardBookingMoney", "rewardAmount", "singleRewardMoney", "multiRewardMoney", "combineRewardMoney", "commodityTargetRewardMoney", "serialTargetRewardMoney", "combinationTargetRewardMoney", "dayRankRewardMoney", "rankingRewardMoney", "奖励金额", "激励总金额"];
 
 function productIdentity(row) {
   return String(pickField(row, productIdentityCandidates) || "").trim();
@@ -9135,8 +9146,8 @@ function monthlySnapshot(rows = [], activityRows = []) {
   const salesAmount = sumCandidates(rows, salesAmountCandidates);
   const grossProfit = sumCandidates(rows, ["grossProfitAmount", "grossProfit", "profitAmount", "maoriAmount", "毛利额", "毛利"]);
   const grossMargin = salesAmount ? Math.round((grossProfit / salesAmount) * 10000) / 100 : averageCandidates(rows, ["grossProfitRate", "grossMargin", "maoriRate", "毛利率"]);
-  const activitySalesAmount = sumCandidates(activityRows, ["rewardSaleAmount", "saleCommodityAmount", "saleAmount", "salesAmount", "销售额", "活动销售额"]);
-  const rewardAmount = sumCandidates(activityRows, ["rewardCommodityAmount", "singleRewardMoney", "rewardAmount", "奖励金额"]);
+  const activitySalesAmount = sumCandidates(activityRows, activitySalesAmountCandidates);
+  const rewardAmount = sumCandidates(activityRows, activityRewardAmountCandidates);
   return {
     salesAmount,
     grossProfit,
