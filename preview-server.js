@@ -111,7 +111,8 @@ const defaultReviewPromptInstruction = `# 角色设定
 3. 不要输出独立风险章节，不要使用“续用风险”作为章节或卡片。
 4. 没有查到的数据不要写进客户可见报告；不要写“数据缺失、数据为空、无法评估、建议补充ERP数据”等内部诊断话术。
 5. 严禁把未识别到的业务数据写成0，尤其不要写“无激励品种销售额为0”“无激励品种动销为0”等不成立对比。
-6. 在“下一步跟进动作”部分，必须严格使用“总部：……”“门店：……”“厂家：……”的中文句式开头。
+6. 客户可见报告不得展示店员豆豆提现金额、累计提现金额、人均提现金额、豆豆账户金额、余额等容易让老板关注成本的数字；只允许展示店员认证总人数、提现总人数、提现参与率等参与度指标。
+7. 在“下一步跟进动作”部分，必须严格使用“总部：……”“门店：……”“厂家：……”的中文句式开头。
 
 # 输出结构要求
 请严格按以下结构组织并输出报告：
@@ -4635,7 +4636,18 @@ function hasUsableDetail(summary) {
 function summaryForAi(summary) {
   if (!summary || typeof summary !== "object") return summary;
   const { rawData, ...rest } = summary;
-  return rest;
+  const next = jsonClone(rest);
+  if (next.operationInsights?.metrics) {
+    delete next.operationInsights.metrics.totalWithdrawMoney;
+    delete next.operationInsights.metrics.availableMoney;
+    delete next.operationInsights.metrics.totalPeas;
+    delete next.operationInsights.metrics.writeOffIntegralMoney;
+  }
+  if (next.operationInsights) {
+    next.operationInsights.valueProofPoints = arrayOfText(next.operationInsights.valueProofPoints)
+      .filter((item) => !/提现(?:金额|约|[0-9])|累计豆豆|豆豆账户|余额|人均提现/.test(item));
+  }
+  return next;
 }
 
 function compactText(value, maxLength = 240) {
@@ -4685,7 +4697,6 @@ function compactOperationInsightsForResponse(insights = {}) {
       roiFormula: metrics.roiFormula || "投入产出比ROI = 活动销售额 ÷ 奖励金额",
       feeEfficiencyFormula: metrics.feeEfficiencyFormula || "费效比 = 奖励金额 ÷ 活动销售额 × 100%",
       employeeCoverage: metrics.employeeCoverage ?? null,
-      totalWithdrawMoney: metrics.totalWithdrawMoney ?? null,
       usedRewardPlayCount: metrics.usedRewardPlayCount ?? null,
       shareRecordCount: metrics.shareRecordCount ?? null,
       shareRewardAmount: metrics.shareRewardAmount ?? null,
@@ -5184,8 +5195,17 @@ function sanitizeReportVisibleText(value) {
     .replace(/续用风险/g, "运营补强需求")
     .replace(/流失风险/g, "持续运营压力")
     .replace(/运营健康度/g, "运营评分")
+    .replace(/[；;，,。]?\s*但?[^。；;，,]*(?:数据(?:缺失|为空|不足|未接入)|查不到数据|未查到数据|无法评估|无法分析|建议(?:通过)?ERP数据补充|建议补充(?:ERP)?数据|需补充(?:ERP)?数据|需尽快补齐)[^。；;]*/g, "")
     .replace(/[；;，,。]?\s*无激励品种(?:活动)?销售额(?:为|是)?0(?:元|万元)?[^。；;，,]*/g, "")
     .replace(/[；;，,。]?\s*无激励品种(?:动销|销售|表现)[^。；;，,]*为0[^。；;，,]*/g, "")
+    .replace(/[；;，,。]?\s*(?:累计)?提现金额(?:约|为|达|：|:)?\s*[\d,.，]+(?:万)?元[^。；;，,]*/g, "")
+    .replace(/[；;，,。]?\s*人均提现(?:约|为|达|：|:)?\s*[\d,.，]+(?:万)?元[^。；;，,]*/g, "")
+    .replace(/[；;，,。]?\s*累计豆豆(?:约|为|达|：|:)?\s*[\d,.，]+(?:万)?(?:豆豆|元)?[^。；;，,]*/g, "")
+    .replace(/[；;，,。]?\s*豆豆账户[^。；;，,]*(?:金额|余额|提现|累计)[^。；;，,]*/g, "")
+    .replace(/[；;，,。]?\s*余额(?:约|为|达|：|:)?\s*[\d,.，]+(?:万)?元[^。；;，,]*/g, "")
+    .replace(/店员[，,]\s*奖励发放/g, "奖励发放")
+    .replace(/高销售、高奖励、高提现/g, "高销售、高奖励")
+    .replace(/提现成果展示/g, "参与成果展示")
     .trim();
 }
 
@@ -8845,7 +8865,7 @@ function deriveOperationInsights({
     { key: "activitySustainability", label: "活动持续运营", value: joinedActivityCount, level: onlineActivityCount ? "healthy" : joinedActivityCount ? "watch" : "risk", explanation: joinedActivityCount ? `已识别 ${joinedActivityCount} 个已参加/已配置活动，其中当前上架/发布约 ${onlineActivityCount} 个，活动销售额约 ${activityCatalogSalesAmount}。` : "未识别到已参加活动列表，客户可能还没有形成持续活动运营池。" },
     { key: "activityCoverage", label: "活动覆盖", value: activityCoverageRate, level: rateLevel(activityCoverageRate, 35, 15), explanation: `活动覆盖约 ${activityCoverageRate}% 的动销品种；覆盖越低，客户越容易把四季蝉理解成少数单品红包。` },
     { key: "rewardClosure", label: "激励闭环", value: feeEfficiencyRate, level: activitySalesAmount ? rateLevel(Math.min(feeEfficiencyRate, 100), 8, 2) : "risk", explanation: activitySalesAmount ? `每100元活动销售对应约 ${feeEfficiencyRate} 元奖励；投入产出比约 ${inputOutputRatio}，即每1元奖励带动约 ${inputOutputRatio} 元活动销售。` : "当前没有识别到活动销售额，难以证明奖励带动销售。" },
-    { key: "employeeParticipation", label: "员工参与", value: employeeParticipationSignal, level: employeeParticipationSignal ? (totalWithdrawMoney || employeeCoverage ? "healthy" : "watch") : "risk", explanation: employeeParticipationSignal ? `识别到店员参与/豆豆/提现信号约 ${employeeParticipationSignal}，提现金额约 ${totalWithdrawMoney}。` : "缺少员工参与或提现信号，店员感知会变弱。" },
+    { key: "employeeParticipation", label: "员工参与", value: employeeParticipationSignal, level: employeeParticipationSignal ? (totalWithdrawMoney || employeeCoverage ? "healthy" : "watch") : "risk", explanation: employeeParticipationSignal ? `识别到店员参与和提现闭环信号，可结合店员认证人数、提现人数和提现参与率评估激励触达。` : "缺少员工参与或提现信号，店员感知会变弱。" },
     { key: "trainingConversion", label: "培训承接", value: trainingRows.length || trainingMetricRows.length, level: trainingHasSignal ? "watch" : "risk", explanation: trainingHasSignal ? "已有培训或学习指标，可进一步与销售结果绑定。" : "培训数据为空，建议把重点品培训、考试和激励任务连成闭环。" },
     { key: "factoryCollaboration", label: "厂家协同", value: shareRewardAmount || shareRecordCount, level: factoryCollaborationLevel, explanation: shareRecordCount || shareRewardAmount ? `厂家晒单/打赏已有 ${shareRecordCount} 条记录，金额约 ${shareRewardAmount}。` : "厂家打赏和晒单为空，厂家资源没有被充分转化为门店执行证据。" },
   ];
@@ -8859,7 +8879,7 @@ function deriveOperationInsights({
     joinedActivityCount ? `已参加/配置活动 ${joinedActivityCount} 个，当前上架/发布约 ${onlineActivityCount} 个，可证明客户已有活动运营资产。` : "",
     activityBudgetAmount || activityUsedBudgetAmount ? `活动预算约 ${activityBudgetAmount}，已发/已用约 ${activityUsedBudgetAmount}，剩余约 ${activityRemainBudgetAmount}，可用于推动客户做费用复盘。` : "",
     activitySalesAmount ? `活动商品销售额约 ${activitySalesAmount}，奖励金额约 ${totalRewardAmount}，可沉淀为“费用换动销”的投入产出证据。` : "",
-    totalWithdrawMoney || totalPeas ? `店员豆豆账户/提现已有可复盘信号：累计豆豆约 ${totalPeas}，提现约 ${totalWithdrawMoney}，余额约 ${availableMoney}。` : "",
+    employeeParticipationSignal ? "店员收益闭环已有可复盘信号，可用认证人数、提现人数和提现参与率证明激励触达。" : "",
     rewardDistributionHasSignal ? "奖励发放明细已接入，可向客户展示“销售产生奖励、奖励触达店员”的执行证据。" : "",
     usedRewardPlays.length ? `已使用 ${usedRewardPlays.length} 类激励玩法：${usedRewardPlays.map((item) => item.name).join("、")}。` : "",
     storeCoverage ? `识别到 ${storeCoverage} 个门店/机构相关覆盖信号，可用于做门店分层追踪。` : "",
@@ -8870,7 +8890,7 @@ function deriveOperationInsights({
     usedRewardPlays.length < 3 ? `释放玩法价值：优先补齐 ${unusedRewardPlays.slice(0, 3).join("、")}，让客户看到四季蝉不只是单品红包。` : "复用已跑通的激励玩法，沉淀为客户月度活动模板。",
     trainingHasSignal ? "把培训结果与活动销售做同屏复盘，证明学习能转化为店员推荐动作。" : "补齐培训考试：每个重点品至少配置卖点学习、考试奖励和销售任务。",
     factoryCollaborationLevel === "risk" ? "引入厂家协同：推动厂家提供晒单打赏或活动费用，用数据证明费用落到门店执行层。" : "把厂家打赏和晒单沉淀成大单分享、排行榜和厂家复投证据。",
-    employeeParticipationSignal ? "继续强化店员感知：复盘提现、排行榜、高收益员工案例，并用豆豆账户数据证明激励已触达店员。" : "补齐店员收益闭环：重点展示及时豆、延时豆、可提现收益和到账案例。",
+    employeeParticipationSignal ? "继续强化店员感知：复盘提现参与率、排行榜和高参与门店案例，证明激励已触达店员。" : "补齐店员收益闭环：重点展示参与人数、提现人数和任务完成情况。",
   ];
 
   return {
@@ -8906,7 +8926,6 @@ function deriveOperationInsights({
       employeeCoverage,
       employeeParticipationSignal,
       cashoutRate,
-      totalWithdrawMoney,
       availableMoney,
       totalPeas,
       writeOffIntegralMoney,
