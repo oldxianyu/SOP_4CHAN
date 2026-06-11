@@ -5061,6 +5061,39 @@ function normalizeNextActions(value) {
   return normalized;
 }
 
+function reportCustomerLabel(summary = {}) {
+  const raw = summary.rawData || {};
+  const requestInfo = summary.requestInfo || {};
+  const candidates = [
+    requestInfo.merName,
+    requestInfo.customerName,
+    summary.customerName,
+    summary.customer_name,
+    raw.meta?.merName,
+    raw.meta?.customerName,
+    raw.meta?.name,
+  ];
+  const name = candidates.map((value) => String(value || "").trim()).find(Boolean);
+  if (name) return name;
+  const code = [
+    requestInfo.merCode,
+    requestInfo.customerCode,
+    summary.customerCode,
+    summary.customer_code,
+    raw.meta?.merCode,
+    raw.meta?.customerCode,
+  ].map((value) => String(value || "").trim()).find(Boolean);
+  return code ? `客户${code}` : "";
+}
+
+function reportTitleWithCustomer(title, summary = {}) {
+  const base = String(title || "四季蝉AI复盘报告").trim() || "四季蝉AI复盘报告";
+  const customer = reportCustomerLabel(summary);
+  if (!customer) return base;
+  if (base.includes(customer)) return base;
+  return `${customer}｜${base}`;
+}
+
 function normalizeReport(report) {
   const safe = report && typeof report === "object" ? report : {};
   return {
@@ -5078,6 +5111,12 @@ function normalizeReport(report) {
   };
 }
 
+function applyCustomerTitleToReport(report, summary = {}) {
+  const normalized = normalizeReport(report);
+  normalized.title = reportTitleWithCustomer(normalized.title, summary);
+  return normalized;
+}
+
 function fallbackReportFromSummary(summary, reason = "") {
   const insights = summary?.operationInsights || {};
   const files = summary?.datasetFiles || [];
@@ -5086,7 +5125,7 @@ function fallbackReportFromSummary(summary, reason = "") {
   const metrics = insights.metrics || {};
   const health = insights.healthScore ?? "暂无";
   const risk = insights.retentionRisk || "待判断";
-  return normalizeReport({
+  return applyCustomerTitleToReport({
     title: "四季蝉客户数据复盘报告",
     executiveSummary: `本次复盘已完成数据读取和运营洞察计算。客户续用健康度为 ${health}，续用风险为 ${risk}。${reason ? "AI返回格式异常，系统已基于结构化数据生成兜底报告。" : ""}`,
     highlights: [
@@ -5123,7 +5162,7 @@ function fallbackReportFromSummary(summary, reason = "") {
       "把培训、考试、激励、销售和提现放到同一张复盘表中向客户展示闭环价值。",
       "推动厂家晒单打赏或活动费用支持，形成厂家复投证据。",
     ],
-  });
+  }, summary);
 }
 
 function reportToMarkdown(report) {
@@ -5150,7 +5189,7 @@ function renderList(items = []) {
 }
 
 function renderReportHtml({ report, markdown, summary, shareUrl, svgUrl, qrSvgUrl, excelUrl = "", excelStatus = "", excelError = "" }) {
-  report = normalizeReport(report);
+  report = applyCustomerTitleToReport(report, summary);
   const sections = (report.sections || [])
     .map(
       (section) => `
@@ -5321,7 +5360,7 @@ function svgText(lines, x, y, options = {}) {
 }
 
 function renderReportSvg({ report, summary, shareUrl, qrSvg }) {
-  report = normalizeReport(report);
+  report = applyCustomerTitleToReport(report, summary);
   const width = 1200;
   let y = 92;
   const parts = [];
@@ -5898,6 +5937,10 @@ function workbookCustomerName(summary) {
     raw.meta?.merName ||
     summary?.customerName ||
     summary?.customer_name ||
+    summary?.requestInfo?.merCode ||
+    raw.meta?.merCode ||
+    summary?.customerCode ||
+    summary?.customer_code ||
     summary?.filename ||
     "四季蝉客户"
   );
@@ -6196,7 +6239,7 @@ async function refreshExistingReportArtifacts(targetReportId = "") {
     try {
       const saved = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
       if (!saved.report || !saved.shareUrl) continue;
-      const report = normalizeReport(saved.report);
+      const report = applyCustomerTitleToReport(saved.report, saved.summary || {});
       const markdown = reportToMarkdown(report);
       const qrSvg = await QRCode.toString(saved.shareUrl, {
         type: "svg",
@@ -6241,6 +6284,25 @@ async function refreshExistingReportArtifacts(targetReportId = "") {
       if (saved.summary?.interfaceDiagnostics) {
         fs.writeFileSync(path.join(reportDir, "四季蝉接口诊断.json"), JSON.stringify(saved.summary.interfaceDiagnostics || [], null, 2), "utf8");
       }
+      if (await isDbAvailable()) {
+        await queryDb(
+          `update review_reports
+           set report_title=$2,
+               report_json=jsonb_set(coalesce(report_json, '{}'::jsonb), '{title}', to_jsonb($2::text), true),
+               updated_at=now()
+           where report_id=$1`,
+          [reportId, report.title || "四季蝉AI复盘报告"],
+        ).catch(() => null);
+        await queryDb(
+          `update review_report_payloads p
+           set report_json=jsonb_set(coalesce(p.report_json, '{}'::jsonb), '{title}', to_jsonb($2::text), true),
+               markdown=$3,
+               updated_at=now()
+           from review_reports r
+           where p.report_db_id=r.id and r.report_id=$1`,
+          [reportId, report.title || "四季蝉AI复盘报告", markdown],
+        ).catch(() => null);
+      }
     } catch (error) {
       console.warn(`Refresh report artifact failed for ${entry.name}: ${error.message}`);
     }
@@ -6265,6 +6327,7 @@ async function generateReportFromSummary(summary, user = null) {
   } catch (error) {
     report = fallbackReportFromSummary(summary, error.message);
   }
+  report = applyCustomerTitleToReport(report, summary);
   const markdown = reportToMarkdown(report);
   const artifact = await persistReportArtifact({ report, markdown, summary });
   return { report, markdown, ...artifact };
@@ -6621,6 +6684,17 @@ async function markSijichanHandoffCapturedById(handoffId, userId, token, details
   );
   if (!result.rows[0]) throw new Error("企微授权交接会话不存在或已过期。");
   return normalizeSijichanTokenHandoff(result.rows[0]);
+}
+
+async function updateSijichanHandoffMerName(handoffId, userId, merName) {
+  const name = String(merName || "").trim();
+  if (!handoffId || !userId || !name || !(await isDbAvailable())) return;
+  await queryDb(
+    `update sijichan_token_handoffs
+     set mer_name=$3, updated_at=now()
+     where id=$1 and user_id=$2 and coalesce(mer_name, '') <> $3`,
+    [handoffId, userId, name],
+  ).catch(() => null);
 }
 
 function getWeComBrowserSessionDebug(session) {
@@ -6987,6 +7061,33 @@ async function createWeComBrowserSession(user, body = {}) {
     await refreshOpenPages().catch(() => null);
     return best && !best.isClosed() ? best : null;
   };
+  const syncMerchantHeaderUserName = async (reason = "") => {
+    if (!session.page || session.page.isClosed() || !isMerchantHostUrl(session.page.url())) return "";
+    const merName = await session.page.evaluate(() => {
+      const selectors = [
+        ".vi-header-user__name span",
+        ".vi-header-user__name",
+        "[class*='vi-header-user__name'] span",
+        "[class*='vi-header-user__name']",
+      ];
+      for (const selector of selectors) {
+        const node = document.querySelector(selector);
+        const text = (node?.textContent || "").replace(/\s+/g, " ").trim();
+        if (text && !/退出登录|个人信息|打印服务/i.test(text)) return text;
+      }
+      return "";
+    }).catch(() => "");
+    const name = String(merName || "").trim();
+    if (!name) return "";
+    if (session.handoff) {
+      session.handoff.merName = name;
+      await updateSijichanHandoffMerName(session.handoff.id, user.id, name);
+    }
+    session.detectedMerName = name;
+    session.updatedAt = new Date().toISOString();
+    if (reason) logWeComSessionState(session, `merchant-name:${reason}`);
+    return name;
+  };
   const refreshScanStage = async () => {
     await selectBestMerchantPage().catch(() => null);
     if (!session.page || session.page.isClosed()) return;
@@ -6999,6 +7100,7 @@ async function createWeComBrowserSession(user, body = {}) {
     if (isMerchantRuntimeUrl(pageUrl)) {
       session.scanStage = "merchant";
       session.scanHint = "已进入新零售管理平台";
+      await syncMerchantHeaderUserName("scan-stage").catch(() => "");
       session.pageTextHint = await session.page.evaluate(() => (document.body?.innerText || "").replace(/\s+/g, " ").trim().slice(0, 220)).catch(() => "");
       return;
     }
@@ -7294,6 +7396,7 @@ async function createWeComBrowserSession(user, body = {}) {
     }
     await refreshOpenPages().catch(() => null);
     await refreshScanStage().catch(() => null);
+    await syncMerchantHeaderUserName("auto-code").catch(() => "");
     await scanMerchantPageStorage().catch(() => null);
     await scanMerchantCookies().catch(() => null);
     await triggerMerchantProbe().catch(() => null);
@@ -7397,8 +7500,10 @@ async function createWeComBrowserSession(user, body = {}) {
   session.prepareBrowserExport = async () => {
     await selectBestMerchantPage().catch(() => null);
     if (!session.page || session.page.isClosed()) return;
+    await syncMerchantHeaderUserName("prepare").catch(() => "");
     await updateMerchantCodeFillAvailability().catch(() => null);
     await autoFillMerchantCodeIfReady("prepare").catch(() => null);
+    await syncMerchantHeaderUserName("prepare-after-code").catch(() => "");
     await triggerMerchantProbe().catch(() => null);
     await probeExportReady().catch(() => null);
   };
