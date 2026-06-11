@@ -5086,12 +5086,59 @@ function reportCustomerLabel(summary = {}) {
   return code ? `客户${code}` : "";
 }
 
+function escapeRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function customerTitleAliases(customer = "") {
+  const text = String(customer || "").trim();
+  if (!text) return [];
+  const aliases = new Set([text]);
+  const suffixes = [
+    "医药连锁有限公司",
+    "医药有限公司",
+    "连锁有限公司",
+    "有限公司",
+    "股份有限公司",
+    "有限责任公司",
+    "公司",
+  ];
+  for (const suffix of suffixes) {
+    if (text.endsWith(suffix) && text.length > suffix.length + 1) aliases.add(text.slice(0, -suffix.length));
+  }
+  return [...aliases].filter(Boolean).sort((a, b) => b.length - a.length);
+}
+
+function stripCustomerPrefixFromTitle(title, summary = {}, customer = "") {
+  let next = String(title || "").trim() || "四季蝉AI复盘报告";
+  const raw = summary.rawData || {};
+  const requestInfo = summary.requestInfo || {};
+  const code = [
+    requestInfo.merCode,
+    requestInfo.customerCode,
+    summary.customerCode,
+    summary.customer_code,
+    raw.meta?.merCode,
+    raw.meta?.customerCode,
+  ].map((value) => String(value || "").trim()).find(Boolean);
+  const aliases = [
+    ...customerTitleAliases(customer),
+    ...(code ? [`客户${code}`, code] : []),
+  ];
+  for (const alias of aliases) {
+    const pattern = new RegExp(`^${escapeRegExp(alias)}\\s*(?:[｜|:：\\-—－_·、,，]\\s*)?`);
+    next = next.replace(pattern, "").trim();
+  }
+  return next || "四季蝉AI复盘报告";
+}
+
 function reportTitleWithCustomer(title, summary = {}) {
   const base = String(title || "四季蝉AI复盘报告").trim() || "四季蝉AI复盘报告";
   const customer = reportCustomerLabel(summary);
   if (!customer) return base;
-  if (base.includes(customer)) return base;
-  return `${customer}｜${base}`;
+  const cleanBase = stripCustomerPrefixFromTitle(base, summary, customer);
+  if (cleanBase === customer) return customer;
+  return `${customer}｜${cleanBase}`;
 }
 
 function normalizeReport(report) {
