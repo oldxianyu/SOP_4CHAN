@@ -9400,6 +9400,8 @@ function buildGeneratedReviewResponse(id, summary, generated) {
     ok: true,
     id,
     summary: summaryForResponse(summary),
+    report: generated.report || null,
+    markdown: generated.markdown || "",
     reportId: generated.reportId,
     shareUrl: generated.shareUrl,
     svgUrl: generated.svgUrl,

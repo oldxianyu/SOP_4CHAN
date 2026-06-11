@@ -2570,7 +2570,7 @@
                   type: "success",
                   showIcon: true,
                   message: "分享报告已生成",
-                  description: "可打开独立网页、下载SVG长图，或下载二维码扫码查看。",
+                  description: "AI报告和分享页已生成，可先查看和分享；Excel汇总会在后台继续生成，完成后按钮自动变为可下载。",
                   action: h(
                     Space,
                     { wrap: true },
@@ -2971,7 +2971,7 @@
               current: ok ? prev.steps.length - 1 : Math.max(prev.current, 0),
               status: ok ? "finish" : "error",
               percent: ok ? 100 : prev.percent,
-              text: text || (ok ? "复盘报告已生成，可打开分享页或下载长图。" : "生成失败，请检查数据或稍后重试。"),
+              text: text || (ok ? "AI复盘报告和分享页已生成；Excel汇总将在后台继续生成。" : "生成失败，请检查数据或稍后重试。"),
             };
           });
         };
@@ -2997,6 +2997,35 @@
           } finally {
             if (detailRequestRef.current === controller) detailRequestRef.current = null;
           }
+        };
+
+        const artifactFromGeneratedResponse = (data) => ({
+          id: data.id,
+          reportDbId: data.id,
+          reportId: data.reportId,
+          shareUrl: data.shareUrl,
+          svgUrl: data.svgUrl,
+          qrSvgUrl: data.qrSvgUrl,
+          excelUrl: data.excelUrl,
+          excelStatus: data.excelStatus,
+          excelError: data.excelError,
+          normalizedDataUrl: data.normalizedDataUrl,
+          diagnosticsUrl: data.diagnosticsUrl,
+        });
+
+        const applyGeneratedReviewResponse = async (data) => {
+          const artifactPayload = artifactFromGeneratedResponse(data || {});
+          setSummary(data.summary || null);
+          if (data.report) {
+            setReport(data.report);
+            setMarkdown(typeof data.markdown === "string" ? data.markdown : "");
+            setArtifact(normalizeReportArtifact(artifactPayload));
+            return data;
+          }
+          return await loadGeneratedReportDetail(data.id, {
+            fallbackSummary: data.summary || null,
+            artifact: artifactPayload,
+          });
         };
 
         React.useEffect(() => {
@@ -3296,10 +3325,7 @@
               setSummary(data.summary || null);
               throw new Error(data.error || "企微授权数据导入失败。");
             }
-            await loadGeneratedReportDetail(data.id, {
-              fallbackSummary: data.summary || null,
-              artifact: { reportId: data.reportId, shareUrl: data.shareUrl, svgUrl: data.svgUrl, qrSvgUrl: data.qrSvgUrl, excelUrl: data.excelUrl, excelStatus: data.excelStatus, excelError: data.excelError, normalizedDataUrl: data.normalizedDataUrl, diagnosticsUrl: data.diagnosticsUrl },
-            });
+            await applyGeneratedReviewResponse(data);
             finishReviewProgress(true);
             message.success("企微授权复盘报告已生成");
           } catch (err) {
@@ -3340,10 +3366,7 @@
               setSummary(data.summary || null);
               throw new Error(data.error || "复盘报告生成失败。");
             }
-            await loadGeneratedReportDetail(data.id, {
-              fallbackSummary: data.summary || null,
-              artifact: { reportId: data.reportId, shareUrl: data.shareUrl, svgUrl: data.svgUrl, qrSvgUrl: data.qrSvgUrl, excelUrl: data.excelUrl, excelStatus: data.excelStatus, excelError: data.excelError, normalizedDataUrl: data.normalizedDataUrl, diagnosticsUrl: data.diagnosticsUrl },
-            });
+            await applyGeneratedReviewResponse(data);
             finishReviewProgress(true);
             message.success("AI复盘报告已生成");
           } catch (err) {
@@ -3381,10 +3404,7 @@
               setSummary(data.summary || null);
               throw new Error(data.error || "接口数据导入失败。");
             }
-            await loadGeneratedReportDetail(data.id, {
-              fallbackSummary: data.summary || null,
-              artifact: { reportId: data.reportId, shareUrl: data.shareUrl, svgUrl: data.svgUrl, qrSvgUrl: data.qrSvgUrl, excelUrl: data.excelUrl, excelStatus: data.excelStatus, excelError: data.excelError, normalizedDataUrl: data.normalizedDataUrl, diagnosticsUrl: data.diagnosticsUrl },
-            });
+            await applyGeneratedReviewResponse(data);
 
             finishReviewProgress(true);
             message.success("接口数据复盘报告已生成");
@@ -3428,10 +3448,7 @@
               setSummary(data.summary || null);
               throw new Error(data.error || "企微授权数据导入失败。");
             }
-            await loadGeneratedReportDetail(data.id, {
-              fallbackSummary: data.summary || null,
-              artifact: { reportId: data.reportId, shareUrl: data.shareUrl, svgUrl: data.svgUrl, qrSvgUrl: data.qrSvgUrl, excelUrl: data.excelUrl, excelStatus: data.excelStatus, excelError: data.excelError, normalizedDataUrl: data.normalizedDataUrl, diagnosticsUrl: data.diagnosticsUrl },
-            });
+            await applyGeneratedReviewResponse(data);
             finishReviewProgress(true);
             message.success("企微授权复盘报告已生成");
           } catch (err) {
