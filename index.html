@@ -2945,7 +2945,7 @@
         const finishReviewProgress = (ok, text) => {
           progressTimersRef.current.forEach((timer) => clearTimeout(timer));
           progressTimersRef.current = [];
-          stopReviewStatusPolling();
+          if (ok) stopReviewStatusPolling();
           setReviewProgress((prev) => {
             if (!prev) return null;
             return {
@@ -2957,6 +2957,46 @@
             };
           });
         };
+
+        const markReviewBackgroundWaiting = React.useCallback((text) => {
+          progressTimersRef.current.forEach((timer) => clearTimeout(timer));
+          progressTimersRef.current = [];
+          setLoading(false);
+          setReviewProgress((prev) => {
+            if (!prev) return null;
+            const finalStep = prev.steps.length - 1;
+            return {
+              ...prev,
+              current: finalStep,
+              status: "waiting",
+              percent: Math.max(prev.percent || 0, 92),
+              text: text || "数据仍在后台抽取和生成，页面已停止等待。请稍后到【历史报告】查看结果。",
+            };
+          });
+          message.info("后台仍在生成复盘报告，稍后可到【历史报告】查看。", 6);
+        }, []);
+
+        const withReviewSoftWait = React.useCallback(async (controller, task, options = {}) => {
+          const waitMs = options.waitMs || 120000;
+          const waitText = options.waitText || "数据仍在后台抽取和生成，页面已停止等待。请稍后到【历史报告】查看结果。";
+          let softTimedOut = false;
+          const timer = window.setTimeout(() => {
+            softTimedOut = true;
+            if (generateRequestRef.current === controller) generateRequestRef.current = null;
+            controller.abort();
+            markReviewBackgroundWaiting(waitText);
+          }, waitMs);
+          try {
+            return await task();
+          } catch (error) {
+            if (softTimedOut && error?.name === "AbortError") {
+              return { softTimedOut: true };
+            }
+            throw error;
+          } finally {
+            window.clearTimeout(timer);
+          }
+        }, [markReviewBackgroundWaiting]);
 
         const loadGeneratedReportDetail = async (reportDbId, options = {}) => {
           if (!reportDbId) return null;
@@ -3294,13 +3334,17 @@
           const controller = beginGenerateRequest();
           startReviewProgress("sijichan");
           try {
-            const useBrowserSession = Boolean(activeSession?.id);
-            const response = await fetch(useBrowserSession ? "/api/wecom-browser-session-review-report" : "/api/wecom-handoff-review-report", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              signal: controller.signal,
-              body: JSON.stringify({ sessionId: activeSession?.id, handoffId: activeHandoff?.id, merCode: values.merCode, merName: values.merName }),
-            });
+            const result = await withReviewSoftWait(controller, async () => {
+              const useBrowserSession = Boolean(activeSession?.id);
+              return await fetch(useBrowserSession ? "/api/wecom-browser-session-review-report" : "/api/wecom-handoff-review-report", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                signal: controller.signal,
+                body: JSON.stringify({ sessionId: activeSession?.id, handoffId: activeHandoff?.id, merCode: values.merCode, merName: values.merName }),
+              });
+            }, { waitMs: 120000, waitText: "企微授权数据仍在后台抽取和生成，页面已停止等待。请稍后到【历史报告】查看结果。" });
+            if (result?.softTimedOut) return;
+            const response = result;
             const data = await response.json().catch(() => ({}));
             if (generateRequestRef.current !== controller) return;
             if (!response.ok) {
@@ -3341,7 +3385,12 @@
           try {
             const formData = new FormData();
             formData.append("file", file);
-            const response = await fetch("/api/review-report", { method: "POST", body: formData, signal: controller.signal });
+            const result = await withReviewSoftWait(controller, async () => await fetch("/api/review-report", { method: "POST", body: formData, signal: controller.signal }), {
+              waitMs: 120000,
+              waitText: "Excel复盘数据仍在后台解析和生成，页面已停止等待。请稍后到【历史报告】查看结果。",
+            });
+            if (result?.softTimedOut) return;
+            const response = result;
             const data = await response.json().catch(() => ({}));
             if (generateRequestRef.current !== controller) return;
             if (!response.ok) {
@@ -3374,12 +3423,17 @@
           const controller = beginGenerateRequest();
           startReviewProgress("sijichan");
           try {
-            const response = await fetch("/api/sijichan-review-report", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              signal: controller.signal,
-              body: JSON.stringify(values),
+            const result = await withReviewSoftWait(controller, async () => await fetch("/api/sijichan-review-report", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                signal: controller.signal,
+                body: JSON.stringify(values),
+              }), {
+              waitMs: 120000,
+              waitText: "复盘数据仍在后台抽取和生成，页面已停止等待。请稍后到【历史报告】查看结果。",
             });
+            if (result?.softTimedOut) return;
+            const response = result;
             const data = await response.json().catch(() => ({}));
             if (generateRequestRef.current !== controller) return;
             if (!response.ok) {
@@ -3418,12 +3472,17 @@
           const controller = beginGenerateRequest();
           startReviewProgress("sijichan");
           try {
-            const response = await fetch("/api/wecom-token-review-report", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              signal: controller.signal,
-              body: JSON.stringify(values),
+            const result = await withReviewSoftWait(controller, async () => await fetch("/api/wecom-token-review-report", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                signal: controller.signal,
+                body: JSON.stringify(values),
+              }), {
+              waitMs: 120000,
+              waitText: "企微授权数据仍在后台抽取和生成，页面已停止等待。请稍后到【历史报告】查看结果。",
             });
+            if (result?.softTimedOut) return;
+            const response = result;
             const data = await response.json().catch(() => ({}));
             if (generateRequestRef.current !== controller) return;
             if (!response.ok) {
@@ -3763,7 +3822,7 @@
                       style: { marginTop: 14 },
                       type: reviewProgress.status === "error" ? "error" : reviewProgress.status === "finish" ? "success" : "info",
                       showIcon: true,
-                      message: reviewProgress.status === "finish" ? "处理完成" : reviewProgress.status === "error" ? "处理失败" : "正在处理",
+                      message: reviewProgress.status === "finish" ? "处理完成" : reviewProgress.status === "error" ? "处理失败" : reviewProgress.status === "waiting" ? "后台生成中" : "正在处理",
                       description: h(
                         "div",
                         { className: "review-progress-copy" },
