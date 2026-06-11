@@ -5124,14 +5124,22 @@ function reportCustomerLabel(summary = {}) {
   const requestInfo = summary.requestInfo || {};
   const candidates = [
     requestInfo.merName,
+    requestInfo.enterpriseName,
+    requestInfo.companyName,
+    requestInfo.detectedMerName,
     requestInfo.customerName,
     summary.customerName,
+    summary.enterpriseName,
+    summary.companyName,
     summary.customer_name,
     raw.meta?.merName,
+    raw.meta?.enterpriseName,
+    raw.meta?.companyName,
+    raw.meta?.detectedMerName,
     raw.meta?.customerName,
     raw.meta?.name,
   ];
-  const name = candidates.map((value) => String(value || "").trim()).find(Boolean);
+  const name = candidates.map(normalizeEnterpriseName).find(Boolean);
   if (name) return name;
   const code = [
     requestInfo.merCode,
@@ -5142,6 +5150,19 @@ function reportCustomerLabel(summary = {}) {
     raw.meta?.customerCode,
   ].map((value) => String(value || "").trim()).find(Boolean);
   return code ? `客户${code}` : "";
+}
+
+function normalizeEnterpriseName(value) {
+  let text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  text = text
+    .replace(/^(当前客户|客户名称|企业名称|公司名称|商户名称|连锁名称|访问用户)\s*[：:]\s*/i, "")
+    .replace(/\s*(退出登录|个人信息|打印服务|消息中心|帮助中心)\s*$/i, "")
+    .replace(/[｜|]\s*(新零售管理平台|海典营销平台|四季蝉).*$/i, "")
+    .trim();
+  if (!text || /^\d{4,}$/.test(text)) return "";
+  if (/^(客户|用户|管理员|企微扫码服务器浏览器|登录获取|四季蝉AI复盘报告)$/i.test(text)) return "";
+  return text;
 }
 
 function escapeRegExp(value) {
@@ -8259,7 +8280,7 @@ async function sijichanLogin({ username, password }) {
   return {
     token: json.data.token,
     userName: json.data.userName || account,
-    merName: json.data.merName || "",
+    merName: normalizeEnterpriseName(json.data.merName || json.data.merchantName || json.data.customerName || json.data.companyName || json.data.enterpriseName || ""),
     loginSystem: json.data.system?.reEngSystem || json.data.system?.reSystem || "",
   };
 }
@@ -9023,7 +9044,8 @@ async function collectSijichanDataWithBrowserSession(session, { merCode: inputMe
   if (!session?.page || session.page.isClosed()) throw new Error("服务器扫码浏览器会话已关闭，请重新扫码。");
   if (!canProbeMerchantBusiness(session.page.url())) throw new Error("服务器浏览器尚未进入新零售管理平台，请扫码确认登录后再生成报告。");
   const merCode = String(inputMerCode || session.handoff?.merCode || "").trim();
-  const merName = String(inputMerName || session.handoff?.merName || "").trim();
+  if (typeof session.syncMerchantHeaderUserName === "function") await session.syncMerchantHeaderUserName("before-export").catch(() => "");
+  const merName = normalizeEnterpriseName(inputMerName || session.detectedMerName || session.handoff?.merName || "");
   const diagnostics = [];
   const client = createSijichanBrowserClient(session.page, merCode, diagnostics);
   return collectSijichanDataWithClient({
@@ -9380,6 +9402,68 @@ function rowsWithCommonSalesProducts(currentRows = [], previousRows = []) {
   };
 }
 
+function detectEnterpriseNameFromSijichanRaw(raw = {}, context = {}) {
+  const rowGroups = [
+    context.salesRows,
+    context.activityRows,
+    context.operationBaseStoreRows,
+    context.operationBaseEmployeeRows,
+    rowsFromPaged(raw.operationBase?.stores?.rows),
+    rowsFromPaged(raw.operationBase?.employees?.rows),
+  ];
+  const candidates = [
+    raw.meta?.merName,
+    raw.meta?.enterpriseName,
+    raw.meta?.companyName,
+    raw.meta?.detectedMerName,
+    raw.meta?.customerName,
+    raw.meta?.name,
+  ];
+  const fieldCandidates = [
+    "merName",
+    "merchantName",
+    "customerName",
+    "enterpriseName",
+    "companyName",
+    "chainName",
+    "orgName",
+    "rootOrgName",
+    "brandName",
+    "corpName",
+    "tenantName",
+    "商户名称",
+    "客户名称",
+    "企业名称",
+    "公司名称",
+    "连锁名称",
+  ];
+  for (const rows of rowGroups) {
+    for (const row of rows || []) {
+      const value = pickField(row, fieldCandidates);
+      if (value) candidates.push(value);
+    }
+  }
+  const overviewObjects = [
+    responseData(raw.overview?.activityTopStatistic),
+    responseData(raw.overview?.rewardStat),
+    responseData(raw.overview?.orderShareSummary),
+    responseData(raw.operationBase?.productOverview),
+  ];
+  for (const item of overviewObjects) {
+    for (const key of fieldCandidates) {
+      if (item && item[key] !== undefined) candidates.push(item[key]);
+    }
+  }
+  const countMap = new Map();
+  for (const candidate of candidates) {
+    const name = normalizeEnterpriseName(candidate);
+    if (!name) continue;
+    if (/门店|药房|分店|店$/.test(name) && !/连锁|集团|公司/.test(name)) continue;
+    countMap.set(name, (countMap.get(name) || 0) + 1);
+  }
+  return [...countMap.entries()].sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)[0]?.[0] || "";
+}
+
 function monthlySnapshot(rows = [], activityRows = [], movingRates = null) {
   const salesAmount = sumCandidates(rows, salesAmountCandidates);
   const grossProfit = sumCandidates(rows, ["grossProfitAmount", "grossProfit", "profitAmount", "maoriAmount", "毛利额", "毛利"]);
@@ -9621,14 +9705,23 @@ function summarizeSijichanRaw(raw) {
   const salesMetric = ["saleCommodityAmount", "rewardSaleAmount", "saleAmount", "salesAmount", "amount", "销售额"];
   const growthMetric = ["saleCommodityLastRate", "growthRate", "increaseRate", "环比增长率", "增长率"];
   const rewardMetric = ["rewardCommodityAmount", "singleRewardMoney", "rewardAmount", "amount", "奖励金额"];
+  const enterpriseName = detectEnterpriseNameFromSijichanRaw(raw, {
+    salesRows,
+    activityRows,
+    operationBaseStoreRows,
+    operationBaseEmployeeRows,
+  });
 
   return {
     source: raw.meta.source || "登录获取",
     requestInfo: {
       asOf: raw.meta.asOf || currentSijichanAsOfDate(),
       merCode: raw.meta.merCode || "",
-      merName: raw.meta.merName || "",
+      merName: enterpriseName,
+      enterpriseName,
     },
+    customerName: enterpriseName,
+    enterpriseName,
     windows: raw.meta.windows,
     generatedAt: raw.meta.generatedAt,
     datasetFiles: files.map(datasetStatus),
