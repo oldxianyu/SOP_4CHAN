@@ -4696,9 +4696,6 @@ function compactOperationInsightsForResponse(insights = {}) {
       salesSkuCount: metrics.salesSkuCount ?? null,
       joinedActivityCount: metrics.joinedActivityCount ?? null,
       onlineActivityCount: metrics.onlineActivityCount ?? null,
-      activityCoverageRate: metrics.activityCoverageRate ?? null,
-      totalSalesAmount: metrics.totalSalesAmount ?? null,
-      activitySalesAmount: metrics.activitySalesAmount ?? null,
       totalRewardAmount: metrics.totalRewardAmount ?? null,
       rewardEfficiency: metrics.rewardEfficiency ?? null,
       inputOutputRatio: metrics.inputOutputRatio ?? null,
@@ -5225,6 +5222,8 @@ function sanitizeReportVisibleText(value) {
     .replace(/续用风险/g, "运营补强需求")
     .replace(/流失风险/g, "持续运营压力")
     .replace(/运营健康度/g, "运营评分")
+    .replace(/[；;，,。]?\s*活动(?:商品)?销售额?占(?:同期)?(?:整体|总)?销售(?:额)?[^。；;，,]*(?:%|％|占比)[^。；;]*/g, "")
+    .replace(/[；;，,。]?\s*活动(?:商品)?(?:销售)?占比[^。；;]*(?:整体|总销售|同期)[^。；;]*/g, "")
     .replace(/[；;，,。]?\s*但?[^。；;，,]*(?:数据(?:缺失|为空|不足|未接入)|查不到数据|未查到数据|无法评估|无法分析|建议(?:通过)?ERP数据补充|建议补充(?:ERP)?数据|需补充(?:ERP)?数据|需尽快补齐)[^。；;]*/g, "")
     .replace(/[；;，,。]?\s*无激励品种(?:活动)?销售额(?:为|是)?0(?:元|万元)?[^。；;，,]*/g, "")
     .replace(/[；;，,。]?\s*无激励品种(?:动销|销售|表现)[^。；;，,]*为0[^。；;，,]*/g, "")
@@ -5242,6 +5241,7 @@ function sanitizeReportVisibleText(value) {
 function shouldDropReportVisibleText(value) {
   const text = String(value || "").trim();
   if (!text) return true;
+  if (/活动(?:商品)?销售额?占(?:同期)?(?:整体|总)?销售(?:额)?|活动(?:商品)?(?:销售)?占比.*(?:整体|总销售|同期)/.test(text)) return true;
   if (/无激励品种[^。；;，,]*(?:销售额|动销|销售|表现)[^。；;，,]*0/.test(text)) return true;
   if (/数据(?:缺失|为空|不足|未接入)|查不到数据|未查到数据|无法评估|无法分析|建议(?:通过)?ERP数据补充|建议补充(?:ERP)?数据|需补充(?:ERP)?数据/i.test(text)) return true;
   return false;
@@ -5299,7 +5299,6 @@ function fallbackReportFromSummary(summary, reason = "") {
         heading: "运营健康度",
         bullets: [
           `健康度评分：${health}`,
-          `活动覆盖率：${metrics.activityCoverageRate ?? 0}%`,
           `已使用激励玩法数：${metrics.usedRewardPlayCount ?? 0}`,
         ],
       },
