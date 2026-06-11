@@ -98,11 +98,12 @@ const defaultReviewPromptInstruction = `# 角色设定
 3. 激励方式的实际应用价值，必须体现“用与不用”的差异对比。
 4. 店员提现参与度与厂家晒单打赏活跃度。
 5. 一个豆豆能带动的销售金额，格式严格写成“每1个豆豆奖励带动……元销售额。”。
-6. 当月与上月活动数据对比：活动个数、活动商品数、活动销售额。
-7. 大盘业绩对比：销售额、毛利额、毛利率，用于回答“赚没赚钱、规模多大”。
+6. 当月与上月同期活动数据对比：如果当月只有1日至11日，就只能对比上月1日至11日，严禁用当月未完整周期对比上月整月。重点看活动个数、活动商品数、活动销售额。
+7. 大盘业绩对比：销售额、毛利额、毛利率，用于回答“赚没赚钱、规模多大”。同比或近半年同期对比时，只能计算两期都有销售记录的品种；去年同期或半年前没有销售的新品，不得纳入同比增幅。
 8. 活动执行情况对比：门店动销率、人员动销率、品种动销率，用于回答“员工有没有真正推、目标商品动没动”。
 9. 商品与结构对比：联合用药率、重点品占比、滞销品消化率，用于回答“卖出去的东西结构健不健康”。
-10. 投入产出对比：ROI、费效比是否变化，用于回答“花出去的钱值不值”。
+10. 投入产出对比：ROI、费效比是否变化，用于回答“花出去的钱值不值”。ROI口径必须说明为“活动销售额 ÷ 奖励金额”，费效比口径必须说明为“奖励金额 ÷ 活动销售额 × 100%”。如果奖励金额或活动销售额缺失，不得强行判断健康。
+11. 店员激励闭环必须补充店员认证总人数与提现总人数对比，并说明提现参与率。
 
 # 严格约束条件
 1. 纯中文业务表达：报告面向中国医药连锁客户，所有可见文字必须是自然流畅的中文。严禁在正文出现 role、actions、bullets、headquarters、stores、factories、operationInsights 等任何英文键名或代码字段。
@@ -5731,9 +5732,9 @@ function prepareReviewWorkbookInput(summary = {}, report = {}) {
       },
     },
     sales: {
-      currentMonth_vs_lastMonth: {
-        ...(raw.sales?.currentMonth_vs_lastMonth || {}),
-        rows: capWorkbookInputRows(raw.sales?.currentMonth_vs_lastMonth?.rows || [], "销售汇总-当月_vs_上月"),
+      currentMonth_vs_previousMonthSamePeriod: {
+        ...(raw.sales?.currentMonth_vs_previousMonthSamePeriod || {}),
+        rows: capWorkbookInputRows(raw.sales?.currentMonth_vs_previousMonthSamePeriod?.rows || [], "销售汇总-当月_vs_上月同期"),
       },
       currentMonth: {
         ...(raw.sales?.currentMonth || {}),
@@ -5760,6 +5761,10 @@ function prepareReviewWorkbookInput(summary = {}, report = {}) {
       currentMonth: {
         ...(raw.activitySummary?.currentMonth || {}),
         rows: capWorkbookInputRows(raw.activitySummary?.currentMonth?.rows || [], "活动汇总-当月"),
+      },
+      previousMonthSamePeriod: {
+        ...(raw.activitySummary?.previousMonthSamePeriod || {}),
+        rows: capWorkbookInputRows(raw.activitySummary?.previousMonthSamePeriod?.rows || [], "活动汇总-上月同期"),
       },
       lastMonth: {
         ...(raw.activitySummary?.lastMonth || {}),
@@ -5942,6 +5947,17 @@ function workbookSheets(summary, report) {
       变化率: metric?.changeRate === undefined || metric?.changeRate === "" ? "" : `${metric.changeRate}%`,
     }));
   });
+  const comparableProductRows = [
+    { 对比口径: "近半年同比-同品种", 共同销售品种数: summary.comparableProductComparison?.nearHalfSameProducts?.commonProductCount ?? "", 指标: "销售额", 本期: summary.comparableProductComparison?.nearHalfSameProducts?.salesAmount?.current ?? "", 对比期: summary.comparableProductComparison?.nearHalfSameProducts?.salesAmount?.previous ?? "", 变化率: summary.comparableProductComparison?.nearHalfSameProducts?.salesAmount?.changeRate === undefined ? "" : `${summary.comparableProductComparison.nearHalfSameProducts.salesAmount.changeRate}%`, 说明: summary.comparableProductComparison?.rule || "" },
+    { 对比口径: "上月同比-同品种", 共同销售品种数: summary.comparableProductComparison?.lastMonthSameProducts?.commonProductCount ?? "", 指标: "销售额", 本期: summary.comparableProductComparison?.lastMonthSameProducts?.salesAmount?.current ?? "", 对比期: summary.comparableProductComparison?.lastMonthSameProducts?.salesAmount?.previous ?? "", 变化率: summary.comparableProductComparison?.lastMonthSameProducts?.salesAmount?.changeRate === undefined ? "" : `${summary.comparableProductComparison.lastMonthSameProducts.salesAmount.changeRate}%`, 说明: summary.comparableProductComparison?.rule || "" },
+  ];
+  const employeeParticipationRows = [{
+    指标: "店员认证与提现参与",
+    店员认证总人数: summary.employeeParticipationComparison?.certifiedEmployeeCount ?? "",
+    提现总人数: summary.employeeParticipationComparison?.withdrawEmployeeCount ?? "",
+    提现参与率: summary.employeeParticipationComparison?.withdrawParticipationRate === undefined ? "" : `${summary.employeeParticipationComparison.withdrawParticipationRate}%`,
+    说明: summary.employeeParticipationComparison?.note || "",
+  }];
   const insightRows = [
     { 重点标注: "重点：运营健康度", 模块: "客户运营健康度", 指标: "健康度评分", 数值: insights.healthScore ?? "", 结论: "", 建议动作: "用于判断客户是否已经把四季蝉用成持续运营工具，而不是一次性红包活动。" },
     ...((insights.scoreItems || []).map((item) => ({
@@ -6005,12 +6021,15 @@ function workbookSheets(summary, report) {
   return [
     { name: "运营健康度", rows: insightRows.length ? insightRows : [{ 重点标注: "重点关注", 模块: "运营洞察", 指标: "暂无可计算洞察", 数值: "", 结论: "当前数据不足", 建议动作: "补齐销售、活动、奖励、培训、提现或厂家协同数据后再复盘。" }] },
     { name: "复盘结论", rows: conclusionRows },
-    { name: "当月_vs_上月经营对比", rows: monthlyComparisonRows.length ? monthlyComparisonRows : [{ 对比模块: "当月与上月经营对比", 指标: "暂无可计算指标", 当月: "", 上月: "", 差额: "", 变化率: "" }] },
+    { name: "当月_vs_上月同期经营对比", rows: monthlyComparisonRows.length ? monthlyComparisonRows : [{ 对比模块: "当月与上月同期经营对比", 指标: "暂无可计算指标", 当月: "", 上月同期: "", 差额: "", 变化率: "" }] },
+    { name: "同品种同比对比", rows: comparableProductRows },
+    { name: "店员认证与提现对比", rows: employeeParticipationRows },
     { name: "数据口径说明", rows: [
       { 项目: "数据来源", 内容: summary.source || "登录获取" },
       { 项目: "客户名称", 内容: summary.requestInfo?.merName || raw.meta?.merName || "" },
       { 项目: "客户编码", 内容: summary.requestInfo?.merCode || raw.meta?.merCode || "" },
       { 项目: "当月", 内容: `${windows.currentMonth?.start || ""} 至 ${windows.currentMonth?.end || ""}` },
+      { 项目: "上月同期", 内容: `${windows.previousMonthSamePeriod?.start || ""} 至 ${windows.previousMonthSamePeriod?.end || ""}` },
       { 项目: "上月", 内容: `${windows.lastMonth?.start || ""} 至 ${windows.lastMonth?.end || ""}` },
       { 项目: "上上月", 内容: `${windows.previousMonth?.start || ""} 至 ${windows.previousMonth?.end || ""}` },
       { 项目: "去年同月", 内容: `${windows.sameMonthLastYear?.start || ""} 至 ${windows.sameMonthLastYear?.end || ""}` },
@@ -6039,12 +6058,12 @@ function workbookSheets(summary, report) {
     { name: "奖励统计-半年", rows: capWorkbookRows(raw.rewardStatistics?.nearHalf?.rows || [], "奖励统计-半年") },
     { name: "奖励发放明细", rows: rewardDistributionRows.length ? capWorkbookRows(rewardDistributionRows, "奖励发放明细") : [{ 类型: "奖励发放", 说明: "当前口径未识别到奖励发放明细或指标，请查看接口诊断。" }] },
     { name: "员工豆豆账户与提现", rows: employeeAccountRows.length ? capWorkbookRows(employeeAccountRows, "员工豆豆账户与提现") : [{ 类型: "员工收益闭环", 说明: "当前口径未识别到员工账户、提现、核销或结算数据，请查看接口诊断。" }] },
-    { name: "销售汇总-当月_vs_上月", rows: capWorkbookRows(raw.sales?.currentMonth_vs_lastMonth?.rows || [], "销售汇总-当月_vs_上月") },
+    { name: "销售汇总-当月_vs_上月同期", rows: capWorkbookRows(raw.sales?.currentMonth_vs_previousMonthSamePeriod?.rows || [], "销售汇总-当月_vs_上月同期") },
     { name: "销售汇总-上月_vs_前两月", rows: capWorkbookRows(raw.sales?.lastMonth_vs_priorTwoMonths?.rows || [], "销售汇总-上月_vs_前两月") },
     { name: "销售汇总-上月_vs_去年同月", rows: capWorkbookRows(raw.sales?.lastMonth_vs_sameMonthLastYear?.rows || [], "销售汇总-上月_vs_去年同月") },
     { name: "销售汇总-近半年_vs_上期", rows: capWorkbookRows(raw.sales?.nearHalf_vs_previousHalf?.rows || [], "销售汇总-近半年_vs_上期") },
     { name: "销售汇总-近半年_vs_去年同期", rows: capWorkbookRows(raw.sales?.nearHalf_vs_sameNearHalfLastYear?.rows || [], "销售汇总-近半年_vs_去年同期") },
-    { name: "活动汇总-当月_vs_上月", rows: capWorkbookRows([...(raw.activitySummary?.currentMonth?.rows || []), ...(raw.activitySummary?.lastMonth?.rows || [])], "活动汇总-当月_vs_上月") },
+    { name: "活动汇总-当月_vs_上月同期", rows: capWorkbookRows([...(raw.activitySummary?.currentMonth?.rows || []), ...(raw.activitySummary?.previousMonthSamePeriod?.rows || [])], "活动汇总-当月_vs_上月同期") },
     { name: "活动汇总-5月_vs_4月", rows: capWorkbookRows([...(raw.activitySummary?.lastMonth?.rows || []), ...(raw.activitySummary?.previousMonth?.rows || [])], "活动汇总-5月_vs_4月") },
     { name: "活动汇总-上月_vs_去年同月", rows: capWorkbookRows([...(raw.activitySummary?.lastMonth?.rows || []), ...(raw.activitySummary?.sameMonthLastYear?.rows || [])], "活动汇总-上月_vs_去年同月") },
     { name: "活动汇总-近半年_vs_去年同期", rows: capWorkbookRows([...(raw.activitySummary?.nearHalf?.rows || []), ...(raw.activitySummary?.sameNearHalfLastYear?.rows || [])], "活动汇总-近半年_vs_去年同期") },
@@ -6562,11 +6581,17 @@ function buildSijichanWindows(asOfText = "") {
   const sameMonthLastYear = addMonths(last, -12);
   const sameNearHalfStart = addMonths(nearStart, -12);
   const sameNearHalfEnd = addMonths(last, -12);
+  const previousMonthSamePeriodEnd = new Date(last.getFullYear(), last.getMonth(), Math.min(current.getDate(), monthEnd(last).getDate()));
   return {
     currentMonth: {
       label: "当月",
       start: atStart(dateOnly(monthStart(current))),
       end: atEnd(dateOnly(current)),
+    },
+    previousMonthSamePeriod: {
+      label: "上月同期",
+      start: atStart(dateOnly(monthStart(last))),
+      end: atEnd(dateOnly(previousMonthSamePeriodEnd)),
     },
     lastMonth: { label: "上月", ...monthWindow(last) },
     previousMonth: { label: "上上月", ...monthWindow(prev) },
@@ -8936,8 +8961,9 @@ async function collectSijichanDataWithClient({ client, diagnostics, merCode = ""
   const withMerCode = (payload = {}) => (merCode ? { merCode, ...payload } : payload);
 
   const salesPeriods = {
-    currentMonth_vs_lastMonth: [windows.currentMonth, windows.lastMonth],
+    currentMonth_vs_previousMonthSamePeriod: [windows.currentMonth, windows.previousMonthSamePeriod],
     currentMonth: [windows.currentMonth, null],
+    previousMonthSamePeriod: [windows.previousMonthSamePeriod, null],
     lastMonth_vs_priorTwoMonths: [windows.lastMonth, windows.priorTwoMonths],
     lastMonth_vs_sameMonthLastYear: [windows.lastMonth, windows.sameMonthLastYear],
     previousMonth: [windows.previousMonth, null],
@@ -9007,6 +9033,10 @@ async function collectSijichanDataWithClient({ client, diagnostics, merCode = ""
       currentMonth: {
         rows: await client.paged("活动汇总-当月", "imActivityReward/summary/page", activityBody(windows.currentMonth)),
         sum: await client.post("活动汇总合计-当月", "imActivityReward/summary/sum", activityBody(windows.currentMonth)),
+      },
+      previousMonthSamePeriod: {
+        rows: await client.paged("活动汇总-上月同期", "imActivityReward/summary/page", activityBody(windows.previousMonthSamePeriod)),
+        sum: await client.post("活动汇总合计-上月同期", "imActivityReward/summary/sum", activityBody(windows.previousMonthSamePeriod)),
       },
       lastMonth: {
         rows: await client.paged("活动汇总-5月", "imActivityReward/summary/page", activityBody(windows.lastMonth)),
@@ -9083,8 +9113,26 @@ function compareMetric(current, previous) {
   return { current: currentValue, previous: previousValue, diff, changeRate };
 }
 
+const productIdentityCandidates = ["commodityCode", "wareIspCode", "productCode", "goodsCode", "skuCode", "商品编码", "商品名称", "commodityName", "productName", "goodsName"];
+const salesAmountCandidates = ["saleCommodityAmount", "rewardSaleAmount", "saleAmount", "salesAmount", "amount", "销售额", "销售金额"];
+
+function productIdentity(row) {
+  return String(pickField(row, productIdentityCandidates) || "").trim();
+}
+
+function rowsWithCommonSalesProducts(currentRows = [], previousRows = []) {
+  const currentSalesIds = new Set((currentRows || []).filter((row) => sumCandidates([row], salesAmountCandidates) > 0).map(productIdentity).filter(Boolean));
+  const previousSalesIds = new Set((previousRows || []).filter((row) => sumCandidates([row], salesAmountCandidates) > 0).map(productIdentity).filter(Boolean));
+  const commonIds = new Set([...currentSalesIds].filter((id) => previousSalesIds.has(id)));
+  return {
+    currentRows: (currentRows || []).filter((row) => commonIds.has(productIdentity(row))),
+    previousRows: (previousRows || []).filter((row) => commonIds.has(productIdentity(row))),
+    commonProductCount: commonIds.size,
+  };
+}
+
 function monthlySnapshot(rows = [], activityRows = []) {
-  const salesAmount = sumCandidates(rows, ["saleCommodityAmount", "rewardSaleAmount", "saleAmount", "salesAmount", "amount", "销售额", "销售金额"]);
+  const salesAmount = sumCandidates(rows, salesAmountCandidates);
   const grossProfit = sumCandidates(rows, ["grossProfitAmount", "grossProfit", "profitAmount", "maoriAmount", "毛利额", "毛利"]);
   const grossMargin = salesAmount ? Math.round((grossProfit / salesAmount) * 10000) / 100 : averageCandidates(rows, ["grossProfitRate", "grossMargin", "maoriRate", "毛利率"]);
   const activitySalesAmount = sumCandidates(activityRows, ["rewardSaleAmount", "saleCommodityAmount", "saleAmount", "salesAmount", "销售额", "活动销售额"]);
@@ -9109,16 +9157,16 @@ function monthlySnapshot(rows = [], activityRows = []) {
 }
 
 function buildMonthlyComparison(raw) {
-  const currentSalesRows = rowsFromPaged(raw.sales?.currentMonth?.products || raw.sales?.currentMonth_vs_lastMonth?.products);
-  const lastSalesRows = rowsFromPaged(raw.sales?.lastMonth_vs_priorTwoMonths?.products || raw.sales?.previousMonth?.products);
+  const currentSalesRows = rowsFromPaged(raw.sales?.currentMonth?.products || raw.sales?.currentMonth_vs_previousMonthSamePeriod?.products);
+  const lastSalesRows = rowsFromPaged(raw.sales?.previousMonthSamePeriod?.products || raw.sales?.lastMonth_vs_priorTwoMonths?.products);
   const currentActivityRows = rowsFromPaged(raw.activitySummary?.currentMonth?.rows);
-  const lastActivityRows = rowsFromPaged(raw.activitySummary?.lastMonth?.rows);
+  const lastActivityRows = rowsFromPaged(raw.activitySummary?.previousMonthSamePeriod?.rows);
   const current = monthlySnapshot(currentSalesRows, currentActivityRows);
   const previous = monthlySnapshot(lastSalesRows, lastActivityRows);
   return {
-    label: "当月与上月经营对比",
+    label: "当月与上月同期经营对比",
     currentWindow: raw.meta?.windows?.currentMonth || {},
-    previousWindow: raw.meta?.windows?.lastMonth || {},
+    previousWindow: raw.meta?.windows?.previousMonthSamePeriod || {},
     marketPerformance: {
       salesAmount: compareMetric(current.salesAmount, previous.salesAmount),
       grossProfit: compareMetric(current.grossProfit, previous.grossProfit),
@@ -9142,6 +9190,51 @@ function buildMonthlyComparison(raw) {
       roi: compareMetric(current.roi, previous.roi),
       feeEfficiencyRate: compareMetric(current.feeEfficiencyRate, previous.feeEfficiencyRate),
     },
+  };
+}
+
+function buildComparableProductComparison(raw) {
+  const nearHalfRows = rowsFromPaged(raw.sales?.nearHalf_vs_sameNearHalfLastYear?.products || raw.sales?.nearHalf_vs_previousHalf?.products);
+  const sameNearHalfRows = rowsFromPaged(raw.sales?.sameNearHalfLastYear?.products);
+  const lastMonthRows = rowsFromPaged(raw.sales?.lastMonth_vs_sameMonthLastYear?.products || raw.sales?.lastMonth_vs_priorTwoMonths?.products);
+  const sameMonthRows = rowsFromPaged(raw.sales?.sameMonthLastYear?.products);
+  const nearHalfCommon = rowsWithCommonSalesProducts(nearHalfRows, sameNearHalfRows);
+  const monthCommon = rowsWithCommonSalesProducts(lastMonthRows, sameMonthRows);
+  const nearHalfCurrent = monthlySnapshot(nearHalfCommon.currentRows, []);
+  const nearHalfPrevious = monthlySnapshot(nearHalfCommon.previousRows, []);
+  const monthCurrent = monthlySnapshot(monthCommon.currentRows, []);
+  const monthPrevious = monthlySnapshot(monthCommon.previousRows, []);
+  return {
+    rule: "同比仅计算两期都有销售记录的品种；去年同期或对比期没有销售的新品不纳入同比增幅。",
+    nearHalfSameProducts: {
+      commonProductCount: nearHalfCommon.commonProductCount,
+      salesAmount: compareMetric(nearHalfCurrent.salesAmount, nearHalfPrevious.salesAmount),
+      grossProfit: compareMetric(nearHalfCurrent.grossProfit, nearHalfPrevious.grossProfit),
+      grossMargin: compareMetric(nearHalfCurrent.grossMargin, nearHalfPrevious.grossMargin),
+    },
+    lastMonthSameProducts: {
+      commonProductCount: monthCommon.commonProductCount,
+      salesAmount: compareMetric(monthCurrent.salesAmount, monthPrevious.salesAmount),
+      grossProfit: compareMetric(monthCurrent.grossProfit, monthPrevious.grossProfit),
+      grossMargin: compareMetric(monthCurrent.grossMargin, monthPrevious.grossMargin),
+    },
+  };
+}
+
+function buildEmployeeParticipationComparison(raw) {
+  const accountRows = [
+    ...rowsFromPaged(raw.employeeAccount?.withdrawRows),
+    ...rowsFromPaged(raw.employeeAccount?.writeOffRows),
+    ...rowsFromPaged(raw.employeeAccount?.settleRows),
+  ];
+  const certifiedRows = rowsFromPaged(raw.training?.employeeLearning);
+  const certifiedEmployeeCount = uniqueCountCandidates(certifiedRows.length ? certifiedRows : accountRows, ["empCode", "employeeCode", "userCode", "staffCode", "店员编码", "员工编码"]);
+  const withdrawEmployeeCount = uniqueCountCandidates(rowsFromPaged(raw.employeeAccount?.withdrawRows), ["empCode", "employeeCode", "userCode", "staffCode", "店员编码", "员工编码"]);
+  return {
+    certifiedEmployeeCount,
+    withdrawEmployeeCount,
+    withdrawParticipationRate: certifiedEmployeeCount ? Math.round((withdrawEmployeeCount / certifiedEmployeeCount) * 10000) / 100 : 0,
+    note: "店员认证总人数优先取培训/员工明细中的店员编码；若无培训明细，则用员工账户相关明细中的店员编码兜底。提现总人数取提现明细中的店员编码。",
   };
 }
 
@@ -9269,6 +9362,8 @@ function summarizeSijichanRaw(raw) {
     metricRows,
     rawData,
     monthlyComparison: buildMonthlyComparison(raw),
+    comparableProductComparison: buildComparableProductComparison(raw),
+    employeeParticipationComparison: buildEmployeeParticipationComparison(raw),
     operationInsights: deriveOperationInsights({
       salesRows: withDataMeta(rowsFromPaged(raw.sales.nearHalf_vs_previousHalf.products), "sales.json", "nearHalf_vs_previousHalf.products"),
       activityRows: withDataMeta(rowsFromPaged(raw.activitySummary.nearHalf.rows), "activity_summary.json", "nearHalf.rows"),
