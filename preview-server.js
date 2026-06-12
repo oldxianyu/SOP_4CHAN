@@ -7080,6 +7080,69 @@ function playwrightLaunchOptions() {
   };
 }
 
+function isChromiumSingletonError(error) {
+  const text = `${error?.message || ""}\n${error?.stack || ""}`;
+  return /ProcessSingleton|SingletonLock|profile directory.*in use|profile is already in use/i.test(text);
+}
+
+async function cleanupWeComChromiumSingletons(reason = "") {
+  const profileRoot = path.join(serverDir, "wecom-browser-profile");
+  console.warn(`[wecom-browser] cleanup chromium singleton ${reason}`.trim());
+  for (const session of Array.from(activeWeComBrowserSessions.values())) {
+    await closeWeComBrowserSession(session, "closed").catch(() => null);
+  }
+  try {
+    const { execFile } = require("child_process");
+    await new Promise((resolve) => {
+      execFile("pkill", ["-f", "SOP_4CHAN/.server/wecom-browser-profile"], { timeout: 5000 }, () => resolve());
+    });
+  } catch {}
+  try {
+    const snapDir = path.join(os.homedir(), "snap", "chromium", "common", "chromium");
+    const lockPath = path.join(snapDir, "SingletonLock");
+    let lockTarget = "";
+    try {
+      if (fs.existsSync(lockPath)) lockTarget = fs.readlinkSync(lockPath);
+    } catch {
+      lockTarget = "";
+    }
+    const lockPid = String(lockTarget || "").match(/-(\d+)$/)?.[1] || "";
+    const alive = lockPid ? (() => {
+      try { process.kill(Number(lockPid), 0); return true; } catch { return false; }
+    })() : false;
+    if (!alive) {
+      for (const file of ["SingletonLock", "SingletonCookie", "SingletonSocket"]) {
+        fs.rmSync(path.join(snapDir, file), { force: true });
+      }
+    }
+  } catch {}
+  for (const file of ["SingletonLock", "SingletonCookie", "SingletonSocket"]) {
+    fs.rmSync(path.join(profileRoot, file), { force: true });
+  }
+  await new Promise((resolve) => setTimeout(resolve, 800));
+}
+
+async function launchWeComPersistentContext(chromium, profileDir, options = {}) {
+  const launch = () => chromium.launchPersistentContext(profileDir, {
+    ...playwrightLaunchOptions(),
+    viewport: { width: 1280, height: 900 },
+  });
+  try {
+    return await launch();
+  } catch (error) {
+    if (!isChromiumSingletonError(error)) throw error;
+    await cleanupWeComChromiumSingletons("launch-retry");
+    try {
+      return await launch();
+    } catch (retryError) {
+      if (isChromiumSingletonError(retryError)) {
+        throw new Error("服务器扫码浏览器被上一次会话占用，系统已清理旧会话，请重新点击“生成服务器扫码二维码”。");
+      }
+      throw retryError;
+    }
+  }
+}
+
 function weComBrowserProfileDir(userId = "", sessionId = "") {
   const safeUser = String(userId || "default").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80) || "default";
   const safeSession = String(sessionId || "").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80);
@@ -7989,10 +8052,7 @@ async function createWeComBrowserSession(user, body = {}) {
   };
   try {
     session.profileDir = weComBrowserProfileDir(user.id, body.profileReuse ? "" : session.id);
-    const context = await chromium.launchPersistentContext(session.profileDir, {
-      ...playwrightLaunchOptions(),
-      viewport: { width: 1280, height: 900 },
-    });
+    const context = await launchWeComPersistentContext(chromium, session.profileDir);
     session.context = context;
     const browser = context.browser();
     session.browser = browser;
