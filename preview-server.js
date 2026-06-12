@@ -97,12 +97,12 @@ const defaultReviewPromptInstruction = `# 角色设定
 2. 活动商品销售与奖励闭环健康度。
 3. 激励方式的实际应用价值，必须体现“用与不用”的差异对比。
 4. 店员提现参与度与厂家晒单打赏活跃度。
-5. 一个豆豆能带动的销售金额，格式严格写成“每1个豆豆奖励带动……元销售额。”。
+5. 一个豆豆能带动的销售金额：1个豆豆=1元，计算口径固定为“活动销售额 ÷ 奖励金额”，格式严格写成“每1个豆豆奖励带动……元销售额。”。严禁把豆豆再按分、百分或0.01元二次换算，例如ROI约12时只能写“每1个豆豆奖励带动约12元销售额”，不能写0.12元。
 6. 当月与上月同期活动数据对比：如果当月只有1日至11日，就只能对比上月1日至11日，严禁用当月未完整周期对比上月整月。重点看活动个数、活动商品数、活动销售额。
 7. 大盘业绩对比：销售额、毛利额、毛利率，用于回答“赚没赚钱、规模多大”。同比或近半年同期对比时，只能计算两期都有销售记录的品种；去年同期或半年前没有销售的新品，不得纳入同比增幅。
 8. 活动执行情况对比：门店动销率、人员动销率、品种动销率，用于回答“员工有没有真正推、目标商品动没动”。
 9. 商品与结构对比：联合用药率、重点品占比、滞销品消化率，用于回答“卖出去的东西结构健不健康”。
-10. 投入产出对比：ROI、费效比是否变化，用于回答“花出去的钱值不值”。ROI口径必须说明为“活动销售额 ÷ 奖励金额”，费效比口径必须说明为“奖励金额 ÷ 活动销售额 × 100%”。例如活动销售额809万元、奖励金额63.6万元时，ROI约12.7，费效比约7.9%；严禁把7.9%反写成ROI 0.08，也严禁把费效比写成1200%以上。如果奖励金额或活动销售额缺失，不得强行判断健康。
+10. 投入产出对比：ROI、费效比是否变化，用于回答“花出去的钱值不值”。ROI口径必须说明为“活动销售额 ÷ 奖励金额”，也就是“每1个豆豆奖励带动销售额”；费效比口径必须说明为“奖励金额 ÷ 活动销售额 × 100%”。例如活动销售额809万元、奖励金额63.6万元时，ROI约12.7，费效比约7.9%，应写“每1个豆豆奖励带动约12.7元销售额”；严禁把7.9%反写成ROI 0.08，也严禁把费效比写成1200%以上。如果奖励金额或活动销售额缺失，不得强行判断健康。
 11. 店员激励闭环必须补充店员认证总人数与提现总人数对比，并说明提现参与率。
 
 # 严格约束条件
@@ -4703,8 +4703,10 @@ function compactOperationInsightsForResponse(insights = {}) {
       totalRewardAmount: metrics.totalRewardAmount ?? null,
       rewardEfficiency: metrics.rewardEfficiency ?? null,
       inputOutputRatio: metrics.inputOutputRatio ?? null,
+      beanSalesEfficiency: metrics.beanSalesEfficiency ?? metrics.inputOutputRatio ?? null,
       feeEfficiencyRate: metrics.feeEfficiencyRate ?? null,
       roiFormula: metrics.roiFormula || "投入产出比ROI = 活动销售额 ÷ 奖励金额",
+      beanSalesFormula: metrics.beanSalesFormula || "每1个豆豆奖励带动销售额 = 活动销售额 ÷ 奖励金额；1个豆豆=1元",
       feeEfficiencyFormula: metrics.feeEfficiencyFormula || "费效比 = 奖励金额 ÷ 活动销售额 × 100%",
       employeeCoverage: metrics.employeeCoverage ?? null,
       usedRewardPlayCount: metrics.usedRewardPlayCount ?? null,
@@ -5233,6 +5235,7 @@ function sanitizeReportVisibleText(value) {
     .replace(/[；;，,。]?\s*但?[^。；;，,]*(?:数据(?:缺失|为空|不足|未接入)|查不到数据|未查到数据|无法评估|无法分析|建议(?:通过)?ERP数据补充|建议补充(?:ERP)?数据|需补充(?:ERP)?数据|需尽快补齐)[^。；;]*/g, "")
     .replace(/[；;，,。]?\s*无激励品种(?:活动)?销售额(?:为|是)?0(?:元|万元)?[^。；;，,]*/g, "")
     .replace(/[；;，,。]?\s*无激励品种(?:动销|销售|表现)[^。；;，,]*为0[^。；;，,]*/g, "")
+    .replace(/[；;，,。]?\s*(?:折合)?每1个豆豆奖励带动0\.\d+元(?:活动)?销售额[^。；;，,]*/g, "")
     .replace(/[；;，,。]?\s*(?:累计)?提现金额(?:约|为|达|：|:)?\s*[\d,.，]+(?:万)?元[^。；;，,]*/g, "")
     .replace(/[；;，,。]?\s*人均提现(?:约|为|达|：|:)?\s*[\d,.，]+(?:万)?元[^。；;，,]*/g, "")
     .replace(/[；;，,。]?\s*累计豆豆(?:约|为|达|：|:)?\s*[\d,.，]+(?:万)?(?:豆豆|元)?[^。；;，,]*/g, "")
@@ -5250,6 +5253,7 @@ function shouldDropReportVisibleText(value) {
   if (/活动(?:商品)?销售额?占(?:同期)?(?:整体|总)?销售(?:额)?|活动(?:商品)?(?:销售)?占比.*(?:整体|总销售|同期)/.test(text)) return true;
   if (/商品动销率\s*(?:10\d|[2-9]\d{2,})(?:\.\d+)?%/.test(text)) return true;
   if (/无激励品种[^。；;，,]*(?:销售额|动销|销售|表现)[^。；;，,]*0/.test(text)) return true;
+  if (/(?:折合)?每1个豆豆奖励带动0\.\d+元(?:活动)?销售额/.test(text)) return true;
   if (/数据(?:缺失|为空|不足|未接入)|查不到数据|未查到数据|无法评估|无法分析|建议(?:通过)?ERP数据补充|建议补充(?:ERP)?数据|需补充(?:ERP)?数据/i.test(text)) return true;
   return false;
 }
@@ -9062,6 +9066,7 @@ function deriveOperationInsights({
   const rewardDistributionMetricAmount = money(sumCandidates(metricObjects(rewardDistributionMetricRows), rewardAmountCandidates));
   const totalRewardAmount = rewardRowsAmount || rewardDistributionAmount || rewardDistributionMetricAmount || activityRewardAmount;
   const inputOutputRatio = totalRewardAmount ? money(activitySalesAmount / totalRewardAmount) : 0;
+  const beanSalesEfficiency = inputOutputRatio;
   const feeEfficiencyRate = activitySalesAmount ? money((totalRewardAmount / activitySalesAmount) * 100) : 0;
   const activityCoverageRate = ratioPercent(activeSkuCount || rewardSkuCount, salesSkuCount || activeSkuCount || rewardSkuCount);
   const movingRates = buildMovingRateMetrics(activityRows, rewardRows, salesRows, operationBase);
@@ -9094,7 +9099,7 @@ function deriveOperationInsights({
   const scoreItems = [
     { key: "activitySustainability", label: "活动持续运营", value: joinedActivityCount, level: onlineActivityCount ? "healthy" : joinedActivityCount ? "watch" : "risk", explanation: joinedActivityCount ? `已识别 ${joinedActivityCount} 个已参加/已配置活动，其中当前上架/发布约 ${onlineActivityCount} 个，活动销售额约 ${activityCatalogSalesAmount}。` : "未识别到已参加活动列表，客户可能还没有形成持续活动运营池。" },
     { key: "activityCoverage", label: "活动覆盖", value: movingRates.productMoving.rate || activityCoverageRate, level: rateLevel(movingRates.productMoving.rate || activityCoverageRate, 35, 15), explanation: `门店动销率 ${movingRates.storeMoving.rate}%（${movingRates.storeMoving.numerator}/${movingRates.storeMoving.denominator}），人员动销率 ${movingRates.employeeMoving.rate}%（${movingRates.employeeMoving.numerator}/${movingRates.employeeMoving.denominator}），商品动销率 ${movingRates.productMoving.rate}%（${movingRates.productMoving.numerator}/${movingRates.productMoving.denominator}）。` },
-    { key: "rewardClosure", label: "激励闭环", value: feeEfficiencyRate, level: activitySalesAmount ? rateLevel(Math.min(feeEfficiencyRate, 100), 8, 2) : "risk", explanation: activitySalesAmount ? `每100元活动销售对应约 ${feeEfficiencyRate} 元奖励；投入产出比约 ${inputOutputRatio}，即每1元奖励带动约 ${inputOutputRatio} 元活动销售。` : "当前没有识别到活动销售额，难以证明奖励带动销售。" },
+    { key: "rewardClosure", label: "激励闭环", value: feeEfficiencyRate, level: activitySalesAmount ? rateLevel(Math.min(feeEfficiencyRate, 100), 8, 2) : "risk", explanation: activitySalesAmount ? `每100元活动销售对应约 ${feeEfficiencyRate} 元奖励；投入产出比约 ${inputOutputRatio}，即每1个豆豆奖励带动约 ${beanSalesEfficiency} 元活动销售，口径为活动销售额除以奖励金额，1个豆豆=1元。` : "当前没有识别到活动销售额，难以证明奖励带动销售。" },
     { key: "employeeParticipation", label: "员工参与", value: employeeParticipationSignal, level: employeeParticipationSignal ? (totalWithdrawMoney || employeeCoverage ? "healthy" : "watch") : "risk", explanation: employeeParticipationSignal ? `识别到店员参与和提现闭环信号，可结合店员认证人数、提现人数和提现参与率评估激励触达。` : "缺少员工参与或提现信号，店员感知会变弱。" },
     { key: "trainingConversion", label: "培训承接", value: trainingRows.length || trainingMetricRows.length, level: trainingHasSignal ? "watch" : "risk", explanation: trainingHasSignal ? "已有培训或学习指标，可进一步与销售结果绑定。" : "培训数据为空，建议把重点品培训、考试和激励任务连成闭环。" },
     { key: "factoryCollaboration", label: "厂家协同", value: shareRewardAmount || shareRecordCount, level: factoryCollaborationLevel, explanation: shareRecordCount || shareRewardAmount ? `厂家晒单/打赏已有 ${shareRecordCount} 条记录，金额约 ${shareRewardAmount}。` : "厂家打赏和晒单为空，厂家资源没有被充分转化为门店执行证据。" },
@@ -9108,7 +9113,7 @@ function deriveOperationInsights({
     totalSalesAmount ? `已识别重点品销售额约 ${totalSalesAmount}，可用于向客户证明重点品经营规模。` : "",
     joinedActivityCount ? `已参加/配置活动 ${joinedActivityCount} 个，当前上架/发布约 ${onlineActivityCount} 个，可证明客户已有活动运营资产。` : "",
     activityBudgetAmount || activityUsedBudgetAmount ? `活动预算约 ${activityBudgetAmount}，已发/已用约 ${activityUsedBudgetAmount}，剩余约 ${activityRemainBudgetAmount}，可用于推动客户做费用复盘。` : "",
-    activitySalesAmount ? `活动商品销售额约 ${activitySalesAmount}，奖励金额约 ${totalRewardAmount}，可沉淀为“费用换动销”的投入产出证据。` : "",
+    activitySalesAmount ? `活动商品销售额约 ${activitySalesAmount}，奖励金额约 ${totalRewardAmount}，每1个豆豆奖励带动约 ${beanSalesEfficiency} 元销售额，可沉淀为“费用换动销”的投入产出证据。` : "",
     movingRates.storeMoving.denominator ? `门店动销率 ${movingRates.storeMoving.rate}%：动销门店 ${movingRates.storeMoving.numerator} 家，启用且非仓库门店 ${movingRates.storeMoving.denominator} 家。` : "",
     movingRates.employeeMoving.denominator ? `人员动销率 ${movingRates.employeeMoving.rate}%：动销员工 ${movingRates.employeeMoving.numerator} 人，店员认证/随心看口径员工 ${movingRates.employeeMoving.denominator} 人。` : "",
     movingRates.productMoving.denominator ? `商品动销率 ${movingRates.productMoving.rate}%：动销商品 ${movingRates.productMoving.numerator} 个，四季蝉商品总数 ${movingRates.productMoving.denominator} 个。` : "",
@@ -9152,8 +9157,10 @@ function deriveOperationInsights({
       totalRewardAmount,
       rewardEfficiency: feeEfficiencyRate,
       inputOutputRatio,
+      beanSalesEfficiency,
       feeEfficiencyRate,
       roiFormula: "投入产出比ROI = 活动销售额 ÷ 奖励金额",
+      beanSalesFormula: "每1个豆豆奖励带动销售额 = 活动销售额 ÷ 奖励金额；1个豆豆=1元",
       feeEfficiencyFormula: "费效比 = 奖励金额 ÷ 活动销售额 × 100%",
       storeCoverage,
       employeeCoverage,
