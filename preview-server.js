@@ -9110,7 +9110,7 @@ function deriveOperationInsights({
     activityBudgetAmount || activityUsedBudgetAmount ? `活动预算约 ${activityBudgetAmount}，已发/已用约 ${activityUsedBudgetAmount}，剩余约 ${activityRemainBudgetAmount}，可用于推动客户做费用复盘。` : "",
     activitySalesAmount ? `活动商品销售额约 ${activitySalesAmount}，奖励金额约 ${totalRewardAmount}，可沉淀为“费用换动销”的投入产出证据。` : "",
     movingRates.storeMoving.denominator ? `门店动销率 ${movingRates.storeMoving.rate}%：动销门店 ${movingRates.storeMoving.numerator} 家，启用且非仓库门店 ${movingRates.storeMoving.denominator} 家。` : "",
-    movingRates.employeeMoving.denominator ? `人员动销率 ${movingRates.employeeMoving.rate}%：动销员工 ${movingRates.employeeMoving.numerator} 人，符合随心看条件员工 ${movingRates.employeeMoving.denominator} 人。` : "",
+    movingRates.employeeMoving.denominator ? `人员动销率 ${movingRates.employeeMoving.rate}%：动销员工 ${movingRates.employeeMoving.numerator} 人，店员认证/随心看口径员工 ${movingRates.employeeMoving.denominator} 人。` : "",
     movingRates.productMoving.denominator ? `商品动销率 ${movingRates.productMoving.rate}%：动销商品 ${movingRates.productMoving.numerator} 个，四季蝉商品总数 ${movingRates.productMoving.denominator} 个。` : "",
     employeeParticipationSignal ? "店员收益闭环已有可复盘信号，可用认证人数、提现人数和提现参与率证明激励触达。" : "",
     rewardDistributionHasSignal ? "奖励发放明细已接入，可向客户展示“销售产生奖励、奖励触达店员”的执行证据。" : "",
@@ -9430,8 +9430,8 @@ function isEligibleEmployee(row) {
   const role = rowText(row, ["suiXinKanRoleName", "roleName", "staffRoleName", "随心看角色", "角色"]);
   const accountOk = fieldMissing(row, ["accountTypeName", "acctTypeName", "userTypeName", "账号类型", "账户类型"]) || /员工/.test(accountType);
   const employmentOk = fieldMissing(row, ["employmentStatusName", "jobStatusName", "empStatusName", "staffStatusName", "员工状态", "在职状态"]) || (/在职|正常|启用/.test(employment) && !/离职|停用|禁用/.test(employment));
-  const watchOk = fieldMissing(row, ["suiXinKanStatusName", "employeeSxkStatusName", "seeStatusName", "随心看状态", "员工随心看状态"]) || (/启用|正常|开通/.test(watchStatus) && !/停用|禁用|关闭/.test(watchStatus));
-  const roleOk = fieldMissing(row, ["suiXinKanRoleName", "roleName", "staffRoleName", "随心看角色", "角色"]) || /(店员|店长|运营|区域经理)/.test(role);
+  const watchOk = /启用|正常|开通/.test(watchStatus) && !/停用|禁用|关闭/.test(watchStatus);
+  const roleOk = /(店员|店长|区域经理)/.test(role) && !/运营/.test(role);
   return accountOk && employmentOk && watchOk && roleOk;
 }
 
@@ -9516,7 +9516,7 @@ function summarizeOperationBase(raw, fallbackProductRows = []) {
       totalRows: employeeRows.length,
       eligibleEmployeeCount: uniqueCountCandidates(eligibleEmployeeRows, ["empCode", "employeeCode", "staffCode", "account", "id", "员工编码", "账号"]) || eligibleEmployeeRows.length,
       certifiedEmployeeCount,
-      source: certifiedEmployeeCount ? "员工分母优先取店员认证总人数；取不到时回退到员工基础档案筛选人数。" : "merchant/personManager/index 页面对应接口：csd-staff/_searchEmployee，筛选员工账号、在职、随心看启用、角色为店员/店长/运营/区域经理。",
+      source: certifiedEmployeeCount ? "员工分母优先取店员认证总人数；取不到时回退到随心看启用且角色为店员/店长/区域经理的员工数。" : "merchant/personManager/index 页面对应接口：csd-staff/_searchEmployee，筛选员工账号、在职、随心看启用、角色为店员/店长/区域经理。",
     },
     products: {
       productTotal,
