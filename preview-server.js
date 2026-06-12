@@ -112,7 +112,9 @@ const defaultReviewPromptInstruction = `# 角色设定
 4. 没有查到的数据不要写进客户可见报告；不要写“数据缺失、数据为空、无法评估、建议补充ERP数据”等内部诊断话术。
 5. 严禁把未识别到的业务数据写成0，尤其不要写“无激励品种销售额为0”“无激励品种动销为0”等不成立对比。
 6. 客户可见报告不得展示店员豆豆提现金额、累计提现金额、人均提现金额、豆豆账户金额、余额等容易让老板关注成本的数字；只允许展示店员认证总人数、提现总人数、提现参与率等参与度指标。
-7. 在“下一步跟进动作”部分，必须严格使用“总部：……”“门店：……”“厂家：……”的中文句式开头。
+7. 动销率口径必须使用系统摘要中的 movingRates：人员动销率分母优先使用店员认证总人数；商品动销率分母使用四季蝉概览所选时间范围内“动销商品数+未动销商品数”。不得自行使用随心看员工数、活动明细去重数或其它口径替代。
+8. 商品动销率不得超过100%。如果分子超过分母，只能按系统摘要给出的封顶后比例展示，不要写“覆盖效果突出”等夸张判断。
+9. 在“下一步跟进动作”部分，必须严格使用“总部：……”“门店：……”“厂家：……”的中文句式开头。
 
 # 输出结构要求
 请严格按以下结构组织并输出报告：
@@ -4814,6 +4816,7 @@ function buildPrompt(summary, instruction = defaultReviewPromptInstruction) {
     "系统固定输出要求：输出必须是JSON，不要输出Markdown代码块。",
     "字段必须包含：title、executiveSummary、highlights、sections、nextActions。不要输出 risks 字段，不要输出独立风险章节。",
     "sections 数组每项必须包含 heading 和 bullets；所有可见文字必须使用中文。",
+    "动销率固定口径：人员动销率分母优先用店员认证总人数；商品动销率分母用四季蝉概览当前时间范围内动销商品数+未动销商品数；商品动销率不得超过100%，不得自行改口径。",
     "数据摘要如下：",
     JSON.stringify(summaryForAi(summary)),
   ].join("\n");
@@ -5221,6 +5224,7 @@ function reportTitleWithCustomer(title, summary = {}) {
 
 function sanitizeReportVisibleText(value) {
   return String(value || "")
+    .replace(/^(总部|门店|厂家)[：:]\s*\1[：:]\s*/g, "$1：")
     .replace(/续用风险/g, "运营补强需求")
     .replace(/流失风险/g, "持续运营压力")
     .replace(/运营健康度/g, "运营评分")
@@ -5244,6 +5248,7 @@ function shouldDropReportVisibleText(value) {
   const text = String(value || "").trim();
   if (!text) return true;
   if (/活动(?:商品)?销售额?占(?:同期)?(?:整体|总)?销售(?:额)?|活动(?:商品)?(?:销售)?占比.*(?:整体|总销售|同期)/.test(text)) return true;
+  if (/商品动销率\s*(?:10\d|[2-9]\d{2,})(?:\.\d+)?%/.test(text)) return true;
   if (/无激励品种[^。；;，,]*(?:销售额|动销|销售|表现)[^。；;，,]*0/.test(text)) return true;
   if (/数据(?:缺失|为空|不足|未接入)|查不到数据|未查到数据|无法评估|无法分析|建议(?:通过)?ERP数据补充|建议补充(?:ERP)?数据|需补充(?:ERP)?数据/i.test(text)) return true;
   return false;
@@ -9456,7 +9461,38 @@ function summarizeOperationBase(raw, fallbackProductRows = []) {
   const productOverview = responseData(raw?.operationBase?.productOverview);
   const eligibleStoreRows = storeRows.filter(isEnabledStoreInstitution);
   const eligibleEmployeeRows = employeeRows.filter(isEligibleEmployee);
-  const productTotal = totalFromObject(productOverview, [
+  const certifiedEmployeeCount = maxCandidates([
+    ...metricRowsFromObject(responseData(raw?.employeeAccount?.accountSummary), "employee_account.json", "accountSummary"),
+    ...metricRowsFromObject(responseData(raw?.employeeAccount?.withdrawSummary), "employee_account.json", "withdrawSummary"),
+    ...metricRowsFromObject(responseData(raw?.overview?.rewardStat), "overview.json", "rewardStat"),
+    productOverview,
+  ], [
+    "certifiedEmployeeCount",
+    "authEmpCount",
+    "employeeAuthCount",
+    "certificationEmpCount",
+    "empAuthCount",
+    "店员认证人数",
+    "认证店员数",
+    "认证员工数",
+  ]);
+  const movingProductCount = totalFromObject(productOverview, [
+    "movingCommodityCount",
+    "movingProductCount",
+    "saleCommodityCount",
+    "soldCommodityCount",
+    "动销商品数",
+  ]);
+  const unmovedProductCount = totalFromObject(productOverview, [
+    "unmovingCommodityCount",
+    "notMovingCommodityCount",
+    "unSaleCommodityCount",
+    "unsoldCommodityCount",
+    "未动销商品数",
+  ]);
+  const overviewProductTotal = movingProductCount || unmovedProductCount
+    ? movingProductCount + unmovedProductCount
+    : totalFromObject(productOverview, [
     "commodityTotal",
     "commodityCount",
     "goodsTotal",
@@ -9468,7 +9504,8 @@ function summarizeOperationBase(raw, fallbackProductRows = []) {
     "activityCommodityCount",
     "活动商品数",
     "商品总数",
-  ]) || uniqueCountCandidates(fallbackProductRows, productIdentityCandidates);
+  ]);
+  const productTotal = overviewProductTotal || uniqueCountCandidates(fallbackProductRows, productIdentityCandidates);
   return {
     stores: {
       totalRows: storeRows.length,
@@ -9478,11 +9515,14 @@ function summarizeOperationBase(raw, fallbackProductRows = []) {
     employees: {
       totalRows: employeeRows.length,
       eligibleEmployeeCount: uniqueCountCandidates(eligibleEmployeeRows, ["empCode", "employeeCode", "staffCode", "account", "id", "员工编码", "账号"]) || eligibleEmployeeRows.length,
-      source: "merchant/personManager/index 页面对应接口：csd-staff/_searchEmployee，筛选员工账号、在职、随心看启用、角色为店员/店长/运营/区域经理。",
+      certifiedEmployeeCount,
+      source: certifiedEmployeeCount ? "员工分母优先取店员认证总人数；取不到时回退到员工基础档案筛选人数。" : "merchant/personManager/index 页面对应接口：csd-staff/_searchEmployee，筛选员工账号、在职、随心看启用、角色为店员/店长/运营/区域经理。",
     },
     products: {
       productTotal,
-      source: productTotalFromOverview(productOverview) ? "sjcmer/overview 概览指标" : "四季蝉概览未返回明确商品总数，使用活动/销售商品唯一数兜底。",
+      movingProductCount,
+      unmovedProductCount,
+      source: movingProductCount || unmovedProductCount ? "sjcmer/overview 按所选时间范围取动销商品数+未动销商品数。" : productTotalFromOverview(productOverview) ? "sjcmer/overview 概览指标" : "四季蝉概览未返回明确商品总数，使用活动/销售商品唯一数兜底。",
     },
   };
 }
@@ -9521,8 +9561,9 @@ function buildMovingRateMetrics(activityRows = [], rewardRows = [], salesRows = 
   const activeStoreCount = storeIds.size || storeFallback;
   const activeEmployeeCount = employeeIds.size || employeeFallback;
   const totalStoreCount = toNumber(operationBaseSummary?.stores?.enabledStoreCount);
-  const totalEmployeeCount = toNumber(operationBaseSummary?.employees?.eligibleEmployeeCount);
+  const totalEmployeeCount = toNumber(operationBaseSummary?.employees?.certifiedEmployeeCount) || toNumber(operationBaseSummary?.employees?.eligibleEmployeeCount);
   const totalProductCount = toNumber(operationBaseSummary?.products?.productTotal) || activeProductCount;
+  const safeProductNumerator = totalProductCount ? Math.min(activeProductCount, totalProductCount) : activeProductCount;
   return {
     storeMoving: {
       label: "门店动销率",
@@ -9542,10 +9583,11 @@ function buildMovingRateMetrics(activityRows = [], rewardRows = [], salesRows = 
     },
     productMoving: {
       label: "商品动销率",
-      numerator: activeProductCount,
+      numerator: safeProductNumerator,
+      rawNumerator: activeProductCount,
       denominator: totalProductCount,
-      rate: ratioPercent(activeProductCount, totalProductCount),
-      source: "活动商品编码去重",
+      rate: ratioPercent(safeProductNumerator, totalProductCount),
+      source: activeProductCount > safeProductNumerator ? "活动商品编码去重；分子超过概览商品池时按分母封顶展示" : "活动商品编码去重",
       denominatorSource: operationBaseSummary?.products?.source || "",
     },
   };
@@ -9840,7 +9882,10 @@ function summarizeSijichanRaw(raw) {
   const operationBaseMetricRows = [
     { 数据文件: "operation_base.json", 数据路径: "stores.summary.enabledStoreCount", 指标: "启用门店总数", 指标值: operationBaseSummary.stores.enabledStoreCount },
     { 数据文件: "operation_base.json", 数据路径: "employees.summary.eligibleEmployeeCount", 指标: "符合条件员工总数", 指标值: operationBaseSummary.employees.eligibleEmployeeCount },
+    { 数据文件: "operation_base.json", 数据路径: "employees.summary.certifiedEmployeeCount", 指标: "店员认证总人数", 指标值: operationBaseSummary.employees.certifiedEmployeeCount },
     { 数据文件: "operation_base.json", 数据路径: "products.summary.productTotal", 指标: "四季蝉商品总数", 指标值: operationBaseSummary.products.productTotal },
+    { 数据文件: "operation_base.json", 数据路径: "products.summary.movingProductCount", 指标: "动销商品数", 指标值: operationBaseSummary.products.movingProductCount },
+    { 数据文件: "operation_base.json", 数据路径: "products.summary.unmovedProductCount", 指标: "未动销商品数", 指标值: operationBaseSummary.products.unmovedProductCount },
   ];
   const salesMetricRows = Object.entries(rawData.sales).flatMap(([key, value]) => metricRowsFromObject(value.overview, "sales.json", `${key}.overview`));
   const activityMetricRows = Object.entries(rawData.activitySummary).flatMap(([key, value]) => metricRowsFromObject(value.sum, "activity_summary.json", `${key}.sum`));
